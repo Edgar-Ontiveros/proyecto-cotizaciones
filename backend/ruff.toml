@@ -1,0 +1,36 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "RUF", # reglas propias de ruff
+]
+
+# Texto en español: – y × son legítimos en docstrings/comentarios.
+allowed-confusables = ["–", "×"]
+
+[lint.flake8-bugbear]
+# Patrón estándar de FastAPI: Depends/Query/etc. en defaults de parámetros.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Body",
+    "fastapi.Path",
+]
+
+[lint.per-file-ignores]
+# Los modelos usan nombres cortos de columnas heredados de la especificación.
+"alembic/versions/*" = ["E501"]
+
+[format]
+quote-style = "double"

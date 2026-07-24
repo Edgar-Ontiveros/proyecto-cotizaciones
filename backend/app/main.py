@@ -1,0 +1,81 @@
+"""FastAPI app (API pura, sin scheduler)."""
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.core.database import engine
+from app.core.errors import AppError
+from app.core.logging import configure_logging, logger, request_logging_middleware
+from app.modules.auth.router import router as auth_router
+from app.modules.usuarios.router import router as usuarios_router
+
+API_PREFIX = "/api/v1"
+
+_HTTP_CODES = {
+    401: "not_authenticated",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    409: "conflict",
+}
+
+configure_logging()
+
+app = FastAPI(title="Cotizaciones Herinox", version="0.1.0", docs_url=f"{API_PREFIX}/docs")
+
+app.middleware("http")(request_logging_middleware)
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code, content={"detail": exc.detail, "code": exc.code}
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, str) else "Error"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail, "code": _HTTP_CODES.get(exc.status_code, "http_error")},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    primer = exc.errors()[0] if exc.errors() else {}
+    loc = ".".join(str(p) for p in primer.get("loc", []))
+    msg = primer.get("msg", "Datos inválidos")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": f"{loc}: {msg}" if loc else msg, "code": "validation_error"},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("unhandled_error", path=request.url.path)
+    return JSONResponse(
+        status_code=500, content={"detail": "Error interno del servidor", "code": "internal_error"}
+    )
+
+
+@app.get(f"{API_PREFIX}/health")
+def health() -> JSONResponse:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "database": "down", "scheduler": "n/a"},
+        )
+    return JSONResponse(content={"status": "ok", "database": "ok", "scheduler": "n/a"})
+
+
+app.include_router(auth_router, prefix=API_PREFIX)
+app.include_router(usuarios_router, prefix=API_PREFIX)
