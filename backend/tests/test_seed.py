@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 
 from app.cli.seed import PASSWORD_DEFAULT, email_provisional, run
 from app.core.security import verify_password
-from app.models.catalogos import MotivoRechazo
+from app.models.catalogos import DiaFestivo, MotivoRechazo
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import Rol, Usuario
 
@@ -22,6 +22,7 @@ def test_seed_idempotente_y_conteos_exactos(db):
     assert _conteo_por_rol(db, Rol.ADMIN) == 1
     assert db.scalar(select(func.count()).select_from(MotivoRechazo)) == 5
     assert db.scalar(select(func.count()).select_from(FolioCounter)) == 11
+    assert db.scalar(select(func.count()).select_from(DiaFestivo)) == 14
 
     # Territorios completos: los 6 compradores son titulares y cubren las 11
     # sucursales (una titularidad por sucursal).

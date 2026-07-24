@@ -1,17 +1,18 @@
-"""Seed idempotente con los datos reales de arranque (F1).
+"""Seed idempotente con los datos reales de arranque (F1 + festivos de F2).
 
 Emails provisionales `nombre.apellido@herinox.demo` (primer nombre + último
 apellido, sin acentos). Contraseña `Herinox2026!` con must_change_password=true.
-Sin festivos (F2) y sin solicitudes demo (F3).
+Sin solicitudes demo (F3).
 """
 
 import unicodedata
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models.catalogos import FamiliaMotivo, MotivoRechazo
+from app.models.catalogos import DiaFestivo, FamiliaMotivo, MotivoRechazo
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import AlcanceGerente, Rol, Usuario
 
@@ -95,6 +96,25 @@ VENDEDORES = {
     "Monterrey": ["Marisela Matamoros", "Diana Ortiz", "Octavio Pecina Valdez", "Norma Perez"],
     "TIK": ["Joel Salcido"],
 }
+
+# Festivos de ley federal (LFT art. 74) 2026–2027. Administrables: el admin
+# agregará los que la empresa sume (p. ej. 12-dic o 24/31-dic si aplica).
+DIAS_FESTIVOS = [
+    (date(2026, 1, 1), "Año Nuevo"),
+    (date(2026, 2, 2), "Día de la Constitución (primer lunes de febrero)"),
+    (date(2026, 3, 16), "Natalicio de Benito Juárez (tercer lunes de marzo)"),
+    (date(2026, 5, 1), "Día del Trabajo"),
+    (date(2026, 9, 16), "Día de la Independencia"),
+    (date(2026, 11, 16), "Aniversario de la Revolución (tercer lunes de noviembre)"),
+    (date(2026, 12, 25), "Navidad"),
+    (date(2027, 1, 1), "Año Nuevo"),
+    (date(2027, 2, 1), "Día de la Constitución (primer lunes de febrero)"),
+    (date(2027, 3, 15), "Natalicio de Benito Juárez (tercer lunes de marzo)"),
+    (date(2027, 5, 1), "Día del Trabajo"),
+    (date(2027, 9, 16), "Día de la Independencia"),
+    (date(2027, 11, 15), "Aniversario de la Revolución (tercer lunes de noviembre)"),
+    (date(2027, 12, 25), "Navidad"),
+]
 
 MOTIVOS_RECHAZO = [
     (FamiliaMotivo.FALTA_INFORMACION, "Faltan medidas"),
@@ -209,6 +229,11 @@ def run(db: Session) -> dict[str, int]:
         if motivo is None:
             db.add(MotivoRechazo(familia=familia, texto=texto))
 
+    for fecha, descripcion in DIAS_FESTIVOS:
+        festivo = db.scalar(select(DiaFestivo).where(DiaFestivo.fecha == fecha))
+        if festivo is None:
+            db.add(DiaFestivo(fecha=fecha, descripcion=descripcion))
+
     db.commit()
 
     return {
@@ -218,4 +243,5 @@ def run(db: Session) -> dict[str, int]:
         "vendedores": sum(len(v) for v in VENDEDORES.values()),
         "admins": 1,
         "motivos_rechazo": len(MOTIVOS_RECHAZO),
+        "dias_festivos": len(DIAS_FESTIVOS),
     }
