@@ -1,18 +1,20 @@
-"""Seed idempotente con los datos reales de arranque (F1 + festivos de F2).
+"""Seed idempotente con los datos reales de arranque (F1 + festivos F2 +
+solicitudes demo F3).
 
 Emails provisionales `nombre.apellido@herinox.demo` (primer nombre + último
 apellido, sin acentos). Contraseña `Herinox2026!` con must_change_password=true.
-Sin solicitudes demo (F3).
 """
 
 import unicodedata
 from datetime import date
+from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.catalogos import DiaFestivo, FamiliaMotivo, MotivoRechazo
+from app.models.solicitud import Estado, Prioridad, Solicitud
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import AlcanceGerente, Rol, Usuario
 
@@ -125,6 +127,117 @@ MOTIVOS_RECHAZO = [
 ]
 
 
+# Solicitudes demo (F3): (vendedor_email, cliente, prioridad, flujo, partidas);
+# la sucursal sale del vendedor. Flujos: borrador | enviada | en_proceso |
+# rechazada | reenviada (2 ciclos) | cancelada. Partidas tomadas del formato
+# real: (codigo_sap, cantidad, unidad, tipo_acero, descripcion, medidas).
+_Partida = tuple[str | None, str, str, str | None, str, str | None]
+SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
+    (
+        "erika.palomares@herinox.demo",
+        "DINCO",
+        Prioridad.NORMAL,
+        "borrador",
+        [
+            ("205494", "40", "PZA", "A-36", 'ANGULO 2" X 1/4"', "6.10 MTS"),
+            ("205712", "24", "PZA", "A-36", 'CANAL CPS 4" ESTANDAR', "6.10 MTS"),
+        ],
+    ),
+    (
+        "jorge.hinojos@herinox.demo",
+        "CONSTRUCCIONES DEL PARQUE",
+        Prioridad.NORMAL,
+        "enviada",
+        [
+            ("208115", "18", "PZA", None, "LAMINA LISA CAL.14", "3X10 PIES"),
+            ("SERVICIO", "1", "LOTE", None, "CORTE A MEDIDA DE LAMINA", None),
+        ],
+    ),
+    (
+        "angelica.cruz@herinox.demo",
+        "DINCO",
+        Prioridad.URGENTE,
+        "en_proceso",
+        [
+            ("209301", "6", "PZA", "A-36", 'PLACA 1/2" A-36', "4X10 PIES"),
+            ("209015", "12", "PZA", None, "PTR 2X2 CAL.11", "6.10 MTS"),
+        ],
+    ),
+    (
+        "erika.palomares@herinox.demo",
+        "TALLERES GARCIA",
+        Prioridad.NORMAL,
+        "rechazada",
+        [(None, "874", "PZA", "304", "SOLERA 1/8 X 1", "12.20 MTS")],
+    ),
+    (
+        "abraham.hernandez@herinox.demo",
+        "MAQUINADOS INDUSTRIALES CUU",
+        Prioridad.URGENTE,
+        "reenviada",
+        [
+            ("210007", "4", "PZA", None, "VIGA IPR 6X4", "40 PIES"),
+            ("205494", "16", "PZA", "A-36", 'ANGULO 3" X 1/4"', "6.10 MTS"),
+        ],
+    ),
+    (
+        "jorge.hinojos@herinox.demo",
+        "DINCO",
+        Prioridad.NORMAL,
+        "cancelada",
+        [("208221", "30", "PZA", None, "LAMINA GALVANIZADA CAL.12", "3X10 PIES")],
+    ),
+    (
+        "alejandro.franco@herinox.demo",
+        "CONSTRUCTORA DEL NORTE",
+        Prioridad.NORMAL,
+        "enviada",
+        [
+            ("209301", "8", "PZA", "A-36", 'PLACA 3/8" A-36', "4X10 PIES"),
+            ("SERVICIO", "1", "LOTE", None, "BISELADO DE PLACA", None),
+        ],
+    ),
+    (
+        "efren.prado@herinox.demo",
+        "HERRERIA AVILA",
+        Prioridad.URGENTE,
+        "en_proceso",
+        [("209015", "20", "PZA", None, "PTR 1 1/2 X 1 1/2 CAL.14", "6.10 MTS")],
+    ),
+    (
+        "alba.avitia@herinox.demo",
+        "INDUSTRIAL PONIENTE",
+        Prioridad.NORMAL,
+        "borrador",
+        [("208115", "10", "PZA", None, "LAMINA ANTIDERRAPANTE CAL.10", "4X10 PIES")],
+    ),
+    (
+        "maribel.rocha@herinox.demo",
+        "MAQUILADOS JRZ",
+        Prioridad.URGENTE,
+        "enviada",
+        [
+            ("205712", "36", "PZA", "A-36", 'CANAL CPS 6"', "6.10 MTS"),
+            ("209301", "2", "PZA", "A-36", 'PLACA 1" A-36', "4X8 PIES"),
+        ],
+    ),
+    (
+        "brenda.garcia@herinox.demo",
+        "ARNESES FRONTERIZOS",
+        Prioridad.NORMAL,
+        "en_proceso",
+        [("SERVICIO", "1", "LOTE", "304", "CORTE LASER DE LAMINA INOX CAL.16", "60X60 CM")],
+    ),
+    (
+        "edgar.baylon@herinox.demo",
+        "DINCO",
+        Prioridad.NORMAL,
+        "rechazada",
+        [(None, "15", "PZA", None, "VIGA IPR 8X4", None)],
+    ),
+]
+
+
 def _sin_acentos(texto: str) -> str:
     return "".join(
         c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn"
@@ -135,6 +248,69 @@ def email_provisional(nombre: str) -> str:
     """`nombre.apellido@herinox.demo`: primer nombre + último apellido."""
     partes = _sin_acentos(nombre).lower().split()
     return f"{partes[0]}.{partes[-1]}@herinox.demo"
+
+
+def _demo_solicitudes(db: Session) -> int:
+    """Crea las solicitudes demo usando los services y transiciones REALES.
+    Guard de idempotencia: solo corre si no existe ninguna solicitud."""
+    if db.scalar(select(func.count()).select_from(Solicitud)):
+        return 0
+    # Imports locales para evitar acoplar el seed base a los módulos de F3.
+    from app.modules.solicitudes.schemas import PartidaIn, SolicitudCreate
+    from app.modules.solicitudes.service import crear
+    from app.modules.solicitudes.state_machine import ejecutar_transicion
+
+    def _usuario(email: str) -> Usuario:
+        return db.execute(select(Usuario).where(Usuario.email == email)).scalar_one()
+
+    def _motivo(texto: str) -> MotivoRechazo:
+        return db.execute(select(MotivoRechazo).where(MotivoRechazo.texto == texto)).scalar_one()
+
+    motivo_medidas = _motivo("Faltan medidas")
+    motivo_info = _motivo("Falta información del material")
+
+    for email, cliente, prioridad, flujo, partidas in SOLICITUDES_DEMO:
+        vendedor = _usuario(email)
+        data = SolicitudCreate(
+            cliente=cliente,
+            prioridad=prioridad,
+            notas=None,
+            partidas=[
+                PartidaIn(
+                    codigo_sap=codigo,
+                    cantidad=Decimal(cantidad),
+                    unidad=unidad,
+                    tipo_acero=tipo,
+                    descripcion=descripcion,
+                    medidas=medidas,
+                )
+                for codigo, cantidad, unidad, tipo, descripcion, medidas in partidas
+            ],
+        )
+        solicitud = crear(db, data, vendedor)
+        if flujo == "borrador":
+            continue
+        ejecutar_transicion(db, solicitud.id, Estado.ENVIADA, vendedor)
+        if flujo in ("en_proceso", "rechazada", "reenviada"):
+            assert solicitud.comprador_id is not None
+            comprador = db.get(Usuario, solicitud.comprador_id)
+            assert comprador is not None
+            ejecutar_transicion(db, solicitud.id, Estado.EN_PROCESO, comprador)
+            if flujo in ("rechazada", "reenviada"):
+                motivo = motivo_medidas if flujo == "reenviada" else motivo_info
+                ejecutar_transicion(
+                    db,
+                    solicitud.id,
+                    Estado.RECHAZADA,
+                    comprador,
+                    motivo_id=motivo.id,
+                    comentario="Favor de completar la información del material",
+                )
+            if flujo == "reenviada":
+                ejecutar_transicion(db, solicitud.id, Estado.ENVIADA, vendedor)
+        elif flujo == "cancelada":
+            ejecutar_transicion(db, solicitud.id, Estado.CANCELADA, vendedor)
+    return len(SOLICITUDES_DEMO)
 
 
 def _get_or_create_usuario(
@@ -236,6 +412,8 @@ def run(db: Session) -> dict[str, int]:
 
     db.commit()
 
+    solicitudes_demo = _demo_solicitudes(db)
+
     return {
         "sucursales": len(SUCURSALES),
         "compradores": len(COMPRADORES),
@@ -244,4 +422,5 @@ def run(db: Session) -> dict[str, int]:
         "admins": 1,
         "motivos_rechazo": len(MOTIVOS_RECHAZO),
         "dias_festivos": len(DIAS_FESTIVOS),
+        "solicitudes_demo": solicitudes_demo,
     }

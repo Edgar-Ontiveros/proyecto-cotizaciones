@@ -2,6 +2,7 @@
 
 from app.models.catalogos import DiaFestivo, FamiliaMotivo, MotivoRechazo
 from app.models.cliente import Cliente
+from app.models.comentario import Comentario
 from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
 from app.models.historial import HistorialEstado
 from app.models.notificacion import Notificacion
@@ -13,6 +14,7 @@ from app.models.usuario import AlcanceGerente, Rol, Usuario
 __all__ = [
     "AlcanceGerente",
     "Cliente",
+    "Comentario",
     "CompradorSucursal",
     "CotizacionOpcion",
     "DiaFestivo",

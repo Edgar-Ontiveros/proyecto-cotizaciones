@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import decode_token
-from app.models.usuario import Rol, Usuario
+from app.models.usuario import AlcanceGerente, Rol, Usuario
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -73,11 +73,22 @@ def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
     """Aplica el alcance de datos del usuario a una consulta de solicitudes.
 
     Regla (CLAUDE.md #7 — permisos en el query, nunca solo en frontend):
-      - vendedor: solo sus solicitudes (vendedor_id = user.id)
+      - vendedor: solo sus solicitudes (vendedor_id = user.id), borradores incluidos
       - comprador: solo las asignadas a él (comprador_id = user.id)
-      - gerente alcance 'sucursal': solo su sucursal
-      - gerente alcance 'global' y admin: sin filtro
-
-    Se implementa en la Fase 3 junto con el módulo de solicitudes.
+      - gerente alcance 'sucursal': solo su sucursal; 'global': todo — pero
+        los BORRADOR son invisibles para gerentes (solo su vendedor y admin)
+      - admin: sin filtro
     """
-    raise NotImplementedError("Se implementa en F3")
+    from app.models.solicitud import Estado, Solicitud
+
+    if user.rol == Rol.ADMIN:
+        return stmt
+    if user.rol == Rol.VENDEDOR:
+        return stmt.where(Solicitud.vendedor_id == user.id)
+    if user.rol == Rol.COMPRADOR:
+        return stmt.where(Solicitud.comprador_id == user.id)
+    # gerente (solo lectura)
+    stmt = stmt.where(Solicitud.estado != Estado.BORRADOR)
+    if user.alcance_gerente == AlcanceGerente.SUCURSAL:
+        stmt = stmt.where(Solicitud.sucursal_id == user.sucursal_id)
+    return stmt
