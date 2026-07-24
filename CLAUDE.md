@@ -61,6 +61,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 9. **Pool**: `pool_size=5, max_overflow=5, pool_pre_ping=True`.
 10. **Tests contra PostgreSQL 17 real**, nunca SQLite. mypy `strict` en `core/`.
 11. **Dinero**: `Numeric(14,2)` (cantidades `Numeric(14,3)`), nunca float. Importe = cantidad × precio_unitario; total de opción = suma de importes; los agregados NUNCA mezclan monedas (MXN y USD siempre separados).
+12. **Git**: usa siempre la identidad configurada en git; NUNCA pases `user.name`/`user.email` con `-c` ni agregues trailers de atribución (Co-Authored-By, "Generated with").
 
 ## Máquina de estados (resumen — detalle en especificación §3)
 
