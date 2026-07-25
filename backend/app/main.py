@@ -12,6 +12,7 @@ from app.core.logging import configure_logging, logger, request_logging_middlewa
 from app.modules.auth.router import router as auth_router
 from app.modules.clientes.router import router as clientes_router
 from app.modules.comentarios.router import router as comentarios_router
+from app.modules.cotizaciones.router import router as cotizaciones_router
 from app.modules.solicitudes.router import router as solicitudes_router
 from app.modules.usuarios.router import router as usuarios_router
 
@@ -84,4 +85,5 @@ app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(usuarios_router, prefix=API_PREFIX)
 app.include_router(clientes_router, prefix=API_PREFIX)
 app.include_router(solicitudes_router, prefix=API_PREFIX)
+app.include_router(cotizaciones_router, prefix=API_PREFIX)
 app.include_router(comentarios_router, prefix=API_PREFIX)

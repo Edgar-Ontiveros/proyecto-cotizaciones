@@ -131,6 +131,7 @@ Sin tiempos máximos (resp. 28) pero con evaluación (resp. 49) y alerta al 3er 
 - **cotizacion_opciones** — solicitud, letra A–E (única por solicitud), moneda, vigencia, comentarios, proveedor (restringido), total, completa.
 - **opcion_partidas** — opción, partida, `precio_unitario`, `importe`, `tiempo_entrega`.
 - **historial_estados** — solicitud, de, a, usuario, motivo/comentario, timestamp (base de toda la medición).
+- **comentarios** — solicitud, usuario, texto, creado_en (visibles para todos los involucrados, §4.10).
 - **motivos_rechazo** (familia), **dias_festivos**, **notificaciones**, **refresh_tokens**, **folio_counters** (por sucursal, sin año, inicial configurable).
 
 Estructurales v1.1 intactas: historial como eventos, bandas siempre calculadas, transiciones con bloqueo, UTC + `timezone` por sucursal, naming_convention, Alembic.

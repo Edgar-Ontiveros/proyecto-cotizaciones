@@ -36,6 +36,15 @@ class Prioridad(StrEnum):
     URGENTE = "URGENTE"
 
 
+class MotivoNoConfirmada(StrEnum):
+    """Motivos de NO_CONFIRMADA (§3). Catálogo fijo; la columna es Text."""
+
+    PRECIO = "PRECIO"
+    TIEMPO_ENTREGA = "TIEMPO_ENTREGA"
+    CLIENTE_DESISTIO = "CLIENTE_DESISTIO"
+    OTRO = "OTRO"
+
+
 # Instancia única del tipo Postgres "estado": lo comparten solicitudes.estado y
 # historial_estados.de / .a sin duplicar el CREATE TYPE.
 EstadoEnum = Enum(Estado, name="estado", values_callable=lambda e: [m.value for m in e])

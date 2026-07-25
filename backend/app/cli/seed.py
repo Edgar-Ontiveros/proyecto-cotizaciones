@@ -1,5 +1,5 @@
 """Seed idempotente con los datos reales de arranque (F1 + festivos F2 +
-solicitudes demo F3).
+solicitudes demo F3 + cotizaciones demo F4).
 
 Emails provisionales `nombre.apellido@herinox.demo` (primer nombre + último
 apellido, sin acentos). Contraseña `Herinox2026!` con must_change_password=true.
@@ -14,7 +14,14 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.catalogos import DiaFestivo, FamiliaMotivo, MotivoRechazo
-from app.models.solicitud import Estado, Prioridad, Solicitud
+from app.models.cotizacion import Letra, Moneda
+from app.models.solicitud import (
+    Estado,
+    MotivoNoConfirmada,
+    Prioridad,
+    Solicitud,
+    SolicitudPartida,
+)
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import AlcanceGerente, Rol, Usuario
 
@@ -127,9 +134,10 @@ MOTIVOS_RECHAZO = [
 ]
 
 
-# Solicitudes demo (F3): (vendedor_email, cliente, prioridad, flujo, partidas);
-# la sucursal sale del vendedor. Flujos: borrador | enviada | en_proceso |
-# rechazada | reenviada (2 ciclos) | cancelada. Partidas tomadas del formato
+# Solicitudes demo (F3/F4): (vendedor_email, cliente, prioridad, flujo,
+# partidas); la sucursal sale del vendedor. Flujos: borrador | enviada |
+# en_proceso | rechazada | reenviada (2 ciclos) | cancelada | cotizada_mxn |
+# cotizada_usd | confirmada | no_confirmada. Partidas tomadas del formato
 # real: (codigo_sap, cantidad, unidad, tipo_acero, descripcion, medidas).
 _Partida = tuple[str | None, str, str, str | None, str, str | None]
 SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
@@ -235,7 +243,79 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "rechazada",
         [(None, "15", "PZA", None, "VIGA IPR 8X4", None)],
     ),
+    (
+        "mirna.salas@herinox.demo",
+        "PAILERIA DEL YAQUI",
+        Prioridad.NORMAL,
+        "cotizada_mxn",
+        [
+            (None, "120", "KG", "304", "SOLERA INOX 1/4 X 2", "6.10 MTS"),
+            ("209301", "4", "PZA", "A-36", 'PLACA 5/8" A-36', "4X10 PIES"),
+        ],
+    ),
+    (
+        "juan.flores@herinox.demo",
+        "AEROESPACIAL DE MEXICALI",
+        Prioridad.URGENTE,
+        "cotizada_usd",
+        [(None, "60", "KG", "316L", 'BARRA REDONDA INOX 316L 2"', "3.66 MTS")],
+    ),
+    (
+        "sergio.medina@herinox.demo",
+        "EMPACADORA DEL HUMAYA",
+        Prioridad.NORMAL,
+        "confirmada",
+        [
+            (None, "250", "KG", "304", "LAMINA INOX CAL.18 ACABADO 2B", "4X10 PIES"),
+            ("SERVICIO", "1", "LOTE", None, "CORTE A MEDIDA DE LAMINA", None),
+        ],
+    ),
+    (
+        "moises.nava@herinox.demo",
+        "CALDERAS DEL BAJIO",
+        Prioridad.NORMAL,
+        "no_confirmada",
+        [("205931", "18", "PZA", "304", 'TUBO INOX 2" CAL.16', "6.10 MTS")],
+    ),
 ]
+
+# Opciones demo (F4): flujo → [(letra, moneda, proveedor, [(precio_unitario,
+# tiempo_entrega) por partida, en orden])]. Precios realistas de acero por
+# KG/PZA. La vigencia es fija para que el seed sea determinista.
+VIGENCIA_DEMO = date(2026, 8, 31)
+_Opcion = tuple[Letra, Moneda, str | None, list[tuple[str, str]]]
+OPCIONES_DEMO: dict[str, list[_Opcion]] = {
+    "cotizada_mxn": [
+        (
+            Letra.A,
+            Moneda.MXN,
+            "Aceros y Metales del Norte",
+            [("98.50", "5 días hábiles"), ("18450.00", "1 semana")],
+        ),
+        (
+            Letra.B,
+            Moneda.MXN,
+            "Inoxidables GV",
+            [("94.80", "2 semanas"), ("17980.00", "2 semanas")],
+        ),
+    ],
+    "cotizada_usd": [(Letra.A, Moneda.USD, "Rolled Alloys", [("5.85", "3 semanas")])],
+    "confirmada": [
+        (
+            Letra.A,
+            Moneda.MXN,
+            "Aceros Camesa",
+            [("112.00", "1 semana"), ("1500.00", "1 semana")],
+        ),
+        (
+            Letra.B,
+            Moneda.MXN,
+            "Metales de Sinaloa",
+            [("108.50", "10 días hábiles"), ("1200.00", "10 días hábiles")],
+        ),
+    ],
+    "no_confirmada": [(Letra.A, Moneda.MXN, None, [("1450.00", "4 semanas")])],
+}
 
 
 def _sin_acentos(texto: str) -> str:
@@ -255,7 +335,14 @@ def _demo_solicitudes(db: Session) -> int:
     Guard de idempotencia: solo corre si no existe ninguna solicitud."""
     if db.scalar(select(func.count()).select_from(Solicitud)):
         return 0
-    # Imports locales para evitar acoplar el seed base a los módulos de F3.
+    # Imports locales para evitar acoplar el seed base a los módulos de F3/F4.
+    from app.modules.cotizaciones.schemas import OpcionIn, RenglonIn
+    from app.modules.cotizaciones.service import (
+        cotizar,
+        guardar_opcion,
+        no_confirmar,
+        seleccionar,
+    )
     from app.modules.solicitudes.schemas import PartidaIn, SolicitudCreate
     from app.modules.solicitudes.service import crear
     from app.modules.solicitudes.state_machine import ejecutar_transicion
@@ -310,6 +397,47 @@ def _demo_solicitudes(db: Session) -> int:
                 ejecutar_transicion(db, solicitud.id, Estado.ENVIADA, vendedor)
         elif flujo == "cancelada":
             ejecutar_transicion(db, solicitud.id, Estado.CANCELADA, vendedor)
+        elif flujo in OPCIONES_DEMO:
+            assert solicitud.comprador_id is not None
+            comprador = db.get(Usuario, solicitud.comprador_id)
+            assert comprador is not None
+            partida_ids = db.scalars(
+                select(SolicitudPartida.id)
+                .where(SolicitudPartida.solicitud_id == solicitud.id)
+                .order_by(SolicitudPartida.num_partida)
+            ).all()
+            # El primer guardar_opcion sobre ENVIADA ejecuta la auto-toma real.
+            for letra, moneda, proveedor, renglones in OPCIONES_DEMO[flujo]:
+                guardar_opcion(
+                    db,
+                    solicitud.id,
+                    letra,
+                    OpcionIn(
+                        moneda=moneda,
+                        vigencia=VIGENCIA_DEMO,
+                        proveedor=proveedor,
+                        renglones=[
+                            RenglonIn(
+                                partida_id=pid,
+                                precio_unitario=Decimal(precio),
+                                tiempo_entrega=tiempo,
+                            )
+                            for pid, (precio, tiempo) in zip(partida_ids, renglones, strict=True)
+                        ],
+                    ),
+                    comprador,
+                )
+            cotizar(db, solicitud.id, comprador)
+            if flujo == "confirmada":
+                seleccionar(db, solicitud.id, Letra.B, vendedor)
+            elif flujo == "no_confirmada":
+                no_confirmar(
+                    db,
+                    solicitud.id,
+                    MotivoNoConfirmada.PRECIO,
+                    "El cliente consiguió mejor precio con otro proveedor",
+                    vendedor,
+                )
     return len(SOLICITUDES_DEMO)
 
 

@@ -60,9 +60,10 @@ class OpcionPartida(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     opcion_id: Mapped[int] = mapped_column(ForeignKey("cotizacion_opciones.id"))
     partida_id: Mapped[int] = mapped_column(ForeignKey("solicitud_partidas.id"))
-    precio_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    importe: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    # La obligatoriedad se valida en F4 al marcar la cotización completa.
+    # Nullables: la captura puede ser parcial; la obligatoriedad de precio y
+    # tiempo de entrega se exige al marcar la cotización completa.
+    precio_unitario: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    importe: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     tiempo_entrega: Mapped[str | None] = mapped_column(Text)
 
     opcion: Mapped[CotizacionOpcion] = relationship(back_populates="partidas")

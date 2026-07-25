@@ -60,11 +60,15 @@ def _actor_valido(actor: Actor, solicitud: Solicitud, usuario: Usuario) -> bool:
 
 def _efecto_enviar(db: Session, solicitud: Solicitud) -> None:
     """Asigna al titular VIGENTE de la sucursal (el reenvío re-asigna: pudo
-    cambiar); la primera vez genera folio y fija enviado_en."""
+    cambiar); la primera vez genera folio y fija enviado_en. Un titular
+    inactivo cuenta como "sin titular"."""
     titular_id = db.scalar(
-        select(CompradorSucursal.comprador_id).where(
+        select(CompradorSucursal.comprador_id)
+        .join(Usuario, CompradorSucursal.comprador_id == Usuario.id)
+        .where(
             CompradorSucursal.sucursal_id == solicitud.sucursal_id,
             CompradorSucursal.titular,
+            Usuario.activo,
         )
     )
     if titular_id is None:
@@ -103,8 +107,14 @@ def ejecutar_transicion(
     real en detail) · 403 transicion_no_permitida · 409 sucursal_sin_titular ·
     422 motivo_requerido/motivo_invalido.
     """
+    # populate_existing: sin esto, si la solicitud ya estaba en el identity map
+    # (p. ej. cargada sin lock por el endpoint), el FOR UPDATE bloquearía la
+    # fila pero el ORM devolvería los atributos viejos — doble transición.
     solicitud = db.execute(
-        select(Solicitud).where(Solicitud.id == solicitud_id).with_for_update()
+        select(Solicitud)
+        .where(Solicitud.id == solicitud_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
     if solicitud is None:
         raise AppError(404, "Solicitud no encontrada", "solicitud_no_encontrada")

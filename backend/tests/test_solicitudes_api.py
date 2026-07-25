@@ -6,7 +6,7 @@ from sqlalchemy import update
 from app.models.catalogos import FamiliaMotivo, MotivoRechazo
 from app.models.solicitud import Estado, Solicitud
 from app.models.sucursal import CompradorSucursal
-from app.models.usuario import AlcanceGerente, Rol
+from app.models.usuario import AlcanceGerente, Rol, Usuario
 
 BASE = "/api/v1/solicitudes"
 
@@ -140,6 +140,20 @@ def test_enviar_sin_titular_409_y_sigue_borrador(
     assert r.json()["code"] == "sucursal_sin_titular"
     r = client.get(f"{BASE}/{creada['id']}", headers=headers)
     assert r.json()["estado"] == "BORRADOR" and r.json()["folio"] is None
+
+
+def test_titular_inactivo_cuenta_como_sin_titular(client, db, entorno, auth_headers):
+    """Ajuste F4-0b: un titular INACTIVO no recibe solicitudes; el envío
+    responde 409 sucursal_sin_titular."""
+    headers = auth_headers(entorno.vend_a)
+    creada = _crear(client, headers)
+    db.execute(update(Usuario).where(Usuario.id == entorno.comp_a.id).values(activo=False))
+    db.commit()
+    r = client.post(f"{BASE}/{creada['id']}/enviar", headers=headers)
+    assert r.status_code == 409
+    assert r.json()["code"] == "sucursal_sin_titular"
+    r = client.get(f"{BASE}/{creada['id']}", headers=headers)
+    assert r.json()["estado"] == "BORRADOR"
 
 
 def test_reenvio_reasigna_titular_vigente(client, db, entorno, make_user, auth_headers):
@@ -291,6 +305,20 @@ def test_filtros_listado(client, entorno, auth_headers):
     assert r.status_code == 422
 
 
+def test_buscar_cubre_folio_o_cliente(client, entorno, auth_headers):
+    """Ajuste F4-0c: `buscar` hace ilike sobre folio O nombre de cliente."""
+    headers = auth_headers(entorno.vend_a)
+    enviada = _enviada(client, entorno, auth_headers)  # cliente DINCO
+    _crear(client, headers, cliente="TALLERES GARCIA")
+
+    r = client.get(BASE, params={"buscar": "DINCO"}, headers=headers)
+    assert {i["id"] for i in r.json()["items"]} == {enviada["id"]}  # por cliente
+    r = client.get(BASE, params={"buscar": enviada["folio"]}, headers=headers)
+    assert {i["id"] for i in r.json()["items"]} == {enviada["id"]}  # por folio
+    r = client.get(BASE, params={"buscar": "garc"}, headers=headers)
+    assert r.json()["total"] == 1  # ilike: sin distinguir mayúsculas
+
+
 # ------------------------------------------------------------------ edición
 
 
@@ -330,6 +358,32 @@ def test_editar_enviada_deja_evento(client, entorno, auth_headers):
     evento = historial[-1]
     assert (evento["de"], evento["a"]) == ("ENVIADA", "ENVIADA")
     assert evento["comentario"] == "Solicitud editada por el vendedor"
+
+
+def test_patch_fuera_de_borrador_exige_completitud(client, entorno, auth_headers):
+    """Ajuste F4-0a: PATCH sobre ENVIADA/EN_PROCESO exige la misma completitud
+    que el envío (cliente presente y ≥1 partida) → 422."""
+    enviada = _enviada(client, entorno, auth_headers)
+    headers = auth_headers(entorno.vend_a)
+    r = client.patch(
+        f"{BASE}/{enviada['id']}",
+        headers=headers,
+        json={"cliente": None, "prioridad": "NORMAL", "partidas": []},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "solicitud_incompleta"
+    assert "cliente" in r.json()["detail"] and "partida" in r.json()["detail"]
+    # La solicitud queda intacta.
+    detalle = client.get(f"{BASE}/{enviada['id']}", headers=headers).json()
+    assert detalle["cliente_nombre"] == "DINCO" and len(detalle["partidas"]) == 1
+    # Un borrador sí puede guardarse a medias.
+    borrador = _crear(client, headers)
+    r = client.patch(
+        f"{BASE}/{borrador['id']}",
+        headers=headers,
+        json={"cliente": None, "prioridad": "NORMAL", "partidas": []},
+    )
+    assert r.status_code == 200
 
 
 def test_editar_cotizada_409(client, db, entorno, auth_headers):

@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.cotizacion import Moneda
 from app.models.solicitud import Estado, Prioridad
+from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionOut
 
 
 class PartidaIn(BaseModel):
@@ -55,8 +57,15 @@ class SolicitudOut(BaseModel):
     comprador_id: int | None
     sucursal_id: int
     notas: str | None
+    # Confirmación (F4): opción ganadora y monto oficial.
+    opcion_seleccionada_id: int | None
+    monto_confirmado: Decimal | None
+    moneda_confirmada: Moneda | None
+    motivo_no_confirmada: str | None
     creado_en: datetime
     enviado_en: datetime | None
+    cotizado_en: datetime | None
+    confirmado_en: datetime | None
 
 
 class HistorialOut(BaseModel):
@@ -80,9 +89,18 @@ class ComentarioOut(BaseModel):
 
 
 class SolicitudDetailOut(SolicitudOut):
+    """Detalle para vendedor y gerente: opciones SIN proveedor (§4.8)."""
+
     partidas: list[PartidaOut]
+    opciones: list[OpcionOut]
     historial: list[HistorialOut]
     comentarios: list[ComentarioOut]
+
+
+class SolicitudDetailCompradorOut(SolicitudDetailOut):
+    """Detalle para comprador y admin: opciones CON proveedor."""
+
+    opciones: list[OpcionCompradorOut]  # type: ignore[assignment]
 
 
 class SolicitudListOut(BaseModel):

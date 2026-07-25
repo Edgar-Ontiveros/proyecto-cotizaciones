@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -8,6 +8,7 @@ from app.core.permissions import scope_solicitudes_query
 from app.models.catalogos import MotivoRechazo
 from app.models.cliente import Cliente
 from app.models.comentario import Comentario
+from app.models.cotizacion import CotizacionOpcion, OpcionPartida
 from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
 from app.models.usuario import Rol, Usuario
@@ -18,6 +19,7 @@ from app.modules.solicitudes.schemas import (
     PartidaIn,
     PartidaOut,
     SolicitudCreate,
+    SolicitudOut,
 )
 
 ESTADOS_EDITABLES = {Estado.BORRADOR, Estado.ENVIADA, Estado.EN_PROCESO}
@@ -34,7 +36,9 @@ def obtener_scoped(
     (no se filtra existencia)."""
     stmt = _base_scoped(user).where(Solicitud.id == solicitud_id)
     if for_update:
-        stmt = stmt.with_for_update()
+        # populate_existing: garantiza que el lock devuelva los atributos
+        # recién leídos aunque el objeto ya estuviera en el identity map.
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     solicitud = db.execute(stmt).scalar_one_or_none()
     if solicitud is None:
         raise AppError(404, "Solicitud no encontrada", "solicitud_no_encontrada")
@@ -42,6 +46,16 @@ def obtener_scoped(
 
 
 def _reemplazar_partidas(db: Session, solicitud: Solicitud, partidas: list[PartidaIn]) -> None:
+    # Si el comprador ya capturó renglones (EN_PROCESO), referencian estas
+    # partidas por FK: se descartan y sus opciones quedan incompletas — la
+    # captura anterior no aplica a las partidas nuevas.
+    opcion_ids = select(CotizacionOpcion.id).where(CotizacionOpcion.solicitud_id == solicitud.id)
+    db.execute(delete(OpcionPartida).where(OpcionPartida.opcion_id.in_(opcion_ids)))
+    db.execute(
+        update(CotizacionOpcion)
+        .where(CotizacionOpcion.solicitud_id == solicitud.id)
+        .values(total=0, completa=False)
+    )
     db.execute(delete(SolicitudPartida).where(SolicitudPartida.solicitud_id == solicitud.id))
     for numero, partida in enumerate(partidas, start=1):
         db.add(
@@ -97,6 +111,20 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
             f"No se puede editar: la solicitud está en estado {solicitud.estado.value}",
             "estado_conflicto",
         )
+    if solicitud.estado != Estado.BORRADOR:
+        # Fuera de BORRADOR la solicitud ya está en manos del comprador: la
+        # edición exige la misma completitud que el envío.
+        faltantes = []
+        if data.cliente is None:
+            faltantes.append("cliente")
+        if not data.partidas:
+            faltantes.append("al menos una partida")
+        if faltantes:
+            raise AppError(
+                422,
+                f"No se puede editar, faltan: {', '.join(faltantes)}",
+                "solicitud_incompleta",
+            )
     solicitud.cliente_id = (
         obtener_o_crear(db, data.cliente, user).id if data.cliente is not None else None
     )
@@ -178,12 +206,40 @@ def listar(
         limite = datetime(hasta.year, hasta.month, hasta.day, tzinfo=UTC) + timedelta(days=1)
         stmt = stmt.where(Solicitud.creado_en < limite)
     if buscar:
-        stmt = stmt.where(Solicitud.folio.ilike(f"%{buscar.strip()}%"))
+        patron = f"%{buscar.strip()}%"
+        stmt = stmt.where(
+            or_(Solicitud.folio.ilike(patron), Cliente.nombre_normalizado.ilike(patron))
+        )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     filas = db.execute(
         stmt.order_by(Solicitud.creado_en.desc(), Solicitud.id.desc()).limit(limit).offset(offset)
     ).all()
     return [(fila[0], fila[1]) for fila in filas], total
+
+
+def a_out(db: Session, solicitud: Solicitud, cliente_nombre: str | None = None) -> SolicitudOut:
+    if cliente_nombre is None:
+        cliente_nombre = cliente_nombre_de(db, solicitud)
+    return SolicitudOut(
+        id=solicitud.id,
+        folio=solicitud.folio,
+        estado=solicitud.estado,
+        prioridad=solicitud.prioridad,
+        cliente_id=solicitud.cliente_id,
+        cliente_nombre=cliente_nombre,
+        vendedor_id=solicitud.vendedor_id,
+        comprador_id=solicitud.comprador_id,
+        sucursal_id=solicitud.sucursal_id,
+        notas=solicitud.notas,
+        opcion_seleccionada_id=solicitud.opcion_seleccionada_id,
+        monto_confirmado=solicitud.monto_confirmado,
+        moneda_confirmada=solicitud.moneda_confirmada,
+        motivo_no_confirmada=solicitud.motivo_no_confirmada,
+        creado_en=solicitud.creado_en,
+        enviado_en=solicitud.enviado_en,
+        cotizado_en=solicitud.cotizado_en,
+        confirmado_en=solicitud.confirmado_en,
+    )
 
 
 def cliente_nombre_de(db: Session, solicitud: Solicitud) -> str | None:

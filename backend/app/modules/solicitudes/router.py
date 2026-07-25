@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.permissions import get_current_user, require_roles
-from app.models.solicitud import Estado, Prioridad, Solicitud
+from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
+from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.solicitudes import service
 from app.modules.solicitudes.schemas import (
     RechazarIn,
     SolicitudCreate,
+    SolicitudDetailCompradorOut,
     SolicitudDetailOut,
     SolicitudListOut,
     SolicitudOut,
@@ -22,24 +24,7 @@ router = APIRouter(prefix="/solicitudes", tags=["solicitudes"])
 vendedor_required = require_roles(Rol.VENDEDOR)
 comprador_required = require_roles(Rol.COMPRADOR)
 
-
-def _a_out(db: Session, solicitud: Solicitud, cliente_nombre: str | None = None) -> SolicitudOut:
-    if cliente_nombre is None:
-        cliente_nombre = service.cliente_nombre_de(db, solicitud)
-    return SolicitudOut(
-        id=solicitud.id,
-        folio=solicitud.folio,
-        estado=solicitud.estado,
-        prioridad=solicitud.prioridad,
-        cliente_id=solicitud.cliente_id,
-        cliente_nombre=cliente_nombre,
-        vendedor_id=solicitud.vendedor_id,
-        comprador_id=solicitud.comprador_id,
-        sucursal_id=solicitud.sucursal_id,
-        notas=solicitud.notas,
-        creado_en=solicitud.creado_en,
-        enviado_en=solicitud.enviado_en,
-    )
+_a_out = service.a_out
 
 
 @router.post("", response_model=SolicitudOut, status_code=status.HTTP_201_CREATED)
@@ -90,20 +75,28 @@ def listar_solicitudes(
     )
 
 
-@router.get("/{solicitud_id}", response_model=SolicitudDetailOut)
+@router.get("/{solicitud_id}", response_model=None)
 def detalle_solicitud(
     solicitud_id: int,
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> SolicitudDetailOut | SolicitudDetailCompradorOut:
+    """El schema se elige por rol (§4.8): comprador y admin ven proveedor;
+    para vendedor y gerente la clave NO existe en el JSON. response_model=None:
+    la respuesta se serializa tal cual se construye, sin re-validación de
+    FastAPI que pudiera mezclar las dos vistas."""
     solicitud = service.obtener_scoped(db, solicitud_id, user)
-    base = _a_out(db, solicitud)
-    return SolicitudDetailOut(
-        **base.model_dump(),
+    datos = dict(
+        **_a_out(db, solicitud).model_dump(),
         partidas=service.partidas_de(db, solicitud.id),
         historial=service.historial_de(db, solicitud.id),
         comentarios=service.comentarios_de(db, solicitud.id),
     )
+    if user.rol in (Rol.COMPRADOR, Rol.ADMIN):
+        return SolicitudDetailCompradorOut(
+            **datos, opciones=cotizaciones_service.opciones_comprador_de(db, solicitud.id)
+        )
+    return SolicitudDetailOut(**datos, opciones=cotizaciones_service.opciones_de(db, solicitud.id))
 
 
 @router.patch("/{solicitud_id}", response_model=SolicitudOut)
