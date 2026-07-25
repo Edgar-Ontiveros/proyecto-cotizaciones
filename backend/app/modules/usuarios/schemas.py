@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.usuario import AlcanceGerente, Rol
+from app.models.usuario import Rol
 
 
 class UsuarioOut(BaseModel):
@@ -11,7 +11,6 @@ class UsuarioOut(BaseModel):
     email: str
     rol: Rol
     sucursal_id: int | None
-    alcance_gerente: AlcanceGerente | None
     activo: bool
     must_change_password: bool
 
@@ -36,7 +35,6 @@ class UsuarioCreate(BaseModel):
     password: str | None = Field(default=None, min_length=8)
     rol: Rol
     sucursal_id: int | None = None
-    alcance_gerente: AlcanceGerente | None = None
 
 
 class UsuarioUpdate(BaseModel):
@@ -44,7 +42,14 @@ class UsuarioUpdate(BaseModel):
     email: str | None = Field(default=None, min_length=3)
     rol: Rol | None = None
     sucursal_id: int | None = None
-    alcance_gerente: AlcanceGerente | None = None
+
+
+class DesactivarIn(BaseModel):
+    """Baja segura (F5): destinos para transferir lo pendiente en el mismo
+    acto. Sin ellos, un usuario con pendientes responde 409 detallado."""
+
+    titularidades_a: int | None = None  # comprador destino de las titularidades
+    solicitudes_a: int | None = None  # comprador o vendedor destino de las abiertas
 
 
 class ResetPasswordOut(BaseModel):

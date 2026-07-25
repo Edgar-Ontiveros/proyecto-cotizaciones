@@ -3,40 +3,32 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.core.security import generate_temp_password, hash_password
+from app.models.solicitud import Solicitud
 from app.models.sucursal import Sucursal
-from app.models.usuario import AlcanceGerente, Rol, Usuario
+from app.models.usuario import Rol, Usuario
 from app.modules.auth.service import revoke_all_user_tokens
-from app.modules.usuarios.schemas import UsuarioCreate, UsuarioUpdate
+from app.modules.reasignaciones.service import (
+    ESTADOS_ABIERTOS,
+    ESTADOS_TERMINALES,
+    reasignar_comprador_masivo,
+    reasignar_vendedor_masivo,
+)
+from app.modules.sucursales.service import titularidades_de, transferir_titularidades
+from app.modules.usuarios.schemas import DesactivarIn, UsuarioCreate, UsuarioUpdate
 
 
-def _validar_rol_sucursal(
-    db: Session,
-    rol: Rol,
-    sucursal_id: int | None,
-    alcance_gerente: AlcanceGerente | None,
-) -> tuple[int | None, AlcanceGerente | None]:
-    """Reglas de consistencia rol ↔ sucursal ↔ alcance. Devuelve los valores
-    normalizados (los roles que no usan un campo lo dejan en NULL)."""
-    if rol == Rol.VENDEDOR:
+def _validar_rol_sucursal(db: Session, rol: Rol, sucursal_id: int | None) -> int | None:
+    """Reglas de consistencia rol ↔ sucursal. Vendedor y gerente EXIGEN
+    sucursal (el gerente es siempre de sucursal desde F5); comprador y admin
+    no llevan (los territorios del comprador viven en comprador_sucursal)."""
+    if rol in (Rol.VENDEDOR, Rol.GERENTE):
         if sucursal_id is None:
-            raise AppError(422, "Un vendedor requiere sucursal_id", "sucursal_requerida")
-        alcance_gerente = None
-    elif rol == Rol.GERENTE:
-        if alcance_gerente is None:
-            raise AppError(422, "Un gerente requiere alcance_gerente", "alcance_requerido")
-        if alcance_gerente == AlcanceGerente.SUCURSAL and sucursal_id is None:
-            raise AppError(
-                422, "Un gerente de alcance sucursal requiere sucursal_id", "sucursal_requerida"
-            )
-        if alcance_gerente == AlcanceGerente.GLOBAL:
-            sucursal_id = None
-    else:  # comprador (territorios en F5) y admin no llevan sucursal ni alcance
+            raise AppError(422, f"Un {rol.value} requiere sucursal_id", "sucursal_requerida")
+    else:
         sucursal_id = None
-        alcance_gerente = None
-
     if sucursal_id is not None and db.get(Sucursal, sucursal_id) is None:
         raise AppError(422, "La sucursal indicada no existe", "sucursal_invalida")
-    return sucursal_id, alcance_gerente
+    return sucursal_id
 
 
 def _get_usuario(db: Session, usuario_id: int) -> Usuario:
@@ -80,9 +72,7 @@ def listar(
 def crear(db: Session, data: UsuarioCreate) -> tuple[Usuario, str | None]:
     email = data.email.strip().lower()
     _check_email_libre(db, email)
-    sucursal_id, alcance = _validar_rol_sucursal(
-        db, data.rol, data.sucursal_id, data.alcance_gerente
-    )
+    sucursal_id = _validar_rol_sucursal(db, data.rol, data.sucursal_id)
     password_temporal = None
     password = data.password
     if password is None:
@@ -93,7 +83,6 @@ def crear(db: Session, data: UsuarioCreate) -> tuple[Usuario, str | None]:
         password_hash=hash_password(password),
         rol=data.rol,
         sucursal_id=sucursal_id,
-        alcance_gerente=alcance,
         must_change_password=True,
     )
     db.add(user)
@@ -101,22 +90,25 @@ def crear(db: Session, data: UsuarioCreate) -> tuple[Usuario, str | None]:
     return user, password_temporal
 
 
-def actualizar(db: Session, usuario_id: int, data: UsuarioUpdate) -> Usuario:
+def actualizar(db: Session, usuario_id: int, data: UsuarioUpdate, admin: Usuario) -> Usuario:
     user = _get_usuario(db, usuario_id)
     cambios = data.model_dump(exclude_unset=True)
+    rol = cambios.get("rol", user.rol)
+    if usuario_id == admin.id and rol != Rol.ADMIN:
+        # Complemento de no_auto_desactivacion: sin esto, el último admin
+        # podría dejarse fuera de la administración para siempre.
+        raise AppError(
+            422, "Un admin no puede quitarse a sí mismo el rol admin", "no_auto_degradacion"
+        )
     if "email" in cambios:
         cambios["email"] = cambios["email"].strip().lower()
         _check_email_libre(db, cambios["email"], excluir_id=user.id)
-    rol = cambios.get("rol", user.rol)
-    sucursal_id = cambios.get("sucursal_id", user.sucursal_id)
-    alcance = cambios.get("alcance_gerente", user.alcance_gerente)
-    sucursal_id, alcance = _validar_rol_sucursal(db, rol, sucursal_id, alcance)
+    sucursal_id = _validar_rol_sucursal(db, rol, cambios.get("sucursal_id", user.sucursal_id))
     for campo in ("nombre", "email"):
         if campo in cambios:
             setattr(user, campo, cambios[campo])
     user.rol = rol
     user.sucursal_id = sucursal_id
-    user.alcance_gerente = alcance
     db.commit()
     return user
 
@@ -131,10 +123,76 @@ def reset_password(db: Session, usuario_id: int) -> str:
     return temporal
 
 
-def desactivar(db: Session, usuario_id: int, admin: Usuario) -> Usuario:
+def _baja_segura_comprador(db: Session, user: Usuario, data: DesactivarIn, admin: Usuario) -> None:
+    titularidades = titularidades_de(db, user.id)
+    abiertas = (
+        db.scalar(
+            select(func.count())
+            .select_from(Solicitud)
+            .where(Solicitud.comprador_id == user.id, Solicitud.estado.in_(ESTADOS_ABIERTOS))
+        )
+        or 0
+    )
+    pendientes = []
+    if titularidades and data.titularidades_a is None:
+        pendientes.append(f"es titular de: {', '.join(titularidades)} (envía titularidades_a)")
+    if abiertas and data.solicitudes_a is None:
+        pendientes.append(f"tiene {abiertas} solicitud(es) abiertas (envía solicitudes_a)")
+    if pendientes:
+        raise AppError(
+            409,
+            "No se puede desactivar al comprador sin reasignar: " + "; ".join(pendientes),
+            "baja_requiere_reasignacion",
+        )
+    if titularidades:
+        assert data.titularidades_a is not None
+        transferir_titularidades(db, user.id, data.titularidades_a, commit=False)
+    if abiertas:
+        assert data.solicitudes_a is not None
+        reasignar_comprador_masivo(db, user.id, data.solicitudes_a, admin, commit=False)
+
+
+def _baja_segura_vendedor(db: Session, user: Usuario, data: DesactivarIn, admin: Usuario) -> None:
+    no_terminales = (
+        db.scalar(
+            select(func.count())
+            .select_from(Solicitud)
+            .where(Solicitud.vendedor_id == user.id, Solicitud.estado.not_in(ESTADOS_TERMINALES))
+        )
+        or 0
+    )
+    if not no_terminales:
+        return
+    if data.solicitudes_a is None:
+        raise AppError(
+            409,
+            f"No se puede desactivar al vendedor: tiene {no_terminales} solicitud(es) "
+            "no terminales (envía solicitudes_a)",
+            "baja_requiere_reasignacion",
+        )
+    reasignar_vendedor_masivo(db, user.id, data.solicitudes_a, admin, commit=False)
+
+
+def desactivar(
+    db: Session, usuario_id: int, admin: Usuario, data: DesactivarIn | None = None
+) -> Usuario:
+    """Baja segura (F5): con pendientes y sin destinos → 409 detallado; con
+    destinos, transfiere titularidades y reasigna abiertas (con eventos) y
+    desactiva — todo en un acto (una sola transacción)."""
     if usuario_id == admin.id:
         raise AppError(400, "Un admin no puede desactivarse a sí mismo", "no_auto_desactivacion")
     user = _get_usuario(db, usuario_id)
+    data = data or DesactivarIn()
+    if usuario_id in (data.titularidades_a, data.solicitudes_a):
+        raise AppError(
+            422,
+            "El destino de la reasignación no puede ser el usuario dado de baja",
+            "destino_invalido",
+        )
+    if user.rol == Rol.COMPRADOR:
+        _baja_segura_comprador(db, user, data, admin)
+    elif user.rol == Rol.VENDEDOR:
+        _baja_segura_vendedor(db, user, data, admin)
     user.activo = False
     revoke_all_user_tokens(db, user.id)
     db.commit()

@@ -56,7 +56,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 4. **Transiciones de estado**: SIEMPRE en transacción con `SELECT ... FOR UPDATE` de la solicitud, validando estado actual contra la matriz; escriben estado + evento en `historial_estados` atómicamente. Conflicto → HTTP 409 con el estado real.
 5. **Folios**: `{PREFIJO_SUCURSAL}-{CONSECUTIVO}` **sin año** (convención real: `CCN-3036`), consecutivo corrido por sucursal vía `folio_counters(sucursal_id, ultimo)` con `FOR UPDATE` en la misma transacción del envío. Prefijo y contador inicial editables por admin.
 6. **API**: prefijo `/api/v1`, errores `{"detail": str, "code": str}`, paginación `limit/offset` (máx 100), routers delgados / lógica en services.
-7. **Permisos en el query**: cada lectura filtra por rol/propiedad en SQL (vendedor: las suyas; comprador: las asignadas; gerente `sucursal`: su sucursal; gerente `global` y admin: todo). El frontend solo esconde botones.
+7. **Permisos en el query**: cada lectura filtra por rol/propiedad en SQL (vendedor: las suyas; comprador: las asignadas; gerente: su sucursal — fail-closed sin sucursal; admin: todo). El frontend solo esconde botones.
 8. **Logs**: structlog JSON a stdout; cada request loguea método, ruta, usuario, status, duración.
 9. **Pool**: `pool_size=5, max_overflow=5, pool_pre_ping=True`.
 10. **Tests contra PostgreSQL 17 real**, nunca SQLite. mypy `strict` en `core/`.
@@ -89,8 +89,10 @@ Partidas: `num_partida` (auto), `codigo_sap` (opcional; "SERVICIO" cuando no hay
 |---|---|---|
 | `vendedor` | Solo SUS solicitudes | Crear/editar/enviar/reenviar/cancelar, seleccionar opción, marcar no confirmada |
 | `comprador` | Solo las asignadas a él | Tomar, capturar opciones, completar, rechazar con motivo, corregir cotizadas |
-| `gerente` | Solo lectura; `alcance='sucursal'` → su sucursal; `'global'` → todo | Dashboards, tablas, export |
-| `admin` | Todo | Todo + administración |
+| `gerente` | Su sucursal (siempre de sucursal; sin BORRADOR ajenos; sin `proveedor`) | Acciones de LADO VENTAS sobre solicitudes de su sucursal: reenviar, cancelar, editar, seleccionar/confirmar, no-confirmar, comentar + dashboards/export. NUNCA acciones de compras ni administración |
+| `admin` | Todo | Todo: cualquier transición/edición de cualquier solicitud + administración |
+
+El alcance "global" del gerente NO existe (F5): los directores se dan de alta como `admin`; el rol `gerente` exige `sucursal_id`.
 
 - **SOLO `admin` crea, edita, activa/desactiva cuentas — de TODOS los niveles: vendedores, compradores, gerentes y otros administradores.** Sin registro público. Un admin no puede desactivarse a sí mismo. La alta/baja/reasignación de vendedores, compradores y gerentes entre sucursales es funcionalidad de primera clase (alta rotación).
 - El campo `proveedor` de las opciones y cualquier costo interno: visibles SOLO para `comprador` y `admin`. Se excluyen en los schemas de respuesta para vendedor y gerente — no se ocultan en el frontend.

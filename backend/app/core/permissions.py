@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import decode_token
-from app.models.usuario import AlcanceGerente, Rol, Usuario
+from app.models.usuario import Rol, Usuario
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -75,10 +75,12 @@ def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
     Regla (CLAUDE.md #7 — permisos en el query, nunca solo en frontend):
       - vendedor: solo sus solicitudes (vendedor_id = user.id), borradores incluidos
       - comprador: solo las asignadas a él (comprador_id = user.id)
-      - gerente alcance 'sucursal': solo su sucursal; 'global': todo — pero
-        los BORRADOR son invisibles para gerentes (solo su vendedor y admin)
+      - gerente: siempre su sucursal, sin BORRADOR ajenos; sin sucursal_id
+        (datos viejos) NO ve nada — fail-closed
       - admin: sin filtro
     """
+    from sqlalchemy import false
+
     from app.models.solicitud import Estado, Solicitud
 
     if user.rol == Rol.ADMIN:
@@ -87,8 +89,9 @@ def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
         return stmt.where(Solicitud.vendedor_id == user.id)
     if user.rol == Rol.COMPRADOR:
         return stmt.where(Solicitud.comprador_id == user.id)
-    # gerente (solo lectura)
-    stmt = stmt.where(Solicitud.estado != Estado.BORRADOR)
-    if user.alcance_gerente == AlcanceGerente.SUCURSAL:
-        stmt = stmt.where(Solicitud.sucursal_id == user.sucursal_id)
-    return stmt
+    # gerente
+    if user.sucursal_id is None:
+        return stmt.where(false())
+    return stmt.where(
+        Solicitud.estado != Estado.BORRADOR, Solicitud.sucursal_id == user.sucursal_id
+    )

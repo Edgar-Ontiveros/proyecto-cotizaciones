@@ -36,7 +36,7 @@ from app.core.database import engine, get_db  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.sucursal import Sucursal  # noqa: E402
-from app.models.usuario import AlcanceGerente, Rol, Usuario  # noqa: E402
+from app.models.usuario import Rol, Usuario  # noqa: E402
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -130,7 +130,6 @@ def make_user(db):
         activo: bool = True,
         must_change_password: bool = False,
         sucursal_id: int | None = None,
-        alcance_gerente: AlcanceGerente | None = None,
     ) -> Usuario:
         n = next(contador)
         user = Usuario(
@@ -141,7 +140,6 @@ def make_user(db):
             activo=activo,
             must_change_password=must_change_password,
             sucursal_id=sucursal_id,
-            alcance_gerente=alcance_gerente,
         )
         db.add(user)
         db.commit()

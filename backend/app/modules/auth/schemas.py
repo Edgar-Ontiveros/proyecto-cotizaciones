@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.usuario import AlcanceGerente, Rol
+from app.models.usuario import Rol
 
 
 class LoginRequest(BaseModel):
@@ -27,6 +27,5 @@ class UsuarioMe(BaseModel):
     email: str
     rol: Rol
     sucursal_id: int | None
-    alcance_gerente: AlcanceGerente | None
     activo: bool
     must_change_password: bool

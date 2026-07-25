@@ -100,11 +100,14 @@ def crear(db: Session, data: SolicitudCreate, vendedor: Usuario) -> Solicitud:
 
 
 def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario) -> Solicitud:
-    """Reemplaza generales y partidas completas. Solo vendedor dueño, en
-    BORRADOR/ENVIADA/EN_PROCESO; en ENVIADA/EN_PROCESO deja evento de==a."""
+    """Reemplaza generales y partidas completas. Lado ventas (vendedor dueño,
+    gerente de la sucursal o admin), en BORRADOR/ENVIADA/EN_PROCESO; en
+    ENVIADA/EN_PROCESO deja evento de==a."""
+    from app.modules.solicitudes.state_machine import autoriza_ventas
+
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
-    if user.rol != Rol.VENDEDOR or solicitud.vendedor_id != user.id:
-        raise AppError(403, "Solo el vendedor dueño puede editar", "forbidden")
+    if not autoriza_ventas(user, solicitud):
+        raise AppError(403, "Solo el lado ventas puede editar la solicitud", "forbidden")
     if solicitud.estado not in ESTADOS_EDITABLES:
         raise AppError(
             409,
@@ -133,13 +136,18 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
     _reemplazar_partidas(db, solicitud, data.partidas)
     if solicitud.estado in (Estado.ENVIADA, Estado.EN_PROCESO):
         # TODO(F7): notificar al comprador asignado de la edición.
+        comentario = (
+            "Solicitud editada por el vendedor"
+            if user.rol == Rol.VENDEDOR
+            else f"Solicitud editada por {user.rol.value}"
+        )
         db.add(
             HistorialEstado(
                 solicitud_id=solicitud.id,
                 de=solicitud.estado,
                 a=solicitud.estado,
                 usuario_id=user.id,
-                comentario="Solicitud editada por el vendedor",
+                comentario=comentario,
             )
         )
     db.commit()

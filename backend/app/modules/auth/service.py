@@ -35,15 +35,28 @@ def issue_refresh_token(db: Session, user_id: int) -> str:
 def rotate_refresh_token(db: Session, raw_token: str) -> tuple[str, str]:
     """Valida y rota el refresh: revoca el usado y emite (access, refresh) nuevos.
 
-    Un refresh reusado (ya revocado) se rechaza.
+    Endurecida (F5): la fila se lee con FOR UPDATE — dos refresh simultáneos
+    con el mismo token producen exactamente un ganador. Un refresh YA revocado
+    es señal de reuso/robo: se revocan EN CASCADA todos los refresh del
+    usuario y se responde 401.
     """
     try:
         payload = decode_token(raw_token, expected_type="refresh")
     except jwt.InvalidTokenError:
         raise AppError(401, "Refresh token inválido o expirado", "invalid_refresh") from None
 
-    row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw_token)))
-    if row is None or row.revocado_en is not None:
+    row = db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == hash_token(raw_token))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if row is None:
+        raise AppError(401, "Refresh token inválido o revocado", "invalid_refresh")
+    if row.revocado_en is not None:
+        # TODO(F7): notificar a administración el posible robo de sesión.
+        revoke_all_user_tokens(db, row.usuario_id)
+        db.commit()
         raise AppError(401, "Refresh token inválido o revocado", "invalid_refresh")
 
     user = db.get(Usuario, int(payload["sub"]))

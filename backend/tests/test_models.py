@@ -1,11 +1,19 @@
 import pytest
-from sqlalchemy import inspect, text
+from alembic.config import Config
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from alembic import command
 from app.core.database import engine
 from app.models.sucursal import CompradorSucursal
 from app.models.usuario import Rol
-from tests.conftest import _url, alembic_upgrade_head, drop_database, recreate_database
+from tests.conftest import (
+    BACKEND_DIR,
+    _url,
+    alembic_upgrade_head,
+    drop_database,
+    recreate_database,
+)
 
 TABLAS_ESPERADAS = {
     "usuarios",
@@ -38,6 +46,41 @@ def test_alembic_upgrade_en_bd_limpia():
         try:
             tablas = set(inspect(migra_engine).get_table_names())
             assert tablas >= TABLAS_ESPERADAS
+        finally:
+            migra_engine.dispose()
+    finally:
+        drop_database(db_name)
+
+
+def test_migracion_roles_f5_up_down_limpia():
+    """F5: upgrade elimina usuarios.alcance_gerente y deja el precio en
+    Numeric(14,4); downgrade restaura la columna y su enum sin residuos."""
+    db_name = f"{_url.database}_migradown"
+    recreate_database(db_name)
+    try:
+        cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+        cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+        cfg.set_main_option(
+            "sqlalchemy.url", _url.set(database=db_name).render_as_string(hide_password=False)
+        )
+        command.upgrade(cfg, "head")
+        migra_engine = create_engine(_url.set(database=db_name))
+        try:
+
+            def columnas(tabla: str) -> dict:
+                return {c["name"]: c for c in inspect(migra_engine).get_columns(tabla)}
+
+            assert "alcance_gerente" not in columnas("usuarios")
+            precio = columnas("opcion_partidas")["precio_unitario"]["type"]
+            assert (precio.precision, precio.scale) == (14, 4)
+
+            command.downgrade(cfg, "-1")
+            assert "alcance_gerente" in columnas("usuarios")
+            precio = columnas("opcion_partidas")["precio_unitario"]["type"]
+            assert (precio.precision, precio.scale) == (14, 2)
+
+            command.upgrade(cfg, "head")
+            assert "alcance_gerente" not in columnas("usuarios")
         finally:
             migra_engine.dispose()
     finally:

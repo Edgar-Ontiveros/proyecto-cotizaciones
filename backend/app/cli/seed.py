@@ -23,7 +23,7 @@ from app.models.solicitud import (
     SolicitudPartida,
 )
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
-from app.models.usuario import AlcanceGerente, Rol, Usuario
+from app.models.usuario import Rol, Usuario
 
 PASSWORD_DEFAULT = "Herinox2026!"
 
@@ -53,7 +53,7 @@ COMPRADORES = [
     ("Fabián Flores", ["Monterrey"]),
 ]
 
-# gerente (alcance sucursal) → su sucursal.
+# gerente → su sucursal (siempre de sucursal desde F5).
 GERENTES = [
     ("Oscar Loya", "Matriz"),
     ("Eugenio Barreras", "Hermosillo"),
@@ -448,7 +448,6 @@ def _get_or_create_usuario(
     rol: Rol,
     password_hash: str,
     sucursal_id: int | None = None,
-    alcance_gerente: AlcanceGerente | None = None,
 ) -> Usuario:
     user = db.scalar(select(Usuario).where(Usuario.email == email))
     if user is None:
@@ -458,7 +457,6 @@ def _get_or_create_usuario(
             password_hash=password_hash,
             rol=rol,
             sucursal_id=sucursal_id,
-            alcance_gerente=alcance_gerente,
             must_change_password=True,
         )
         db.add(user)
@@ -510,7 +508,6 @@ def run(db: Session) -> dict[str, int]:
             Rol.GERENTE,
             password_hash,
             sucursal_id=sucursales[nombre_sucursal].id,
-            alcance_gerente=AlcanceGerente.SUCURSAL,
         )
 
     for nombre_sucursal, nombres in VENDEDORES.items():

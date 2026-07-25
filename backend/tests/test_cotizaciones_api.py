@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.models.sucursal import CompradorSucursal
-from app.models.usuario import AlcanceGerente, Rol
+from app.models.usuario import Rol
 
 BASE = "/api/v1/solicitudes"
 
@@ -40,7 +40,7 @@ def entorno(db, make_user, make_sucursal):
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
         comprador=comprador,
         otro_comprador=make_user(Rol.COMPRADOR),
-        gerente=make_user(Rol.GERENTE, alcance_gerente=AlcanceGerente.GLOBAL),
+        gerente=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
         admin=make_user(Rol.ADMIN),
     )
 

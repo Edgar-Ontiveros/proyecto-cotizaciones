@@ -1,6 +1,10 @@
-"""Matriz de estados EXHAUSTIVA: todas las combinaciones (origen, destino,
-actor). Válidas ejecutan y escriben historial; inválidas → 409 con el estado
-real; actor equivocado → 403."""
+"""Matriz de estados EXHAUSTIVA con el modelo de permisos final (F5): todas
+las combinaciones (origen, destino, actor). Válidas ejecutan y escriben
+historial con el EJECUTOR REAL; inválidas → 409 con el estado real; actor no
+autorizado → 403.
+
+Lados: VENTAS = vendedor dueño | gerente de LA sucursal | admin;
+COMPRAS = comprador asignado | admin; ADMINISTRACION = solo admin."""
 
 from types import SimpleNamespace
 
@@ -12,31 +16,32 @@ from app.models.catalogos import FamiliaMotivo, MotivoRechazo
 from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Prioridad, Solicitud
 from app.models.sucursal import CompradorSucursal
-from app.models.usuario import AlcanceGerente, Rol
-from app.modules.solicitudes.state_machine import MATRIZ, Actor, ejecutar_transicion
+from app.models.usuario import Rol
+from app.modules.solicitudes.state_machine import MATRIZ, Lado, ejecutar_transicion
 
-# Copia escrita A MANO de la especificación §3 — si MATRIZ del módulo se
-# desvía, este test truena.
+# Copia escrita A MANO de la especificación §3 + modelo de permisos F5 — si
+# MATRIZ del módulo se desvía, este test truena.
 MATRIZ_ESPERADA = {
-    (Estado.BORRADOR, Estado.ENVIADA): Actor.VENDEDOR_DUENO,
-    (Estado.RECHAZADA, Estado.ENVIADA): Actor.VENDEDOR_DUENO,
-    (Estado.ENVIADA, Estado.EN_PROCESO): Actor.COMPRADOR_ASIGNADO,
-    (Estado.ENVIADA, Estado.RECHAZADA): Actor.COMPRADOR_ASIGNADO,
-    (Estado.EN_PROCESO, Estado.RECHAZADA): Actor.COMPRADOR_ASIGNADO,
-    (Estado.EN_PROCESO, Estado.COTIZADA): Actor.COMPRADOR_ASIGNADO,
-    (Estado.COTIZADA, Estado.CONFIRMADA): Actor.VENDEDOR_DUENO,
-    (Estado.COTIZADA, Estado.NO_CONFIRMADA): Actor.VENDEDOR_DUENO,
-    (Estado.NO_CONFIRMADA, Estado.COTIZADA): Actor.ADMIN,
-    (Estado.BORRADOR, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
-    (Estado.ENVIADA, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
-    (Estado.EN_PROCESO, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
-    (Estado.RECHAZADA, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
+    (Estado.BORRADOR, Estado.ENVIADA): Lado.VENTAS,
+    (Estado.RECHAZADA, Estado.ENVIADA): Lado.VENTAS,
+    (Estado.ENVIADA, Estado.EN_PROCESO): Lado.COMPRAS,
+    (Estado.ENVIADA, Estado.RECHAZADA): Lado.COMPRAS,
+    (Estado.EN_PROCESO, Estado.RECHAZADA): Lado.COMPRAS,
+    (Estado.EN_PROCESO, Estado.COTIZADA): Lado.COMPRAS,
+    (Estado.COTIZADA, Estado.CONFIRMADA): Lado.VENTAS,
+    (Estado.COTIZADA, Estado.NO_CONFIRMADA): Lado.VENTAS,
+    (Estado.NO_CONFIRMADA, Estado.COTIZADA): Lado.ADMINISTRACION,
+    (Estado.BORRADOR, Estado.CANCELADA): Lado.VENTAS,
+    (Estado.ENVIADA, Estado.CANCELADA): Lado.VENTAS,
+    (Estado.EN_PROCESO, Estado.CANCELADA): Lado.VENTAS,
+    (Estado.RECHAZADA, Estado.CANCELADA): Lado.VENTAS,
 }
 
-ACTOR_CORRECTO = {
-    Actor.VENDEDOR_DUENO: "vendedor_dueno",
-    Actor.COMPRADOR_ASIGNADO: "comprador_asignado",
-    Actor.ADMIN: "admin",
+# Quién está autorizado por lado (modelo F5). El admin ejecuta TODO.
+AUTORIZADOS = {
+    Lado.VENTAS: {"vendedor_dueno", "gerente_sucursal", "admin"},
+    Lado.COMPRAS: {"comprador_asignado", "admin"},
+    Lado.ADMINISTRACION: {"admin"},
 }
 
 ACTORES = [
@@ -44,7 +49,8 @@ ACTORES = [
     "otro_vendedor",
     "comprador_asignado",
     "otro_comprador",
-    "gerente_global",
+    "gerente_sucursal",
+    "gerente_otra_sucursal",
     "admin",
 ]
 
@@ -56,6 +62,7 @@ def test_matriz_es_exactamente_la_especificada():
 @pytest.fixture
 def entorno(db, make_user, make_sucursal):
     sucursal = make_sucursal()
+    otra_sucursal = make_sucursal()
     comprador = make_user(Rol.COMPRADOR)
     db.add(CompradorSucursal(comprador_id=comprador.id, sucursal_id=sucursal.id, titular=True))
     motivo = MotivoRechazo(familia=FamiliaMotivo.NO_PROCEDE, texto="Motivo de prueba")
@@ -67,7 +74,8 @@ def entorno(db, make_user, make_sucursal):
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
         comprador_asignado=comprador,
         otro_comprador=make_user(Rol.COMPRADOR),
-        gerente_global=make_user(Rol.GERENTE, alcance_gerente=AlcanceGerente.GLOBAL),
+        gerente_sucursal=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
+        gerente_otra_sucursal=make_user(Rol.GERENTE, sucursal_id=otra_sucursal.id),
         admin=make_user(Rol.ADMIN),
         motivo=motivo,
     )
@@ -99,8 +107,8 @@ def test_matriz_exhaustiva(db, entorno, de: Estado, a: Estado, actor_key: str):
     usuario = getattr(entorno, actor_key)
     motivo_id = entorno.motivo.id if a == Estado.RECHAZADA else None
 
-    regla = MATRIZ_ESPERADA.get((de, a))
-    if regla is None:
+    lado = MATRIZ_ESPERADA.get((de, a))
+    if lado is None:
         with pytest.raises(AppError) as exc:
             ejecutar_transicion(db, solicitud.id, a, usuario, motivo_id=motivo_id)
         assert exc.value.status_code == 409
@@ -108,7 +116,7 @@ def test_matriz_exhaustiva(db, entorno, de: Estado, a: Estado, actor_key: str):
         assert de.value in exc.value.detail  # el estado real viaja en detail
         return
 
-    if actor_key != ACTOR_CORRECTO[regla]:
+    if actor_key not in AUTORIZADOS[lado]:
         with pytest.raises(AppError) as exc:
             ejecutar_transicion(db, solicitud.id, a, usuario, motivo_id=motivo_id)
         assert exc.value.status_code == 403
@@ -123,6 +131,9 @@ def test_matriz_exhaustiva(db, entorno, de: Estado, a: Estado, actor_key: str):
         .order_by(HistorialEstado.id.desc())
     ).first()
     assert evento is not None and (evento.de, evento.a) == (de, a)
+    # El historial registra SIEMPRE al ejecutor real (F5): gerente o admin
+    # actuando por el lado ventas quedan registrados como ellos mismos.
+    assert evento.usuario_id == usuario.id
     if a == Estado.ENVIADA:
         assert resultado.comprador_id == entorno.comprador_asignado.id
         if de == Estado.BORRADOR:
@@ -131,6 +142,23 @@ def test_matriz_exhaustiva(db, entorno, de: Estado, a: Estado, actor_key: str):
             assert resultado.folio == folio_original
     if a == Estado.RECHAZADA:
         assert evento.motivo_id == entorno.motivo.id
+
+
+def test_gerente_sin_sucursal_no_autoriza_ventas(db, entorno, make_user):
+    """Fail-closed (addendum g): un gerente con sucursal_id NULL por datos
+    viejos no ejecuta nada del lado ventas."""
+    from sqlalchemy import update
+
+    from app.models.usuario import Usuario
+
+    gerente = make_user(Rol.GERENTE, sucursal_id=entorno.sucursal.id)
+    db.execute(update(Usuario).where(Usuario.id == gerente.id).values(sucursal_id=None))
+    db.commit()
+    db.refresh(gerente)
+    solicitud = _solicitud_en(db, entorno, Estado.RECHAZADA)
+    with pytest.raises(AppError) as exc:
+        ejecutar_transicion(db, solicitud.id, Estado.ENVIADA, gerente)
+    assert (exc.value.status_code, exc.value.code) == (403, "transicion_no_permitida")
 
 
 def test_solicitud_inexistente_404(db, entorno):

@@ -18,8 +18,8 @@ Plataforma interna donde ~35 vendedores solicitan cotizaciones de pedido especia
 |---|---|---|---|
 | **Vendedor** | Vista Vendedor | Solo SUS solicitudes | Crear, editar (§4.3), enviar, reenviar rechazadas, seleccionar opción, marcar no confirmada, cancelar |
 | **Comprador** | Vista Comprador | Solo las asignadas a él | Tomar, capturar opciones, marcar cotizada, rechazar con motivo, corregir cotizadas |
-| **Administrador** (Gerencia de Compras administra el día a día — resp. 51) | Vista CRM/Admin | Todo | Todo + administración completa (§6) |
-| **Gerente** (solo consulta; existe un gerente por sucursal — plantilla real) | Vista CRM/Admin en **solo lectura** | `global` (directores, gte. compras) o `sucursal` (gerente de ventas de cada sucursal — resp. 45–46) | Dashboards, tablas, export. No administra ni cambia estados |
+| **Administrador** (Gerencia de Compras administra el día a día — resp. 51; también los directores) | Vista CRM/Admin | Todo | Todo: CUALQUIER transición o edición sobre cualquier solicitud + administración completa (§6) |
+| **Gerente** (siempre de SU sucursal — gerente de ventas, resp. 45–46; el alcance "global" desapareció en F5: los directores se dan de alta como admin) | Vista CRM/Admin acotada a su sucursal | Su sucursal, sin BORRADOR ajenos | Acciones de LADO VENTAS sobre solicitudes de su sucursal: reenviar, cancelar, editar (PATCH), seleccionar/confirmar, no-confirmar y comentar. NO toma/captura/cotiza/rechaza (compras) ni administra. No ve el campo proveedor |
 
 **Cuentas: SOLO el rol admin crea, edita, activa y desactiva usuarios de TODOS los niveles — vendedores, compradores, gerentes y otros administradores** (requerimiento de Edgar; alta rotación en ventas y compras). Sin registro público. Un admin no puede desactivarse a sí mismo.
 
@@ -122,7 +122,7 @@ Sin tiempos máximos (resp. 28) pero con evaluación (resp. 49) y alerta al 3er 
 
 ## 5. Modelo de datos final
 
-- **usuarios** — nombre, email único (CI), hash, rol (`vendedor|comprador|admin|gerente`), `sucursal_id` (vendedor y gerente-sucursal), `alcance_gerente` (`global|sucursal`), activo, must_change_password.
+- **usuarios** — nombre, email único (CI), hash, rol (`vendedor|comprador|admin|gerente`), `sucursal_id` (obligatoria para vendedor y gerente — el gerente es siempre de sucursal desde F5), activo, must_change_password.
 - **sucursales** — nombre, `prefijo_folio` único editable, `contador` editable vía folio_counters, `timezone` IANA, activa.
 - **comprador_sucursal** — comprador, sucursal, `titular` (índice único parcial: un titular por sucursal).
 - **clientes** — nombre_normalizado único, creado_por, creado_en.
@@ -142,7 +142,7 @@ Estructurales v1.1 intactas: historial como eventos, bandas siempre calculadas, 
 
 **Comprador** — Su cola (solo la suya — resp. 44): urgentes primero, luego antigüedad de ciclo, semáforo visible. Captura por opción (A–E): precio y tiempo de entrega por partida, moneda y vigencia por opción, totales automáticos, guardar parcial, "marcar completa", rechazar con motivo. Panel personal: su mediana, su % esperada, su distribución (los números con los que lo evalúan — resp. 49).
 
-**CRM / Admin** (admin con gestión; gerentes solo lectura con su alcance) —
+**CRM / Admin** (admin con gestión; gerentes acotados a su sucursal, con las acciones de lado ventas de §2) —
 - *Dashboard:* solicitudes del periodo, % banda esperada, mediana, distribución, rojas AHORA, carga abierta por comprador, embudo por estado, **dinero cotizado (ref.) y confirmado por moneda**, conversión COTIZADA→CONFIRMADA, comparativos por sucursal/comprador/vendedor/**cliente** (resp. 47), clientes que cotizan mucho y confirman poco, materiales frecuentes (resp. 57).
 - *Tabla global:* filtros sucursal, comprador, vendedor, cliente, fecha, estado, prioridad, moneda, banda; **export a Excel** de lo filtrado (columnas: pendiente resp. 48; default todas las visibles).
 - *Administración:* usuarios (**alta/baja/edición de vendedores, compradores, gerentes y admins — solo admin**), sucursales (alta/baja, prefijo de folio, contador, zona horaria), territorios y titularidad, reasignación individual/masiva (por comprador o vendedor), motivos de rechazo, festivos, revocar sesiones.

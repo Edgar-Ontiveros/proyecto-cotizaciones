@@ -9,10 +9,12 @@ from app.models.solicitud import MotivoNoConfirmada
 
 class RenglonIn(BaseModel):
     """Renglón de captura por partida. Campos opcionales: la captura puede ser
-    parcial; la obligatoriedad se exige al cotizar."""
+    parcial; la obligatoriedad se exige al cotizar. El precio admite hasta 4
+    decimales (los precios reales traen 3–4) — así el valor almacenado es
+    exactamente el capturado y el importe siempre cuadra."""
 
     partida_id: int
-    precio_unitario: Decimal | None = Field(default=None, gt=0)
+    precio_unitario: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
     tiempo_entrega: str | None = None
 
 

@@ -25,7 +25,11 @@ from app.modules.cotizaciones.schemas import (
     RenglonOut,
 )
 from app.modules.solicitudes.service import obtener_scoped
-from app.modules.solicitudes.state_machine import ejecutar_transicion
+from app.modules.solicitudes.state_machine import (
+    autoriza_compras,
+    autoriza_ventas,
+    ejecutar_transicion,
+)
 
 _CENTAVOS = Decimal("0.01")
 COMENTARIO_CORRECCION = "Cotización corregida por el comprador"
@@ -146,15 +150,17 @@ def opciones_comprador_de(db: Session, solicitud_id: int) -> list[OpcionComprado
 
 
 def guardar_opcion(
-    db: Session, solicitud_id: int, letra: Letra, data: OpcionIn, comprador: Usuario
+    db: Session, solicitud_id: int, letra: Letra, data: OpcionIn, user: Usuario
 ) -> OpcionCompradorOut:
-    """Reemplaza la opción completa. Guardado parcial permitido en EN_PROCESO;
-    sobre ENVIADA ejecuta primero la auto-toma (resp. 18: "empieza a
-    capturar"); sobre COTIZADA es corrección (resp. 21) y la opción no puede
-    quedar incompleta."""
-    solicitud = obtener_scoped(db, solicitud_id, comprador, for_update=True)
+    """Reemplaza la opción completa (lado compras: comprador asignado o admin).
+    Guardado parcial permitido en EN_PROCESO; sobre ENVIADA ejecuta primero la
+    auto-toma (resp. 18: "empieza a capturar"); sobre COTIZADA es corrección
+    (resp. 21) y la opción no puede quedar incompleta."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if not autoriza_compras(user, solicitud):
+        raise AppError(403, "Solo el lado compras captura opciones", "forbidden")
     if solicitud.estado == Estado.ENVIADA:
-        solicitud = ejecutar_transicion(db, solicitud.id, Estado.EN_PROCESO, comprador)
+        solicitud = ejecutar_transicion(db, solicitud.id, Estado.EN_PROCESO, user)
     if solicitud.estado not in (Estado.EN_PROCESO, Estado.COTIZADA):
         raise AppError(
             409,
@@ -237,7 +243,7 @@ def guardar_opcion(
                 solicitud_id=solicitud.id,
                 de=Estado.COTIZADA,
                 a=Estado.COTIZADA,
-                usuario_id=comprador.id,
+                usuario_id=user.id,
                 comentario=COMENTARIO_CORRECCION,
             )
         )
@@ -247,10 +253,12 @@ def guardar_opcion(
     return OpcionCompradorOut(**_datos_opcion(db, opcion), proveedor=opcion.proveedor)
 
 
-def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, comprador: Usuario) -> None:
-    """Elimina la opción y sus renglones. En COTIZADA es corrección: no puede
-    eliminarse la única opción."""
-    solicitud = obtener_scoped(db, solicitud_id, comprador, for_update=True)
+def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> None:
+    """Elimina la opción y sus renglones (lado compras). En COTIZADA es
+    corrección: no puede eliminarse la única opción."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if not autoriza_compras(user, solicitud):
+        raise AppError(403, "Solo el lado compras captura opciones", "forbidden")
     if solicitud.estado not in (Estado.EN_PROCESO, Estado.COTIZADA):
         raise AppError(
             409,
@@ -276,7 +284,7 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, comprador: Usu
                 solicitud_id=solicitud.id,
                 de=Estado.COTIZADA,
                 a=Estado.COTIZADA,
-                usuario_id=comprador.id,
+                usuario_id=user.id,
                 comentario=COMENTARIO_CORRECCION,
             )
         )
@@ -285,10 +293,13 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, comprador: Usu
     db.commit()
 
 
-def cotizar(db: Session, solicitud_id: int, comprador: Usuario) -> Solicitud:
-    """Marca la captura completa: valida TODA opción capturada contra TODAS las
-    partidas y ejecuta EN_PROCESO→COTIZADA (una sola transacción)."""
-    solicitud = obtener_scoped(db, solicitud_id, comprador, for_update=True)
+def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
+    """Marca la captura completa (lado compras): valida TODA opción capturada
+    contra TODAS las partidas y ejecuta EN_PROCESO→COTIZADA (una sola
+    transacción)."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if not autoriza_compras(user, solicitud):
+        raise AppError(403, "Solo el lado compras cotiza", "forbidden")
     if solicitud.estado != Estado.EN_PROCESO:
         raise AppError(
             409,
@@ -315,12 +326,15 @@ def cotizar(db: Session, solicitud_id: int, comprador: Usuario) -> Solicitud:
     for opcion in opciones:
         opcion.completa = True
     # TODO(F7): notificar al vendedor de la cotización.
-    return ejecutar_transicion(db, solicitud.id, Estado.COTIZADA, comprador)
+    return ejecutar_transicion(db, solicitud.id, Estado.COTIZADA, user)
 
 
-def seleccionar(db: Session, solicitud_id: int, letra: Letra, vendedor: Usuario) -> Solicitud:
-    """COTIZADA→CONFIRMADA: fija opción ganadora y monto oficial (§4.9)."""
-    solicitud = obtener_scoped(db, solicitud_id, vendedor, for_update=True)
+def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> Solicitud:
+    """COTIZADA→CONFIRMADA (lado ventas: vendedor dueño, gerente de la
+    sucursal o admin): fija opción ganadora y monto oficial (§4.9)."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if not autoriza_ventas(user, solicitud):
+        raise AppError(403, "Solo el lado ventas selecciona la opción", "forbidden")
     if solicitud.estado != Estado.COTIZADA:
         raise AppError(
             409,
@@ -337,7 +351,7 @@ def seleccionar(db: Session, solicitud_id: int, letra: Letra, vendedor: Usuario)
     solicitud.opcion_seleccionada_id = opcion.id
     solicitud.monto_confirmado = opcion.total
     solicitud.moneda_confirmada = opcion.moneda
-    return ejecutar_transicion(db, solicitud.id, Estado.CONFIRMADA, vendedor)
+    return ejecutar_transicion(db, solicitud.id, Estado.CONFIRMADA, user)
 
 
 def no_confirmar(
@@ -345,10 +359,12 @@ def no_confirmar(
     solicitud_id: int,
     motivo: MotivoNoConfirmada,
     comentario: str | None,
-    vendedor: Usuario,
+    user: Usuario,
 ) -> Solicitud:
-    """COTIZADA→NO_CONFIRMADA con motivo del catálogo fijo (§3)."""
-    solicitud = obtener_scoped(db, solicitud_id, vendedor, for_update=True)
+    """COTIZADA→NO_CONFIRMADA (lado ventas) con motivo del catálogo fijo (§3)."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if not autoriza_ventas(user, solicitud):
+        raise AppError(403, "Solo el lado ventas marca no confirmada", "forbidden")
     if solicitud.estado != Estado.COTIZADA:
         raise AppError(
             409,
@@ -357,9 +373,7 @@ def no_confirmar(
             "estado_conflicto",
         )
     solicitud.motivo_no_confirmada = motivo.value
-    return ejecutar_transicion(
-        db, solicitud.id, Estado.NO_CONFIRMADA, vendedor, comentario=comentario
-    )
+    return ejecutar_transicion(db, solicitud.id, Estado.NO_CONFIRMADA, user, comentario=comentario)
 
 
 def revertir_no_confirmada(db: Session, solicitud_id: int, admin: Usuario) -> Solicitud:

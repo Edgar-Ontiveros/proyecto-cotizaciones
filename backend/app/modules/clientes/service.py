@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -13,15 +14,23 @@ def normalizar(nombre: str) -> str:
 
 
 def obtener_o_crear(db: Session, nombre: str, usuario: Usuario) -> Cliente:
-    """Alta al vuelo contra el catálogo interno (sin SAP, §4.4)."""
+    """Alta al vuelo contra el catálogo interno (sin SAP, §4.4).
+
+    Race-safe: dos vendedores creando el mismo cliente a la vez no producen
+    IntegrityError — INSERT ... ON CONFLICT DO NOTHING + re-select (mismo
+    patrón que folios)."""
     normalizado = normalizar(nombre)
     if not normalizado:
         raise AppError(422, "El nombre del cliente no puede estar vacío", "cliente_invalido")
-    cliente = db.scalar(select(Cliente).where(Cliente.nombre_normalizado == normalizado))
+    stmt = select(Cliente).where(Cliente.nombre_normalizado == normalizado)
+    cliente = db.scalar(stmt)
     if cliente is None:
-        cliente = Cliente(nombre_normalizado=normalizado, creado_por=usuario.id)
-        db.add(cliente)
-        db.flush()
+        db.execute(
+            pg_insert(Cliente)
+            .values(nombre_normalizado=normalizado, creado_por=usuario.id)
+            .on_conflict_do_nothing()
+        )
+        cliente = db.execute(stmt).scalar_one()
     return cliente
 
 

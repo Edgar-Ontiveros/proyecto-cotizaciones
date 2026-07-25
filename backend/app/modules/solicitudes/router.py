@@ -21,8 +21,10 @@ from app.modules.solicitudes.state_machine import ejecutar_transicion
 
 router = APIRouter(prefix="/solicitudes", tags=["solicitudes"])
 
+# Solo la CREACIÓN exige rol vendedor (la solicitud nace en su sucursal).
+# Las demás acciones delegan a la autorización por lado (F5): la máquina de
+# estados decide con (usuario, solicitud, transición).
 vendedor_required = require_roles(Rol.VENDEDOR)
-comprador_required = require_roles(Rol.COMPRADOR)
 
 _a_out = service.a_out
 
@@ -112,7 +114,7 @@ def editar_solicitud(
 @router.post("/{solicitud_id}/enviar", response_model=SolicitudOut)
 def enviar_solicitud(
     solicitud_id: int,
-    user: Usuario = Depends(vendedor_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     solicitud = service.obtener_scoped(db, solicitud_id, user)
@@ -123,7 +125,7 @@ def enviar_solicitud(
 @router.post("/{solicitud_id}/tomar", response_model=SolicitudOut)
 def tomar_solicitud(
     solicitud_id: int,
-    user: Usuario = Depends(comprador_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service.obtener_scoped(db, solicitud_id, user)
@@ -134,7 +136,7 @@ def tomar_solicitud(
 def rechazar_solicitud(
     solicitud_id: int,
     body: RechazarIn,
-    user: Usuario = Depends(comprador_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service.obtener_scoped(db, solicitud_id, user)
@@ -154,7 +156,7 @@ def rechazar_solicitud(
 @router.post("/{solicitud_id}/cancelar", response_model=SolicitudOut)
 def cancelar_solicitud(
     solicitud_id: int,
-    user: Usuario = Depends(vendedor_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service.obtener_scoped(db, solicitud_id, user)

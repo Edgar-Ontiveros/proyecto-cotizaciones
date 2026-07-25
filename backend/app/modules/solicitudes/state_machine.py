@@ -25,36 +25,64 @@ from app.models.usuario import Rol, Usuario
 from app.modules.solicitudes.folios import siguiente_folio
 
 
-class Actor(StrEnum):
-    VENDEDOR_DUENO = "vendedor_dueno"
-    COMPRADOR_ASIGNADO = "comprador_asignado"
-    ADMIN = "admin"
+class Lado(StrEnum):
+    """Quién dispara cada transición (modelo de permisos final, F5):
+
+    - VENTAS: vendedor DUEÑO, gerente de LA SUCURSAL de la solicitud, o admin.
+    - COMPRAS: comprador ASIGNADO, o admin.
+    - ADMINISTRACION: solo admin (reversión de NO_CONFIRMADA).
+
+    El admin puede ejecutar CUALQUIER transición de la matriz."""
+
+    VENTAS = "ventas"
+    COMPRAS = "compras"
+    ADMINISTRACION = "administracion"
 
 
-# (de, a) → quién puede dispararla. Lo que no está aquí, no existe.
-MATRIZ: dict[tuple[Estado, Estado], Actor] = {
-    (Estado.BORRADOR, Estado.ENVIADA): Actor.VENDEDOR_DUENO,
-    (Estado.RECHAZADA, Estado.ENVIADA): Actor.VENDEDOR_DUENO,  # reenvío
-    (Estado.ENVIADA, Estado.EN_PROCESO): Actor.COMPRADOR_ASIGNADO,
-    (Estado.ENVIADA, Estado.RECHAZADA): Actor.COMPRADOR_ASIGNADO,
-    (Estado.EN_PROCESO, Estado.RECHAZADA): Actor.COMPRADOR_ASIGNADO,
-    # "Sistema" al marcar captura completa (F4): la dispara el comprador asignado.
-    (Estado.EN_PROCESO, Estado.COTIZADA): Actor.COMPRADOR_ASIGNADO,
-    (Estado.COTIZADA, Estado.CONFIRMADA): Actor.VENDEDOR_DUENO,  # F4
-    (Estado.COTIZADA, Estado.NO_CONFIRMADA): Actor.VENDEDOR_DUENO,  # F4
-    (Estado.NO_CONFIRMADA, Estado.COTIZADA): Actor.ADMIN,  # F4 (reversión)
-    (Estado.BORRADOR, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
-    (Estado.ENVIADA, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
-    (Estado.EN_PROCESO, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
-    (Estado.RECHAZADA, Estado.CANCELADA): Actor.VENDEDOR_DUENO,
+# (de, a) → lado que puede dispararla. Lo que no está aquí, no existe.
+MATRIZ: dict[tuple[Estado, Estado], Lado] = {
+    (Estado.BORRADOR, Estado.ENVIADA): Lado.VENTAS,
+    (Estado.RECHAZADA, Estado.ENVIADA): Lado.VENTAS,  # reenvío
+    (Estado.ENVIADA, Estado.EN_PROCESO): Lado.COMPRAS,
+    (Estado.ENVIADA, Estado.RECHAZADA): Lado.COMPRAS,
+    (Estado.EN_PROCESO, Estado.RECHAZADA): Lado.COMPRAS,
+    # "Sistema" al marcar captura completa (F4): la dispara el lado compras.
+    (Estado.EN_PROCESO, Estado.COTIZADA): Lado.COMPRAS,
+    (Estado.COTIZADA, Estado.CONFIRMADA): Lado.VENTAS,
+    (Estado.COTIZADA, Estado.NO_CONFIRMADA): Lado.VENTAS,
+    (Estado.NO_CONFIRMADA, Estado.COTIZADA): Lado.ADMINISTRACION,  # reversión
+    (Estado.BORRADOR, Estado.CANCELADA): Lado.VENTAS,
+    (Estado.ENVIADA, Estado.CANCELADA): Lado.VENTAS,
+    (Estado.EN_PROCESO, Estado.CANCELADA): Lado.VENTAS,
+    (Estado.RECHAZADA, Estado.CANCELADA): Lado.VENTAS,
 }
 
 
-def _actor_valido(actor: Actor, solicitud: Solicitud, usuario: Usuario) -> bool:
-    if actor == Actor.VENDEDOR_DUENO:
-        return usuario.rol == Rol.VENDEDOR and solicitud.vendedor_id == usuario.id
-    if actor == Actor.COMPRADOR_ASIGNADO:
-        return usuario.rol == Rol.COMPRADOR and solicitud.comprador_id == usuario.id
+def autoriza_ventas(usuario: Usuario, solicitud: Solicitud) -> bool:
+    """Lado ventas: vendedor dueño, gerente de la sucursal (siempre de
+    sucursal desde F5; sin sucursal_id no autoriza — fail-closed) o admin.
+    También gobierna la edición (PATCH) y los comentarios de ese lado."""
+    if usuario.rol == Rol.ADMIN:
+        return True
+    if usuario.rol == Rol.VENDEDOR:
+        return solicitud.vendedor_id == usuario.id
+    if usuario.rol == Rol.GERENTE:
+        return usuario.sucursal_id is not None and usuario.sucursal_id == solicitud.sucursal_id
+    return False
+
+
+def autoriza_compras(usuario: Usuario, solicitud: Solicitud) -> bool:
+    """Lado compras: comprador asignado o admin. El gerente NUNCA captura."""
+    if usuario.rol == Rol.ADMIN:
+        return True
+    return usuario.rol == Rol.COMPRADOR and solicitud.comprador_id == usuario.id
+
+
+def _autorizado(lado: Lado, solicitud: Solicitud, usuario: Usuario) -> bool:
+    if lado == Lado.VENTAS:
+        return autoriza_ventas(usuario, solicitud)
+    if lado == Lado.COMPRAS:
+        return autoriza_compras(usuario, solicitud)
     return usuario.rol == Rol.ADMIN
 
 
@@ -120,14 +148,14 @@ def ejecutar_transicion(
         raise AppError(404, "Solicitud no encontrada", "solicitud_no_encontrada")
 
     de = solicitud.estado
-    actor = MATRIZ.get((de, a))
-    if actor is None:
+    lado = MATRIZ.get((de, a))
+    if lado is None:
         raise AppError(
             409,
             f"Transición no permitida: la solicitud está en estado {de.value}",
             "estado_conflicto",
         )
-    if not _actor_valido(actor, solicitud, usuario):
+    if not _autorizado(lado, solicitud, usuario):
         raise AppError(403, "No puedes ejecutar esta transición", "transicion_no_permitida")
 
     if a == Estado.ENVIADA:

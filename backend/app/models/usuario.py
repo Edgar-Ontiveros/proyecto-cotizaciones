@@ -13,12 +13,9 @@ class Rol(StrEnum):
     VENDEDOR = "vendedor"
     COMPRADOR = "comprador"
     ADMIN = "admin"
+    # Siempre de sucursal (F5): el alcance "global" desapareció — los
+    # directores se dan de alta como admin.
     GERENTE = "gerente"
-
-
-class AlcanceGerente(StrEnum):
-    GLOBAL = "global"
-    SUCURSAL = "sucursal"
 
 
 class Usuario(Base):
@@ -36,11 +33,8 @@ class Usuario(Base):
     rol: Mapped[Rol] = mapped_column(
         Enum(Rol, name="rol", values_callable=lambda e: [m.value for m in e])
     )
-    # Obligatoria (lógica de service, no DDL) para vendedor y gerente-sucursal.
+    # Obligatoria (lógica de service, no DDL) para vendedor y gerente.
     sucursal_id: Mapped[int | None] = mapped_column(ForeignKey("sucursales.id"))
-    alcance_gerente: Mapped[AlcanceGerente | None] = mapped_column(
-        Enum(AlcanceGerente, name="alcance_gerente", values_callable=lambda e: [m.value for m in e])
-    )
     activo: Mapped[bool] = mapped_column(server_default=true())
     must_change_password: Mapped[bool] = mapped_column(server_default=false())
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

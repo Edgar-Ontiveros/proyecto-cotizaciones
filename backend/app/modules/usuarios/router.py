@@ -6,6 +6,7 @@ from app.core.permissions import require_roles
 from app.models.usuario import Rol, Usuario
 from app.modules.usuarios import service
 from app.modules.usuarios.schemas import (
+    DesactivarIn,
     ResetPasswordOut,
     UsuarioCreadoOut,
     UsuarioCreate,
@@ -56,10 +57,10 @@ def crear_usuario(
 def actualizar_usuario(
     usuario_id: int,
     body: UsuarioUpdate,
-    _admin: Usuario = Depends(admin_required),
+    admin: Usuario = Depends(admin_required),
     db: Session = Depends(get_db),
 ):
-    return service.actualizar(db, usuario_id, body)
+    return service.actualizar(db, usuario_id, body, admin)
 
 
 @router.post("/{usuario_id}/reset-password", response_model=ResetPasswordOut)
@@ -74,10 +75,11 @@ def reset_password(
 @router.post("/{usuario_id}/desactivar", response_model=UsuarioOut)
 def desactivar_usuario(
     usuario_id: int,
+    body: DesactivarIn | None = None,
     admin: Usuario = Depends(admin_required),
     db: Session = Depends(get_db),
 ):
-    return service.desactivar(db, usuario_id, admin)
+    return service.desactivar(db, usuario_id, admin, body)
 
 
 @router.post("/{usuario_id}/activar", response_model=UsuarioOut)

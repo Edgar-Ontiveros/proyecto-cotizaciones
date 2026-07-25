@@ -4,7 +4,7 @@ import pytest
 
 from app.models.catalogos import FamiliaMotivo, MotivoRechazo
 from app.models.sucursal import CompradorSucursal
-from app.models.usuario import AlcanceGerente, Rol
+from app.models.usuario import Rol
 
 BASE = "/api/v1/solicitudes"
 
@@ -28,10 +28,8 @@ def entorno(client, db, make_user, make_sucursal, auth_headers):
         vendedor=vendedor,
         comprador=comprador,
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
-        gerente_suc=make_user(
-            Rol.GERENTE, alcance_gerente=AlcanceGerente.SUCURSAL, sucursal_id=sucursal.id
-        ),
-        gerente_global=make_user(Rol.GERENTE, alcance_gerente=AlcanceGerente.GLOBAL),
+        gerente_suc=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
+        gerente_otra=make_user(Rol.GERENTE, sucursal_id=make_sucursal().id),
         admin=make_user(Rol.ADMIN),
     )
 
@@ -41,9 +39,12 @@ def _comentar(client, headers, sid, texto="hola"):
 
 
 def test_involucrados_comentan(client, entorno, auth_headers):
+    """F5: comentan ambos lados — vendedor dueño, gerente de la sucursal,
+    comprador asignado y admin."""
     for usuario, texto in [
         (entorno.vendedor, "comentario del vendedor"),
         (entorno.comprador, "comentario del comprador"),
+        (entorno.gerente_suc, "comentario del gerente"),
         (entorno.admin, "comentario del admin"),
     ]:
         r = _comentar(client, auth_headers(usuario), entorno.sid, texto)
@@ -51,21 +52,19 @@ def test_involucrados_comentan(client, entorno, auth_headers):
         assert r.json()["texto"] == texto
         assert r.json()["usuario_nombre"] == usuario.nombre
 
-    # Embebidos en el detalle, en orden, y visibles para el gerente (lee).
-    detalle = client.get(
-        f"{BASE}/{entorno.sid}", headers=auth_headers(entorno.gerente_global)
-    ).json()
+    # Embebidos en el detalle, en orden.
+    detalle = client.get(f"{BASE}/{entorno.sid}", headers=auth_headers(entorno.gerente_suc)).json()
     assert [c["texto"] for c in detalle["comentarios"]] == [
         "comentario del vendedor",
         "comentario del comprador",
+        "comentario del gerente",
         "comentario del admin",
     ]
 
 
-def test_gerentes_no_comentan(client, entorno, auth_headers):
-    for gerente in (entorno.gerente_suc, entorno.gerente_global):
-        r = _comentar(client, auth_headers(gerente), entorno.sid)
-        assert r.status_code == 403
+def test_gerente_de_otra_sucursal_no_comenta(client, entorno, auth_headers):
+    r = _comentar(client, auth_headers(entorno.gerente_otra), entorno.sid)
+    assert r.status_code == 404  # ni siquiera la ve (scoping por sucursal)
 
 
 def test_vendedor_ajeno_404(client, entorno, auth_headers):

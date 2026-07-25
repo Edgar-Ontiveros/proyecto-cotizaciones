@@ -6,7 +6,7 @@ from sqlalchemy import update
 from app.models.catalogos import FamiliaMotivo, MotivoRechazo
 from app.models.solicitud import Estado, Solicitud
 from app.models.sucursal import CompradorSucursal
-from app.models.usuario import AlcanceGerente, Rol, Usuario
+from app.models.usuario import Rol, Usuario
 
 BASE = "/api/v1/solicitudes"
 
@@ -42,10 +42,8 @@ def entorno(db, make_user, make_sucursal):
         vend_b=make_user(Rol.VENDEDOR, sucursal_id=suc_b.id),
         comp_a=comp_a,
         comp_b=comp_b,
-        ger_suc_a=make_user(
-            Rol.GERENTE, alcance_gerente=AlcanceGerente.SUCURSAL, sucursal_id=suc_a.id
-        ),
-        ger_global=make_user(Rol.GERENTE, alcance_gerente=AlcanceGerente.GLOBAL),
+        ger_suc_a=make_user(Rol.GERENTE, sucursal_id=suc_a.id),
+        ger_suc_b=make_user(Rol.GERENTE, sucursal_id=suc_b.id),
         admin=make_user(Rol.ADMIN),
         motivo=motivo,
     )
@@ -98,7 +96,7 @@ def test_partidas_numeradas_por_backend(client, entorno, auth_headers):
 
 
 def test_crear_no_vendedor_403(client, entorno, auth_headers):
-    for usuario in (entorno.comp_a, entorno.ger_global, entorno.admin):
+    for usuario in (entorno.comp_a, entorno.ger_suc_a, entorno.admin):
         r = client.post(
             BASE, headers=auth_headers(usuario), json={"cliente": "X", "partidas": [PARTIDA]}
         )
@@ -272,7 +270,7 @@ def test_scoping_listado_y_detalle(client, db, entorno, auth_headers):
     assert ids_de(entorno.vend_a) == {borrador_a["id"], enviada_a["id"]}
     assert ids_de(entorno.comp_a) == {enviada_a["id"]}  # borrador invisible
     assert ids_de(entorno.ger_suc_a) == {enviada_a["id"]}  # solo su sucursal, sin borrador
-    assert ids_de(entorno.ger_global) == {enviada_a["id"], enviada_b["id"]}
+    assert ids_de(entorno.ger_suc_b) == {enviada_b["id"]}
     assert ids_de(entorno.admin) == {borrador_a["id"], enviada_a["id"], enviada_b["id"]}
 
     # Detalle: 404 para quien no la ve (no se filtra existencia).
@@ -284,10 +282,11 @@ def test_scoping_listado_y_detalle(client, db, entorno, auth_headers):
     assert r.status_code == 200
 
 
-def test_gerente_global_no_transiciona(client, entorno, auth_headers):
+def test_gerente_no_ejecuta_acciones_de_compras(client, entorno, auth_headers):
     enviada = _enviada(client, entorno, auth_headers)
-    r = client.post(f"{BASE}/{enviada['id']}/tomar", headers=auth_headers(entorno.ger_global))
-    assert r.status_code == 403  # require_roles(comprador)
+    r = client.post(f"{BASE}/{enviada['id']}/tomar", headers=auth_headers(entorno.ger_suc_a))
+    assert r.status_code == 403  # tomar es lado compras
+    assert r.json()["code"] == "transicion_no_permitida"
 
 
 def test_filtros_listado(client, entorno, auth_headers):

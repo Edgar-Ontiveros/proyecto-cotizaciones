@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import require_roles
+from app.core.permissions import get_current_user, require_roles
 from app.models.cotizacion import Letra
 from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones import service
@@ -17,8 +17,8 @@ from app.modules.solicitudes.schemas import SolicitudOut
 
 router = APIRouter(prefix="/solicitudes/{solicitud_id}", tags=["cotizaciones"])
 
-vendedor_required = require_roles(Rol.VENDEDOR)
-comprador_required = require_roles(Rol.COMPRADOR)
+# La autorización por lado (ventas/compras, F5) vive en los services y en la
+# máquina de estados; solo la reversión exige rol admin de entrada.
 admin_required = require_roles(Rol.ADMIN)
 
 
@@ -27,7 +27,7 @@ def guardar_opcion(
     solicitud_id: int,
     letra: Letra,
     body: OpcionIn,
-    user: Usuario = Depends(comprador_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return service.guardar_opcion(db, solicitud_id, letra, body, user)
@@ -37,7 +37,7 @@ def guardar_opcion(
 def eliminar_opcion(
     solicitud_id: int,
     letra: Letra,
-    user: Usuario = Depends(comprador_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     service.eliminar_opcion(db, solicitud_id, letra, user)
@@ -46,7 +46,7 @@ def eliminar_opcion(
 @router.post("/cotizar", response_model=SolicitudOut)
 def cotizar(
     solicitud_id: int,
-    user: Usuario = Depends(comprador_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(db, service.cotizar(db, solicitud_id, user))
@@ -56,7 +56,7 @@ def cotizar(
 def seleccionar_opcion(
     solicitud_id: int,
     body: SeleccionIn,
-    user: Usuario = Depends(vendedor_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(db, service.seleccionar(db, solicitud_id, body.letra, user))
@@ -66,7 +66,7 @@ def seleccionar_opcion(
 def no_confirmar(
     solicitud_id: int,
     body: NoConfirmarIn,
-    user: Usuario = Depends(vendedor_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(

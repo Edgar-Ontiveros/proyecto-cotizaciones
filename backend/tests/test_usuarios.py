@@ -1,6 +1,6 @@
 import pytest
 
-from app.models.usuario import AlcanceGerente, Rol
+from app.models.usuario import Rol
 
 USUARIOS = "/api/v1/usuarios"
 
@@ -18,9 +18,7 @@ def _payload_vendedor(sucursal_id: int) -> dict:
 @pytest.mark.parametrize("rol", [Rol.VENDEDOR, Rol.COMPRADOR, Rol.GERENTE])
 def test_endpoints_rechazan_no_admin(client, make_user, make_sucursal, auth_headers, rol):
     sucursal = make_sucursal()
-    kwargs = {"sucursal_id": sucursal.id} if rol == Rol.VENDEDOR else {}
-    if rol == Rol.GERENTE:
-        kwargs = {"sucursal_id": sucursal.id, "alcance_gerente": AlcanceGerente.SUCURSAL}
+    kwargs = {"sucursal_id": sucursal.id} if rol in (Rol.VENDEDOR, Rol.GERENTE) else {}
     user = make_user(rol, **kwargs)
     otro = make_user(Rol.VENDEDOR, sucursal_id=sucursal.id)
     headers = auth_headers(user)
@@ -110,7 +108,8 @@ def test_crear_vendedor_sin_sucursal_422(client, make_user, auth_headers):
     assert r.json()["code"] == "sucursal_requerida"
 
 
-def test_crear_gerente_sin_alcance_422(client, make_user, auth_headers):
+def test_crear_gerente_sin_sucursal_422(client, make_user, auth_headers):
+    """F5: el gerente es siempre de sucursal — sin sucursal_id → 422."""
     admin = make_user(Rol.ADMIN)
     r = client.post(
         USUARIOS,
@@ -118,7 +117,25 @@ def test_crear_gerente_sin_alcance_422(client, make_user, auth_headers):
         json={"nombre": "Gerente X", "email": "gerente.x@test.demo", "rol": "gerente"},
     )
     assert r.status_code == 422
-    assert r.json()["code"] == "alcance_requerido"
+    assert r.json()["code"] == "sucursal_requerida"
+
+
+def test_admin_no_se_autodegrada(client, make_user, auth_headers):
+    """Addendum e: complemento de no_auto_desactivacion — un admin no puede
+    quitarse a sí mismo el rol admin."""
+    admin = make_user(Rol.ADMIN)
+    r = client.patch(
+        f"{USUARIOS}/{admin.id}",
+        headers=auth_headers(admin),
+        json={"rol": "comprador"},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "no_auto_degradacion"
+    # Cambios que conservan el rol admin sí proceden.
+    r = client.patch(
+        f"{USUARIOS}/{admin.id}", headers=auth_headers(admin), json={"nombre": "Admin Uno"}
+    )
+    assert r.status_code == 200 and r.json()["nombre"] == "Admin Uno"
 
 
 def test_email_duplicado_409(client, make_user, auth_headers):

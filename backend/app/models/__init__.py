@@ -9,10 +9,9 @@ from app.models.notificacion import Notificacion
 from app.models.refresh_token import RefreshToken
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
-from app.models.usuario import AlcanceGerente, Rol, Usuario
+from app.models.usuario import Rol, Usuario
 
 __all__ = [
-    "AlcanceGerente",
     "Cliente",
     "Comentario",
     "CompradorSucursal",
