@@ -71,9 +71,12 @@ def listar_solicitudes(
         limit=limit,
         offset=offset,
     )
-    # Ciclo vigente (F6) SOLO para ENVIADA/EN_PROCESO, en queries fijos para
-    # toda la página (sin N+1).
+    # Ciclo vigente (F6) SOLO para ENVIADA/EN_PROCESO, y monto de referencia
+    # (F8b) SOLO para COTIZADA — ambos en queries fijos por página (sin N+1).
     vigentes = ciclos_mod.ciclo_vigente(db, [solicitud for solicitud, _ in filas])
+    referencias = cotizaciones_service.referencias_opcion_a(
+        db, [s.id for s, _ in filas if s.estado == Estado.COTIZADA]
+    )
     items = []
     for solicitud, nombre in filas:
         item = _a_out(db, solicitud, nombre)
@@ -82,6 +85,9 @@ def listar_solicitudes(
             item.banda = ciclo.banda
             item.dias_transcurridos = ciclo.t
             item.horas_habiles = round(ciclo.horas_habiles, 2)
+        referencia = referencias.get(solicitud.id)
+        if referencia is not None:
+            item.monto_referencia, item.moneda_referencia = referencia
         items.append(item)
     return SolicitudListOut(items=items, total=total, limit=limit, offset=offset)
 
@@ -113,6 +119,10 @@ def detalle_solicitud(
         base.banda = ciclos[-1].banda
         base.dias_transcurridos = ciclos[-1].dias_transcurridos
         base.horas_habiles = ciclos[-1].horas_habiles
+    if solicitud.estado == Estado.COTIZADA:
+        referencia = cotizaciones_service.referencias_opcion_a(db, [solicitud.id]).get(solicitud.id)
+        if referencia is not None:
+            base.monto_referencia, base.moneda_referencia = referencia
     datos = dict(
         **base.model_dump(),
         ciclos=ciclos,

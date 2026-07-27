@@ -13,7 +13,7 @@ BASE = "/api/v1/solicitudes"
 PARTIDA_SOLERA = {
     "codigo_sap": None,
     "cantidad": "3",
-    "unidad": "PZA",
+    "unidad": "PZ",
     "tipo_acero": "304",
     "descripcion": "SOLERA 1/8 X 1",
     "medidas": "6.10 MTS",
@@ -21,7 +21,7 @@ PARTIDA_SOLERA = {
 PARTIDA_PLACA = {
     "codigo_sap": "209301",
     "cantidad": "2",
-    "unidad": "PZA",
+    "unidad": "PZ",
     "tipo_acero": "A-36",
     "descripcion": 'PLACA 1/2" A-36',
     "medidas": "4X10 PIES",
@@ -64,18 +64,25 @@ def enviada(client, entorno, auth_headers):
     )
 
 
-def _renglones_completos(partida_ids, precios=("100.00", "200.00"), tiempo="1 semana"):
+def _renglones_completos(
+    partida_ids, precios=("100.00", "200.00"), tiempo="1 semana", proveedor=None
+):
     return [
-        {"partida_id": pid, "precio_unitario": precio, "tiempo_entrega": tiempo}
+        {
+            "partida_id": pid,
+            "precio_unitario": precio,
+            "tiempo_entrega": tiempo,
+            **({"proveedor": proveedor} if proveedor else {}),
+        }
         for pid, precio in zip(partida_ids, precios, strict=True)
     ]
 
 
-def _opcion_completa(partida_ids, moneda="MXN", **kwargs):
+def _opcion_completa(partida_ids, moneda="MXN", proveedor=None, **kwargs):
     return {
         "moneda": moneda,
         "vigencia": "2026-08-31",
-        "renglones": _renglones_completos(partida_ids),
+        "renglones": _renglones_completos(partida_ids, proveedor=proveedor),
         **kwargs,
     }
 
@@ -351,17 +358,22 @@ def test_correccion_no_elimina_la_unica_opcion(client, entorno, cotizada, auth_h
 
 
 def test_proveedor_invisible_para_vendedor_y_gerente(client, db, entorno, cotizada, auth_headers):
-    """§4.8: la clave `proveedor` NO debe existir en el JSON de vendedor ni
-    gerente; comprador y admin sí la ven. La exclusión vive en el schema."""
+    """§4.8: la clave `proveedor` (POR RENGLÓN desde F8b) NO debe existir en
+    el JSON de vendedor ni gerente; comprador y admin sí la ven. La exclusión
+    vive en el schema."""
     for usuario in (entorno.vendedor, entorno.gerente):
         detalle = client.get(f"{BASE}/{cotizada.id}", headers=auth_headers(usuario)).json()
         assert detalle["opciones"], usuario.rol
         for opcion in detalle["opciones"]:
             assert "proveedor" not in opcion, usuario.rol
+            for renglon in opcion["renglones"]:
+                assert "proveedor" not in renglon, usuario.rol
     for usuario in (entorno.comprador, entorno.admin):
         detalle = client.get(f"{BASE}/{cotizada.id}", headers=auth_headers(usuario)).json()
-        proveedores = {o["letra"]: o["proveedor"] for o in detalle["opciones"]}
-        assert proveedores == {"A": None, "B": "Aceros del Norte"}, usuario.rol
+        proveedores = {
+            o["letra"]: {r["proveedor"] for r in o["renglones"]} for o in detalle["opciones"]
+        }
+        assert proveedores == {"A": {None}, "B": {"Aceros del Norte"}}, usuario.rol
 
 
 # ---------------------------------------------------------------- selección
@@ -486,7 +498,6 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         {
             "moneda": "USD",
             "vigencia": "2026-09-15",
-            "proveedor": "Rolled Alloys",
             "renglones": _renglones_completos(enviada.partida_ids, ("55.00", "80.00")),
         },
     )
@@ -500,7 +511,6 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         {
             "moneda": "USD",
             "vigencia": "2026-09-15",
-            "proveedor": "Rolled Alloys",
             "renglones": _renglones_completos(enviada.partida_ids, ("50.00", "80.00")),
         },
     )

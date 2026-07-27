@@ -153,12 +153,23 @@ export function useRechazar(id: number) {
   });
 }
 
+export interface RenglonBody {
+  partida_id: number;
+  cantidad: string | null;
+  unidad: string | null;
+  precio_unitario: string | null;
+  tiempo_entrega: string | null;
+  proveedor: string | null;
+  no_encontrada: boolean;
+  es_alternativa: boolean;
+  alternativa_descripcion: string | null;
+}
+
 export interface OpcionBody {
   moneda: string | null;
   vigencia: string | null;
   comentarios: string | null;
-  proveedor: string | null;
-  renglones: { partida_id: number; precio_unitario: string | null; tiempo_entrega: string | null }[];
+  renglones: RenglonBody[];
 }
 
 export function useGuardarOpcion(id: number) {

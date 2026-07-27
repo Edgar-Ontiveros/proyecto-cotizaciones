@@ -3,6 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal, get_args
 
 from sqlalchemy import (
     DateTime,
@@ -18,6 +19,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.cotizacion import Moneda, MonedaEnum
+
+# Catálogo CERRADO de unidades (F8b): fuente única para Pydantic (Literal),
+# el CHECK de BD (migración 923c7cfecbc4) y el seed.
+UnidadCatalogo = Literal["PZ", "KG", "TON", "MTS", "M2"]
+UNIDADES: tuple[str, ...] = get_args(UnidadCatalogo)
 
 
 class Estado(StrEnum):
@@ -106,7 +112,7 @@ class SolicitudPartida(Base):
     num_partida: Mapped[int]
     codigo_sap: Mapped[str | None]  # "SERVICIO" cuando no hay código
     cantidad: Mapped[Decimal] = mapped_column(Numeric(14, 3))
-    unidad: Mapped[str]  # KG, PZA, …
+    unidad: Mapped[str]  # catálogo PZ/KG/TON/MTS/M2 (CHECK en BD, F8b)
     tipo_acero: Mapped[str | None]
     descripcion: Mapped[str] = mapped_column(Text)
     medidas: Mapped[str | None] = mapped_column(Text)

@@ -147,8 +147,8 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         Prioridad.NORMAL,
         "borrador",
         [
-            ("205494", "40", "PZA", "A-36", 'ANGULO 2" X 1/4"', "6.10 MTS"),
-            ("205712", "24", "PZA", "A-36", 'CANAL CPS 4" ESTANDAR', "6.10 MTS"),
+            ("205494", "40", "PZ", "A-36", 'ANGULO 2" X 1/4"', "6.10 MTS"),
+            ("205712", "24", "PZ", "A-36", 'CANAL CPS 4" ESTANDAR', "6.10 MTS"),
         ],
     ),
     (
@@ -157,8 +157,8 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         Prioridad.NORMAL,
         "enviada",
         [
-            ("208115", "18", "PZA", None, "LAMINA LISA CAL.14", "3X10 PIES"),
-            ("SERVICIO", "1", "LOTE", None, "CORTE A MEDIDA DE LAMINA", None),
+            ("208115", "18", "PZ", None, "LAMINA LISA CAL.14", "3X10 PIES"),
+            ("SERVICIO", "1", "PZ", None, "CORTE A MEDIDA DE LAMINA", None),
         ],
     ),
     (
@@ -167,8 +167,8 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         Prioridad.URGENTE,
         "en_proceso",
         [
-            ("209301", "6", "PZA", "A-36", 'PLACA 1/2" A-36', "4X10 PIES"),
-            ("209015", "12", "PZA", None, "PTR 2X2 CAL.11", "6.10 MTS"),
+            ("209301", "6", "PZ", "A-36", 'PLACA 1/2" A-36', "4X10 PIES"),
+            ("209015", "12", "PZ", None, "PTR 2X2 CAL.11", "6.10 MTS"),
         ],
     ),
     (
@@ -176,7 +176,7 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "TALLERES GARCIA",
         Prioridad.NORMAL,
         "rechazada",
-        [(None, "874", "PZA", "304", "SOLERA 1/8 X 1", "12.20 MTS")],
+        [(None, "874", "PZ", "304", "SOLERA 1/8 X 1", "12.20 MTS")],
     ),
     (
         "abraham.hernandez@herinox.demo",
@@ -184,8 +184,8 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         Prioridad.URGENTE,
         "reenviada",
         [
-            ("210007", "4", "PZA", None, "VIGA IPR 6X4", "40 PIES"),
-            ("205494", "16", "PZA", "A-36", 'ANGULO 3" X 1/4"', "6.10 MTS"),
+            ("210007", "4", "PZ", None, "VIGA IPR 6X4", "40 PIES"),
+            ("205494", "16", "PZ", "A-36", 'ANGULO 3" X 1/4"', "6.10 MTS"),
         ],
     ),
     (
@@ -193,7 +193,7 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "DINCO",
         Prioridad.NORMAL,
         "cancelada",
-        [("208221", "30", "PZA", None, "LAMINA GALVANIZADA CAL.12", "3X10 PIES")],
+        [("208221", "30", "PZ", None, "LAMINA GALVANIZADA CAL.12", "3X10 PIES")],
     ),
     (
         "alejandro.franco@herinox.demo",
@@ -201,8 +201,8 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         Prioridad.NORMAL,
         "enviada",
         [
-            ("209301", "8", "PZA", "A-36", 'PLACA 3/8" A-36', "4X10 PIES"),
-            ("SERVICIO", "1", "LOTE", None, "BISELADO DE PLACA", None),
+            ("209301", "8", "PZ", "A-36", 'PLACA 3/8" A-36', "4X10 PIES"),
+            ("SERVICIO", "1", "PZ", None, "BISELADO DE PLACA", None),
         ],
     ),
     (
@@ -210,14 +210,14 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "HERRERIA AVILA",
         Prioridad.URGENTE,
         "en_proceso",
-        [("209015", "20", "PZA", None, "PTR 1 1/2 X 1 1/2 CAL.14", "6.10 MTS")],
+        [("209015", "20", "PZ", None, "PTR 1 1/2 X 1 1/2 CAL.14", "6.10 MTS")],
     ),
     (
         "alba.avitia@herinox.demo",
         "INDUSTRIAL PONIENTE",
         Prioridad.NORMAL,
         "borrador",
-        [("208115", "10", "PZA", None, "LAMINA ANTIDERRAPANTE CAL.10", "4X10 PIES")],
+        [("208115", "10", "PZ", None, "LAMINA ANTIDERRAPANTE CAL.10", "4X10 PIES")],
     ),
     (
         "maribel.rocha@herinox.demo",
@@ -225,8 +225,8 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         Prioridad.URGENTE,
         "enviada",
         [
-            ("205712", "36", "PZA", "A-36", 'CANAL CPS 6"', "6.10 MTS"),
-            ("209301", "2", "PZA", "A-36", 'PLACA 1" A-36', "4X8 PIES"),
+            ("205712", "36", "PZ", "A-36", 'CANAL CPS 6"', "6.10 MTS"),
+            ("209301", "2", "PZ", "A-36", 'PLACA 1" A-36', "4X8 PIES"),
         ],
     ),
     (
@@ -234,14 +234,14 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "ARNESES FRONTERIZOS",
         Prioridad.NORMAL,
         "en_proceso",
-        [("SERVICIO", "1", "LOTE", "304", "CORTE LASER DE LAMINA INOX CAL.16", "60X60 CM")],
+        [("SERVICIO", "1", "PZ", "304", "CORTE LASER DE LAMINA INOX CAL.16", "60X60 CM")],
     ),
     (
         "edgar.baylon@herinox.demo",
         "DINCO",
         Prioridad.NORMAL,
         "rechazada",
-        [(None, "15", "PZA", None, "VIGA IPR 8X4", None)],
+        [(None, "15", "PZ", None, "VIGA IPR 8X4", None)],
     ),
     (
         "mirna.salas@herinox.demo",
@@ -250,7 +250,7 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "cotizada_mxn",
         [
             (None, "120", "KG", "304", "SOLERA INOX 1/4 X 2", "6.10 MTS"),
-            ("209301", "4", "PZA", "A-36", 'PLACA 5/8" A-36', "4X10 PIES"),
+            ("209301", "4", "PZ", "A-36", 'PLACA 5/8" A-36', "4X10 PIES"),
         ],
     ),
     (
@@ -267,7 +267,7 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "confirmada",
         [
             (None, "250", "KG", "304", "LAMINA INOX CAL.18 ACABADO 2B", "4X10 PIES"),
-            ("SERVICIO", "1", "LOTE", None, "CORTE A MEDIDA DE LAMINA", None),
+            ("SERVICIO", "1", "PZ", None, "CORTE A MEDIDA DE LAMINA", None),
         ],
     ),
     (
@@ -275,46 +275,105 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
         "CALDERAS DEL BAJIO",
         Prioridad.NORMAL,
         "no_confirmada",
-        [("205931", "18", "PZA", "304", 'TUBO INOX 2" CAL.16', "6.10 MTS")],
+        [("205931", "18", "PZ", "304", 'TUBO INOX 2" CAL.16', "6.10 MTS")],
     ),
 ]
 
-# Opciones demo (F4): flujo → [(letra, moneda, proveedor, [(precio_unitario,
-# tiempo_entrega) por partida, en orden])]. Precios realistas de acero por
-# KG/PZA. La vigencia es fija para que el seed sea determinista.
+# Opciones demo (F4/F8b): flujo → [(letra, moneda, [kwargs de RenglonIn por
+# partida, en orden])]. El proveedor vive POR RENGLÓN; la cotizada_mxn trae un
+# renglón alternativa y uno no_encontrada para verlos en UI. Precios realistas
+# de acero. La vigencia es fija para que el seed sea determinista.
 VIGENCIA_DEMO = date(2026, 8, 31)
-_Opcion = tuple[Letra, Moneda, str | None, list[tuple[str, str]]]
+_Opcion = tuple[Letra, Moneda, list[dict[str, object]]]
 OPCIONES_DEMO: dict[str, list[_Opcion]] = {
     "cotizada_mxn": [
         (
             Letra.A,
             Moneda.MXN,
-            "Aceros y Metales del Norte",
-            [("98.50", "5 días hábiles"), ("18450.00", "1 semana")],
+            [
+                {
+                    "precio_unitario": Decimal("98.50"),
+                    "tiempo_entrega": "5 días hábiles",
+                    "proveedor": "Aceros y Metales del Norte",
+                },
+                {
+                    "precio_unitario": Decimal("18450.00"),
+                    "tiempo_entrega": "1 semana",
+                    "proveedor": "Aceros y Metales del Norte",
+                },
+            ],
         ),
         (
             Letra.B,
             Moneda.MXN,
-            "Inoxidables GV",
-            [("94.80", "2 semanas"), ("17980.00", "2 semanas")],
+            [
+                {
+                    "precio_unitario": Decimal("94.80"),
+                    "tiempo_entrega": "2 semanas",
+                    "proveedor": "Inoxidables GV",
+                    "es_alternativa": True,
+                    "alternativa_descripcion": (
+                        'ÁNGULO 2" X 3/16" (calibre inmediato inferior, misma norma)'
+                    ),
+                },
+                {"no_encontrada": True},
+            ],
         ),
     ],
-    "cotizada_usd": [(Letra.A, Moneda.USD, "Rolled Alloys", [("5.85", "3 semanas")])],
+    "cotizada_usd": [
+        (
+            Letra.A,
+            Moneda.USD,
+            [
+                {
+                    "precio_unitario": Decimal("5.85"),
+                    "tiempo_entrega": "3 semanas",
+                    "proveedor": "Rolled Alloys",
+                }
+            ],
+        )
+    ],
     "confirmada": [
         (
             Letra.A,
             Moneda.MXN,
-            "Aceros Camesa",
-            [("112.00", "1 semana"), ("1500.00", "1 semana")],
+            [
+                {
+                    "precio_unitario": Decimal("112.00"),
+                    "tiempo_entrega": "1 semana",
+                    "proveedor": "Aceros Camesa",
+                },
+                {
+                    "precio_unitario": Decimal("1500.00"),
+                    "tiempo_entrega": "1 semana",
+                    "proveedor": "Aceros Camesa",
+                },
+            ],
         ),
         (
             Letra.B,
             Moneda.MXN,
-            "Metales de Sinaloa",
-            [("108.50", "10 días hábiles"), ("1200.00", "10 días hábiles")],
+            [
+                {
+                    "precio_unitario": Decimal("108.50"),
+                    "tiempo_entrega": "10 días hábiles",
+                    "proveedor": "Metales de Sinaloa",
+                },
+                {
+                    "precio_unitario": Decimal("1200.00"),
+                    "tiempo_entrega": "10 días hábiles",
+                    "proveedor": "Metales de Sinaloa",
+                },
+            ],
         ),
     ],
-    "no_confirmada": [(Letra.A, Moneda.MXN, None, [("1450.00", "4 semanas")])],
+    "no_confirmada": [
+        (
+            Letra.A,
+            Moneda.MXN,
+            [{"precio_unitario": Decimal("1450.00"), "tiempo_entrega": "4 semanas"}],
+        )
+    ],
 }
 
 
@@ -407,7 +466,7 @@ def _demo_solicitudes(db: Session) -> int:
                 .order_by(SolicitudPartida.num_partida)
             ).all()
             # El primer guardar_opcion sobre ENVIADA ejecuta la auto-toma real.
-            for letra, moneda, proveedor, renglones in OPCIONES_DEMO[flujo]:
+            for letra, moneda, renglones in OPCIONES_DEMO[flujo]:
                 guardar_opcion(
                     db,
                     solicitud.id,
@@ -415,14 +474,9 @@ def _demo_solicitudes(db: Session) -> int:
                     OpcionIn(
                         moneda=moneda,
                         vigencia=VIGENCIA_DEMO,
-                        proveedor=proveedor,
                         renglones=[
-                            RenglonIn(
-                                partida_id=pid,
-                                precio_unitario=Decimal(precio),
-                                tiempo_entrega=tiempo,
-                            )
-                            for pid, (precio, tiempo) in zip(partida_ids, renglones, strict=True)
+                            RenglonIn(partida_id=pid, **datos)
+                            for pid, datos in zip(partida_ids, renglones, strict=True)
                         ],
                     ),
                     comprador,

@@ -1,10 +1,10 @@
 /** Componentes compartidos chicos: BadgeEstado, SemaforoBanda, Dinero,
  * FolioCliente. */
 
-import { Badge, Text, Tooltip } from "@mantine/core";
+import { Badge, Group, Text, Tooltip } from "@mantine/core";
 
 import { bandaColor, bandaTooltip, dinero, folioCliente } from "../lib/format";
-import type { Banda, Estado, Moneda } from "../lib/types";
+import type { Banda, Estado, Moneda, SolicitudOut } from "../lib/types";
 
 const COLOR_ESTADO: Record<Estado, string> = {
   BORRADOR: "gray",
@@ -62,4 +62,23 @@ export function Dinero({ monto, moneda }: { monto: string | number | null; moned
 
 export function FolioCliente({ folio, cliente }: { folio: string | null; cliente: string | null }) {
   return <Text fw={500}>{folioCliente(folio, cliente)}</Text>;
+}
+
+/** Monto de la fila del listado (F8b): confirmado si existe; si no, el de
+ * REFERENCIA (opción A de una COTIZADA) con etiqueta "ref.". */
+export function MontoSolicitud({ solicitud }: { solicitud: SolicitudOut }) {
+  if (solicitud.monto_confirmado !== null && solicitud.moneda_confirmada !== null) {
+    return <Dinero monto={solicitud.monto_confirmado} moneda={solicitud.moneda_confirmada} />;
+  }
+  if (solicitud.monto_referencia !== null && solicitud.moneda_referencia !== null) {
+    return (
+      <Group gap={4} wrap="nowrap">
+        <Dinero monto={solicitud.monto_referencia} moneda={solicitud.moneda_referencia} />
+        <Text size="xs" c="dimmed">
+          ref.
+        </Text>
+      </Group>
+    );
+  }
+  return <Text c="dimmed">—</Text>;
 }

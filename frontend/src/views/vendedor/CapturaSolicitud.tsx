@@ -11,6 +11,7 @@ import {
   Group,
   Paper,
   SegmentedControl,
+  Select,
   Stack,
   Table,
   Text,
@@ -32,8 +33,10 @@ import {
   useSolicitud,
 } from "../../api/hooks";
 import { useAuth } from "../../auth/AuthContext";
+import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { fecha } from "../../lib/format";
+import { UNIDADES, corregirYReenviar } from "../../lib/renglon";
 import {
   parsearFaltantesEnvio,
   resolverZod,
@@ -44,7 +47,7 @@ import {
 const PARTIDA_VACIA = {
   codigo_sap: "",
   cantidad: "",
-  unidad: "",
+  unidad: "PZ" as const,
   tipo_acero: "",
   descripcion: "",
   medidas: "",
@@ -117,16 +120,16 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
     try {
       const body = aBody(values);
       let guardadaId: number;
-      let folio: string | null = existente?.folio ?? null;
       if (modo === "editar" && existente?.estado === "RECHAZADA") {
-        // Corregir-y-reenviar: el PATCH solo acepta BORRADOR/ENVIADA/
-        // EN_PROCESO, así que primero se reenvía (ciclo nuevo) y luego se
-        // aplican las correcciones sobre la ENVIADA.
-        const reenviada = await enviar.mutateAsync(solicitudId);
-        folio = reenviada.folio;
-        await editar.mutateAsync(body);
+        // Corregir-y-reenviar (F8b): PRIMERO la corrección (PATCH sobre la
+        // RECHAZADA — evento en historial sin notificación) y DESPUÉS el
+        // reenvío (ciclo nuevo, notifica al comprador).
+        const reenviada = await corregirYReenviar({
+          editar: () => editar.mutateAsync(body),
+          enviar: () => enviar.mutateAsync(solicitudId),
+        });
         guardadaId = solicitudId;
-        notifications.show({ message: `Solicitud ${folio} reenviada`, color: "green" });
+        notifications.show({ message: `Solicitud ${reenviada.folio} reenviada`, color: "green" });
       } else {
         const guardada =
           modo === "nueva" ? await crear.mutateAsync(body) : await editar.mutateAsync(body);
@@ -174,7 +177,10 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
 
   return (
     <Stack>
-      <Title order={3}>{modo === "nueva" ? "Nueva solicitud" : "Editar solicitud"}</Title>
+      <Group>
+        <VolverBoton />
+        <Title order={3}>{modo === "nueva" ? "Nueva solicitud" : "Editar solicitud"}</Title>
+      </Group>
       {existente?.estado === "RECHAZADA" && (
         <Alert color="red" title="Solicitud rechazada">
           Corrige lo necesario y reenvíala. Motivo:{" "}
@@ -247,7 +253,11 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
                 <TextInput {...form.getInputProps(`partidas.${i}.cantidad`)} />
               </Table.Td>
               <Table.Td>
-                <TextInput placeholder="PZA" {...form.getInputProps(`partidas.${i}.unidad`)} />
+                <Select
+                  data={UNIDADES}
+                  allowDeselect={false}
+                  {...form.getInputProps(`partidas.${i}.unidad`)}
+                />
               </Table.Td>
               <Table.Td>
                 <TextInput {...form.getInputProps(`partidas.${i}.tipo_acero`)} />

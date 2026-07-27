@@ -24,7 +24,7 @@ from app.modules.solicitudes.schemas import (
     SolicitudOut,
 )
 
-ESTADOS_EDITABLES = {Estado.BORRADOR, Estado.ENVIADA, Estado.EN_PROCESO}
+ESTADOS_EDITABLES = {Estado.BORRADOR, Estado.ENVIADA, Estado.EN_PROCESO, Estado.RECHAZADA}
 
 
 def _base_scoped(user: Usuario) -> Select[tuple[Solicitud]]:
@@ -159,6 +159,18 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
                 a=solicitud.estado,
                 usuario_id=user.id,
                 comentario=comentario,
+            )
+        )
+    elif solicitud.estado == Estado.RECHAZADA:
+        # Corrección previa al reenvío (F8b): evento sí, notificación NO — la
+        # notificación útil para el comprador es la del reenvío.
+        db.add(
+            HistorialEstado(
+                solicitud_id=solicitud.id,
+                de=solicitud.estado,
+                a=solicitud.estado,
+                usuario_id=user.id,
+                comentario="Corregida (rechazada)",
             )
         )
     db.commit()

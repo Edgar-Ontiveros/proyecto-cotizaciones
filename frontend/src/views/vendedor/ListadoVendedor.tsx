@@ -7,9 +7,9 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useClientes, useSolicitudes } from "../../api/hooks";
-import { BadgeEstado, Dinero, SemaforoBanda } from "../../components/compartidos";
+import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../../components/compartidos";
 import { fecha } from "../../lib/format";
-import type { Moneda, SolicitudOut } from "../../lib/types";
+import type { SolicitudOut } from "../../lib/types";
 
 const PAGE = 25;
 
@@ -23,12 +23,6 @@ const ESTADOS = [
   "RECHAZADA",
   "CANCELADA",
 ];
-
-/** Monto de la fila: confirmado si existe; si no, referencia (opción A) que el
- * backend expone vía monto_confirmado=null → se muestra "—". */
-function montoDe(s: SolicitudOut): { monto: string | null; moneda: Moneda | null } {
-  return { monto: s.monto_confirmado, moneda: s.moneda_confirmada };
-}
 
 export function ListadoVendedor() {
   const navigate = useNavigate();
@@ -141,10 +135,7 @@ export function ListadoVendedor() {
           {
             accessor: "monto",
             title: "Monto",
-            render: (s) => {
-              const { monto, moneda } = montoDe(s);
-              return <Dinero monto={monto} moneda={moneda} />;
-            },
+            render: (s) => <MontoSolicitud solicitud={s} />,
           },
         ]}
       />

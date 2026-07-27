@@ -7,7 +7,7 @@ from app.core.security import verify_password
 from app.models.catalogos import DiaFestivo, MotivoRechazo
 from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
 from app.models.historial import HistorialEstado
-from app.models.solicitud import Estado, Solicitud
+from app.models.solicitud import UNIDADES, Estado, Solicitud
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import Rol, Usuario
 
@@ -60,7 +60,7 @@ def test_seed_idempotente_y_conteos_exactos(db):
     assert db.scalar(select(func.count()).select_from(OpcionPartida)) == 10
 
     # La CONFIRMADA fija monto y moneda desnormalizados == total de la opción
-    # B seleccionada: 250 KG × 108.50 + 1 LOTE × 1200.00 = 28,325.00 MXN.
+    # B seleccionada: 250 KG × 108.50 + 1 PZ × 1200.00 = 28,325.00 MXN.
     confirmada = db.execute(
         select(Solicitud).where(Solicitud.estado == Estado.CONFIRMADA)
     ).scalar_one()
@@ -73,6 +73,20 @@ def test_seed_idempotente_y_conteos_exactos(db):
     assert confirmada.monto_confirmado == Decimal("28325.00") == opcion_b.total
     assert confirmada.moneda_confirmada == Moneda.MXN
     assert confirmada.confirmado_en is not None
+
+    # Renglón rico (F8b): la cotizada MXN trae UN renglón alternativa (con
+    # descripción y precio) y UN no-encontrado; proveedor POR RENGLÓN; el
+    # total de esa opción excluye al no-encontrado (120 KG × 94.80).
+    renglones = list(db.scalars(select(OpcionPartida)))
+    assert all(r.cantidad is not None and r.unidad in UNIDADES for r in renglones)
+    no_encontrados = [r for r in renglones if r.no_encontrada]
+    alternativas = [r for r in renglones if r.es_alternativa]
+    assert len(no_encontrados) == 1 and no_encontrados[0].precio_unitario is None
+    assert len(alternativas) == 1
+    assert alternativas[0].alternativa_descripcion and alternativas[0].precio_unitario
+    assert alternativas[0].opcion.total == Decimal("11376.00")
+    assert no_encontrados[0].opcion_id == alternativas[0].opcion_id
+    assert {r.proveedor for r in renglones} >= {"Aceros y Metales del Norte", "Rolled Alloys"}
 
     # La NO_CONFIRMADA conserva el motivo del catálogo fijo.
     no_confirmada = db.execute(

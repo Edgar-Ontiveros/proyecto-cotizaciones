@@ -40,7 +40,7 @@ export interface PartidaOut {
   num_partida: number;
   codigo_sap: string | null;
   cantidad: string;
-  unidad: string;
+  unidad: Unidad;
   tipo_acero: string | null;
   descripcion: string;
   medidas: string | null;
@@ -68,15 +68,29 @@ export interface SolicitudOut {
   banda: Banda | null;
   dias_transcurridos: number | null;
   horas_habiles: number | null;
+  // Monto de REFERENCIA (F8b): total/moneda de la opción A, solo COTIZADA.
+  monto_referencia: string | null;
+  moneda_referencia: Moneda | null;
 }
+
+export type Unidad = "PZ" | "KG" | "TON" | "MTS" | "M2";
 
 export interface RenglonOut {
   id: number;
   partida_id: number;
   num_partida: number;
+  // Cantidad/unidad COTIZADAS (pueden diferir de lo pedido).
+  cantidad: string;
+  unidad: Unidad;
   precio_unitario: string | null;
   importe: string | null;
   tiempo_entrega: string | null;
+  no_encontrada: boolean;
+  es_alternativa: boolean;
+  alternativa_descripcion: string | null;
+  // SOLO llega para comprador/admin; el backend la excluye para vendedor y
+  // gerente (jamás inventarla en UI).
+  proveedor?: string | null;
 }
 
 export interface OpcionOut {
@@ -88,9 +102,6 @@ export interface OpcionOut {
   total: string;
   completa: boolean;
   renglones: RenglonOut[];
-  // SOLO llega para comprador/admin; el backend la excluye para vendedor y
-  // gerente (jamás inventarla en UI).
-  proveedor?: string | null;
 }
 
 export interface HistorialOut {

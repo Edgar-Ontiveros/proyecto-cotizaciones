@@ -20,6 +20,7 @@ import { useNavigate, useParams } from "react-router";
 
 import { useAccionSolicitud, useComentar, useSolicitud } from "../../api/hooks";
 import { BadgeEstado, Dinero, SemaforoBanda } from "../../components/compartidos";
+import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { fecha, fechaHora, folioCliente } from "../../lib/format";
 import type { SolicitudDetailOut } from "../../lib/types";
@@ -163,6 +164,7 @@ export function DetalleSolicitud() {
     <Stack>
       <Group justify="space-between">
         <Group>
+          <VolverBoton />
           <Title order={3}>{folioCliente(solicitud.folio, solicitud.cliente_nombre)}</Title>
           <BadgeEstado estado={solicitud.estado} />
           <SemaforoBanda

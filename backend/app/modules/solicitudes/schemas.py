@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
-from app.models.solicitud import Estado, Prioridad
+from app.models.solicitud import Estado, Prioridad, UnidadCatalogo
 from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionOut
 from app.modules.metricas.schemas import CicloOut
 
@@ -13,7 +13,7 @@ from app.modules.metricas.schemas import CicloOut
 class PartidaIn(BaseModel):
     codigo_sap: str | None = None  # "SERVICIO" cuando no hay código
     cantidad: Decimal = Field(gt=0)
-    unidad: str = Field(min_length=1)
+    unidad: UnidadCatalogo  # catálogo cerrado (F8b): PZ/KG/TON/MTS/M2
     tipo_acero: str | None = None
     descripcion: str = Field(min_length=1)
     medidas: str | None = None
@@ -73,6 +73,10 @@ class SolicitudOut(BaseModel):
     banda: Banda | None = None
     dias_transcurridos: int | None = None
     horas_habiles: float | None = None
+    # Monto de REFERENCIA (F8b, §4.9): total y moneda de la opción A, SOLO
+    # cuando el estado es COTIZADA; null en el resto.
+    monto_referencia: Decimal | None = None
+    moneda_referencia: Moneda | None = None
 
 
 class HistorialOut(BaseModel):

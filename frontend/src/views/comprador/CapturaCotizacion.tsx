@@ -1,12 +1,18 @@
-/** Captura del comprador: partidas siempre visibles + editor de opciones A–E
- * (tabs). Importes y totales se muestran calculados en pantalla como
- * referencia, pero tras guardar SIEMPRE se muestran los del servidor. Los 422
- * de cotizar se pintan exactamente en su opción/partida/campo. */
+/** Captura del comprador (F8b): partidas siempre visibles + editor de
+ * opciones A–E con RENGLÓN RICO — cantidad/unidad cotizadas precargadas de la
+ * partida, proveedor POR RENGLÓN, "No encontrada" y "Alternativa". Importes y
+ * totales locales solo como referencia: tras guardar mandan los del servidor.
+ * Los 422 de cotizar se pintan exactamente en su opción/partida/campo.
+ *
+ * Nota (bugs F8a): los handlers capturan e.currentTarget.value en una
+ * variable ANTES de setState — dentro del updater el evento ya está muerto
+ * (currentTarget null): así tronaban proveedor y comentarios. */
 
 import {
   Alert,
   Badge,
   Button,
+  Checkbox,
   Group,
   Paper,
   Select,
@@ -35,38 +41,63 @@ import {
   useSolicitud,
 } from "../../api/hooks";
 import { BadgeEstado, SemaforoBanda } from "../../components/compartidos";
+import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { dinero, folioCliente } from "../../lib/format";
-import type { Letra, Moneda, OpcionOut, SolicitudDetailOut } from "../../lib/types";
+import {
+  UNIDADES,
+  aplicarNoEncontrada,
+  renglonABody,
+  validarRenglonLocal,
+  type RenglonForm,
+} from "../../lib/renglon";
+import type { Letra, Moneda, OpcionOut, SolicitudDetailOut, Unidad } from "../../lib/types";
 import { parsearFaltantesCotizacion, type FaltanteCotizacion } from "../../lib/validacion";
 import { HistorialComentarios } from "../vendedor/DetalleSolicitud";
 
 const LETRAS: Letra[] = ["A", "B", "C", "D", "E"];
 
-interface RenglonForm {
-  precio: string;
-  tiempo: string;
-}
-
 interface OpcionForm {
   moneda: Moneda | null;
   vigencia: string | null;
   comentarios: string;
-  proveedor: string;
   renglones: Record<number, RenglonForm>; // por partida_id
 }
 
-function formDesdeServidor(opcion: OpcionOut | undefined, partidaIds: number[]): OpcionForm {
+function formDesdeServidor(
+  opcion: OpcionOut | undefined,
+  solicitud: SolicitudDetailOut,
+): OpcionForm {
   const renglones: Record<number, RenglonForm> = {};
-  for (const pid of partidaIds) renglones[pid] = { precio: "", tiempo: "" };
+  for (const p of solicitud.partidas) {
+    // Cantidad y unidad COTIZADAS precargadas de lo pedido.
+    renglones[p.id] = {
+      cantidad: p.cantidad,
+      unidad: p.unidad as Unidad,
+      precio: "",
+      tiempo: "",
+      proveedor: "",
+      noEncontrada: false,
+      esAlternativa: false,
+      alternativaDescripcion: "",
+    };
+  }
   for (const r of opcion?.renglones ?? []) {
-    renglones[r.partida_id] = { precio: r.precio_unitario ?? "", tiempo: r.tiempo_entrega ?? "" };
+    renglones[r.partida_id] = {
+      cantidad: r.cantidad,
+      unidad: r.unidad,
+      precio: r.precio_unitario ?? "",
+      tiempo: r.tiempo_entrega ?? "",
+      proveedor: r.proveedor ?? "",
+      noEncontrada: r.no_encontrada,
+      esAlternativa: r.es_alternativa,
+      alternativaDescripcion: r.alternativa_descripcion ?? "",
+    };
   }
   return {
     moneda: opcion?.moneda ?? null,
     vigencia: opcion?.vigencia ?? null,
     comentarios: opcion?.comentarios ?? "",
-    proveedor: opcion?.proveedor ?? "",
     renglones,
   };
 }
@@ -83,16 +114,26 @@ function EditorOpcion({
   onGuardado: () => void;
 }) {
   const opcionServidor = solicitud.opciones.find((o) => o.letra === letra);
-  const partidaIds = useMemo(() => solicitud.partidas.map((p) => p.id), [solicitud.partidas]);
-  const [form, setForm] = useState<OpcionForm>(() => formDesdeServidor(opcionServidor, partidaIds));
+  const [form, setForm] = useState<OpcionForm>(() => formDesdeServidor(opcionServidor, solicitud));
+  const [erroresLocales, setErroresLocales] = useState<Record<number, string>>({});
   const guardarOpcion = useGuardarOpcion(solicitud.id);
 
   // Tras cada guardado, el servidor es la verdad (totales incluidos).
   const serverKey = JSON.stringify(opcionServidor ?? null);
   useEffect(() => {
-    setForm(formDesdeServidor(opcionServidor, partidaIds));
+    setForm(formDesdeServidor(opcionServidor, solicitud));
+    setErroresLocales({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverKey]);
+
+  const setRenglon = (partidaId: number, cambio: Partial<RenglonForm>) =>
+    setForm((f) => ({
+      ...f,
+      renglones: {
+        ...f.renglones,
+        [partidaId]: { ...(f.renglones[partidaId] as RenglonForm), ...cambio },
+      },
+    }));
 
   const misErrores = errores.filter((e) => e.letra === letra);
   const errorDe = (campo: FaltanteCotizacion["campo"], numPartida?: number) =>
@@ -100,27 +141,36 @@ function EditorOpcion({
       ? "Obligatorio para cotizar"
       : undefined;
 
-  // Referencia en pantalla; el total real lo da el servidor tras guardar.
+  // Referencia local; el total real lo da el servidor tras guardar.
   const totalLocal = solicitud.partidas.reduce((acc, p) => {
-    const precio = Number(form.renglones[p.id]?.precio ?? "");
-    if (!precio || Number.isNaN(precio)) return acc;
-    return acc + precio * Number(p.cantidad);
+    const r = form.renglones[p.id];
+    if (!r || r.noEncontrada) return acc;
+    const precio = Number(r.precio);
+    const cantidad = Number(r.cantidad);
+    if (!precio || Number.isNaN(precio) || Number.isNaN(cantidad)) return acc;
+    return acc + precio * cantidad;
   }, 0);
 
   const guardar = () => {
-    const body = {
-      moneda: form.moneda,
-      vigencia: form.vigencia,
-      comentarios: form.comentarios.trim() || null,
-      proveedor: form.proveedor.trim() || null,
-      renglones: solicitud.partidas.map((p) => ({
-        partida_id: p.id,
-        precio_unitario: form.renglones[p.id]?.precio.trim() || null,
-        tiempo_entrega: form.renglones[p.id]?.tiempo.trim() || null,
-      })),
-    };
+    const locales: Record<number, string> = {};
+    for (const p of solicitud.partidas) {
+      const error = validarRenglonLocal(form.renglones[p.id] as RenglonForm);
+      if (error) locales[p.id] = error;
+    }
+    setErroresLocales(locales);
+    if (Object.keys(locales).length > 0) return;
     guardarOpcion.mutate(
-      { letra, body },
+      {
+        letra,
+        body: {
+          moneda: form.moneda,
+          vigencia: form.vigencia,
+          comentarios: form.comentarios.trim() || null,
+          renglones: solicitud.partidas.map((p) =>
+            renglonABody(p.id, form.renglones[p.id] as RenglonForm),
+          ),
+        },
+      },
       {
         onSuccess: () => {
           notifications.show({ message: `Opción ${letra} guardada`, color: "green" });
@@ -168,73 +218,152 @@ function EditorOpcion({
             +30 días
           </Button>
         </Button.Group>
-        <TextInput
-          label="Proveedor"
-          description="Visible solo para compras"
-          value={form.proveedor}
-          onChange={(e) => setForm((f) => ({ ...f, proveedor: e.currentTarget.value }))}
-          w={220}
-        />
       </Group>
-      <Table withTableBorder withColumnBorders>
+      <Table withTableBorder withColumnBorders verticalSpacing="xs">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>No.</Table.Th>
-            <Table.Th>Descripción</Table.Th>
-            <Table.Th>Cantidad</Table.Th>
-            <Table.Th w={160}>Precio unitario</Table.Th>
-            <Table.Th w={150}>Tiempo de entrega</Table.Th>
-            <Table.Th w={130}>Importe</Table.Th>
+            <Table.Th w={40}>No.</Table.Th>
+            <Table.Th>Pedido</Table.Th>
+            <Table.Th w={110}>Cantidad</Table.Th>
+            <Table.Th w={150}>Unidad</Table.Th>
+            <Table.Th w={130}>Precio unit.</Table.Th>
+            <Table.Th w={130}>Entrega</Table.Th>
+            <Table.Th w={170}>Proveedor</Table.Th>
+            <Table.Th w={210}>Estatus</Table.Th>
+            <Table.Th w={120}>Importe</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {solicitud.partidas.map((p) => {
-            const renglon = form.renglones[p.id] ?? { precio: "", tiempo: "" };
-            const renglonServidor = opcionServidor?.renglones.find((r) => r.partida_id === p.id);
-            const precioNum = Number(renglon.precio);
+            const r = form.renglones[p.id] as RenglonForm;
+            const renglonServidor = opcionServidor?.renglones.find((x) => x.partida_id === p.id);
+            const precioNum = Number(r.precio);
             const importeLocal =
-              renglon.precio.trim() && !Number.isNaN(precioNum)
-                ? precioNum * Number(p.cantidad)
+              r.precio.trim() && !Number.isNaN(precioNum) && !Number.isNaN(Number(r.cantidad))
+                ? precioNum * Number(r.cantidad)
                 : null;
+            const deshabilitado = r.noEncontrada;
             return (
-              <Table.Tr key={p.id}>
+              <Table.Tr
+                key={p.id}
+                bg={
+                  r.noEncontrada
+                    ? "var(--mantine-color-gray-1)"
+                    : r.esAlternativa
+                      ? "var(--mantine-color-orange-0)"
+                      : undefined
+                }
+              >
                 <Table.Td>{p.num_partida}</Table.Td>
-                <Table.Td>{p.descripcion}</Table.Td>
                 <Table.Td>
-                  {p.cantidad} {p.unidad}
+                  <Text size="sm">{p.descripcion}</Text>
+                  <Text size="xs" c="dimmed">
+                    pedido: {p.cantidad} {p.unidad}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <TextInput
+                    value={r.cantidad}
+                    disabled={deshabilitado}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      setRenglon(p.id, { cantidad: v });
+                    }}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <Select
+                    data={UNIDADES}
+                    value={r.unidad}
+                    disabled={deshabilitado}
+                    allowDeselect={false}
+                    onChange={(v) => setRenglon(p.id, { unidad: (v as Unidad) ?? r.unidad })}
+                  />
                 </Table.Td>
                 <Table.Td>
                   <TextInput
                     placeholder="0.0000"
-                    value={renglon.precio}
+                    value={r.precio}
+                    disabled={deshabilitado}
                     error={errorDe("precio_unitario", p.num_partida)}
                     onChange={(e) => {
                       const v = e.currentTarget.value;
-                      setForm((f) => ({
-                        ...f,
-                        renglones: { ...f.renglones, [p.id]: { ...renglon, precio: v } },
-                      }));
+                      setRenglon(p.id, { precio: v });
                     }}
                   />
                 </Table.Td>
                 <Table.Td>
                   <TextInput
                     placeholder="p. ej. 1 semana"
-                    value={renglon.tiempo}
+                    value={r.tiempo}
+                    disabled={deshabilitado}
                     error={errorDe("tiempo_entrega", p.num_partida)}
                     onChange={(e) => {
                       const v = e.currentTarget.value;
-                      setForm((f) => ({
-                        ...f,
-                        renglones: { ...f.renglones, [p.id]: { ...renglon, tiempo: v } },
-                      }));
+                      setRenglon(p.id, { tiempo: v });
                     }}
                   />
                 </Table.Td>
                 <Table.Td>
-                  {renglonServidor?.importe !== null &&
-                  renglonServidor?.importe !== undefined &&
-                  form.moneda ? (
+                  <TextInput
+                    value={r.proveedor}
+                    disabled={deshabilitado}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      setRenglon(p.id, { proveedor: v });
+                    }}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <Stack gap={4}>
+                    <Checkbox
+                      label="No encontrada"
+                      size="xs"
+                      checked={r.noEncontrada}
+                      onChange={(e) => {
+                        const activa = e.currentTarget.checked;
+                        setRenglon(p.id, aplicarNoEncontrada(r, activa));
+                      }}
+                    />
+                    <Checkbox
+                      label="Alternativa"
+                      size="xs"
+                      checked={r.esAlternativa}
+                      disabled={r.noEncontrada}
+                      onChange={(e) => {
+                        const activa = e.currentTarget.checked;
+                        setRenglon(p.id, {
+                          esAlternativa: activa,
+                          ...(activa ? {} : { alternativaDescripcion: "" }),
+                        });
+                      }}
+                    />
+                    {r.esAlternativa && (
+                      <Textarea
+                        placeholder="¿Qué estás ofreciendo en su lugar?"
+                        size="xs"
+                        autosize
+                        minRows={1}
+                        value={r.alternativaDescripcion}
+                        onChange={(e) => {
+                          const v = e.currentTarget.value;
+                          setRenglon(p.id, { alternativaDescripcion: v });
+                        }}
+                      />
+                    )}
+                    {erroresLocales[p.id] && (
+                      <Text size="xs" c="red">
+                        {erroresLocales[p.id]}
+                      </Text>
+                    )}
+                  </Stack>
+                </Table.Td>
+                <Table.Td>
+                  {r.noEncontrada ? (
+                    <Text size="sm" c="dimmed">
+                      —
+                    </Text>
+                  ) : renglonServidor?.importe != null && form.moneda ? (
                     <Text size="sm">{dinero(renglonServidor.importe, form.moneda)}</Text>
                   ) : importeLocal !== null && form.moneda ? (
                     <Text size="sm" c="dimmed">
@@ -252,7 +381,10 @@ function EditorOpcion({
       <Textarea
         label="Comentarios de la opción"
         value={form.comentarios}
-        onChange={(e) => setForm((f) => ({ ...f, comentarios: e.currentTarget.value }))}
+        onChange={(e) => {
+          const v = e.currentTarget.value;
+          setForm((f) => ({ ...f, comentarios: v }));
+        }}
         autosize
         minRows={1}
       />
@@ -360,10 +492,13 @@ export function CapturaCotizacion() {
   const correccion = solicitud.estado === "COTIZADA";
   const letrasUsadas = solicitud.opciones.map((o) => o.letra);
   const siguienteLetra = LETRAS.find((l) => !letrasUsadas.includes(l));
-  // Tabs visibles: las capturadas + (si cabe) la siguiente para agregar.
-  const letrasVisibles = LETRAS.filter(
-    (l) => letrasUsadas.includes(l) || l === (letrasUsadas.length === 0 ? "A" : undefined),
-  );
+  const letrasVisibles = [
+    ...new Set<Letra>([
+      ...letrasUsadas,
+      ...(letrasUsadas.length === 0 ? (["A"] as Letra[]) : []),
+      ...(letraActiva && LETRAS.includes(letraActiva as Letra) ? [letraActiva as Letra] : []),
+    ]),
+  ].sort();
 
   const marcarCompleta = () => {
     setErrores([]);
@@ -376,7 +511,11 @@ export function CapturaCotizacion() {
           setErrores(faltantes);
           const primera = faltantes[0];
           if (primera) setLetraActiva(primera.letra);
-          setErrorGeneral("La cotización está incompleta: revisa los campos marcados.");
+          setErrorGeneral(
+            faltantes.length > 0
+              ? "La cotización está incompleta: revisa los campos marcados."
+              : e.detail,
+          );
         } else if (e instanceof ApiError && e.code === "sin_opciones") {
           setErrorGeneral("Captura al menos una opción antes de marcar completa.");
         } else {
@@ -414,6 +553,7 @@ export function CapturaCotizacion() {
     <Stack>
       <Group justify="space-between">
         <Group>
+          <VolverBoton />
           <Title order={3}>{folioCliente(solicitud.folio, solicitud.cliente_nombre)}</Title>
           <BadgeEstado estado={solicitud.estado} />
           <SemaforoBanda
@@ -493,50 +633,42 @@ export function CapturaCotizacion() {
           <Group justify="space-between">
             <Title order={5}>Opciones de cotización</Title>
             {siguienteLetra && letrasUsadas.length > 0 && (
-              <Button
-                variant="light"
-                size="compact-sm"
-                onClick={() => setLetraActiva(siguienteLetra)}
-              >
+              <Button variant="light" size="compact-sm" onClick={() => setLetraActiva(siguienteLetra)}>
                 + Agregar opción {siguienteLetra}
               </Button>
             )}
           </Group>
           <Tabs value={letraActiva} onChange={setLetraActiva}>
             <Tabs.List>
-              {[...new Set([...letrasVisibles, ...(letraActiva ? [letraActiva as Letra] : [])])]
-                .sort()
-                .map((l) => (
-                  <Tabs.Tab key={l} value={l}>
-                    Opción {l}
-                    {letrasUsadas.includes(l as Letra) ? "" : " (nueva)"}
-                  </Tabs.Tab>
-                ))}
+              {letrasVisibles.map((l) => (
+                <Tabs.Tab key={l} value={l}>
+                  Opción {l}
+                  {letrasUsadas.includes(l) ? "" : " (nueva)"}
+                </Tabs.Tab>
+              ))}
             </Tabs.List>
-            {[...new Set([...letrasVisibles, ...(letraActiva ? [letraActiva as Letra] : [])])].map(
-              (l) => (
-                <Tabs.Panel key={l} value={l}>
-                  <EditorOpcion
-                    solicitud={solicitud}
-                    letra={l as Letra}
-                    errores={errores}
-                    onGuardado={() => setErrores([])}
-                  />
-                  {letrasUsadas.includes(l as Letra) && letrasUsadas.length > 1 && (
-                    <Group justify="flex-end" mt="xs">
-                      <Button
-                        variant="subtle"
-                        color="red"
-                        size="compact-sm"
-                        onClick={() => confirmarEliminar(l as Letra)}
-                      >
-                        Eliminar opción {l}
-                      </Button>
-                    </Group>
-                  )}
-                </Tabs.Panel>
-              ),
-            )}
+            {letrasVisibles.map((l) => (
+              <Tabs.Panel key={l} value={l}>
+                <EditorOpcion
+                  solicitud={solicitud}
+                  letra={l}
+                  errores={errores}
+                  onGuardado={() => setErrores([])}
+                />
+                {letrasUsadas.includes(l) && letrasUsadas.length > 1 && (
+                  <Group justify="flex-end" mt="xs">
+                    <Button
+                      variant="subtle"
+                      color="red"
+                      size="compact-sm"
+                      onClick={() => confirmarEliminar(l)}
+                    >
+                      Eliminar opción {l}
+                    </Button>
+                  </Group>
+                )}
+              </Tabs.Panel>
+            ))}
           </Tabs>
         </>
       )}

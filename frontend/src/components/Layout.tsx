@@ -17,7 +17,7 @@ import {
 import { Outlet, useNavigate } from "react-router";
 
 import { useLeerTodas, useMarcarLeida, useNotificaciones } from "../api/hooks";
-import { useAuth } from "../auth/AuthContext";
+import { rutaPorRol, useAuth } from "../auth/AuthContext";
 import { fechaHora } from "../lib/format";
 import type { NotificacionOut } from "../lib/types";
 
@@ -102,9 +102,11 @@ export function Layout() {
     <AppShell header={{ height: 56 }} padding="md">
       <AppShell.Header bg="herinox.6">
         <Group h="100%" px="md" justify="space-between">
-          <Title order={4} c="white">
-            Cotizaciones Herinox
-          </Title>
+          <UnstyledButton onClick={() => navigate(usuario ? rutaPorRol(usuario.rol) : "/")}>
+            <Title order={4} c="white">
+              Cotizaciones Herinox
+            </Title>
+          </UnstyledButton>
           <Group gap="sm">
             <Campana />
             <Text c="white" size="sm">

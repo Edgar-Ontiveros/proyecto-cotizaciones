@@ -15,8 +15,8 @@ BASE = "/api/v1/solicitudes"
 NOTIF = "/api/v1/notificaciones"
 REFRESH = "/api/v1/auth/refresh"
 
-PARTIDA = {"cantidad": "3", "unidad": "PZA", "descripcion": "SOLERA 1/8 X 1"}
-PARTIDA_2 = {"cantidad": "2", "unidad": "PZA", "descripcion": 'PLACA 1/2"'}
+PARTIDA = {"cantidad": "3", "unidad": "PZ", "descripcion": "SOLERA 1/8 X 1"}
+PARTIDA_2 = {"cantidad": "2", "unidad": "PZ", "descripcion": 'PLACA 1/2"'}
 
 
 @pytest.fixture

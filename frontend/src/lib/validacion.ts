@@ -3,8 +3,9 @@
 
 import { z } from "zod";
 
-// Espejo de PartidaIn: cantidad > 0; unidad y descripción obligatorias;
-// codigo_sap / tipo_acero / medidas opcionales ("SERVICIO" cuando no hay SAP).
+// Espejo de PartidaIn: cantidad > 0; unidad del CATÁLOGO (F8b) y descripción
+// obligatorias; codigo_sap / tipo_acero / medidas opcionales ("SERVICIO"
+// cuando no hay SAP).
 export const partidaSchema = z.object({
   codigo_sap: z.string().trim().max(40).optional().or(z.literal("")),
   cantidad: z
@@ -12,7 +13,7 @@ export const partidaSchema = z.object({
     .trim()
     .min(1, "Captura la cantidad")
     .refine((v) => !Number.isNaN(Number(v)) && Number(v) > 0, "La cantidad debe ser mayor a 0"),
-  unidad: z.string().trim().min(1, "La unidad es obligatoria"),
+  unidad: z.enum(["PZ", "KG", "TON", "MTS", "M2"], "Elige la unidad del catálogo"),
   tipo_acero: z.string().trim().optional().or(z.literal("")),
   descripcion: z.string().trim().min(1, "La descripción es obligatoria"),
   medidas: z.string().trim().optional().or(z.literal("")),

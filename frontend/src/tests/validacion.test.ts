@@ -7,7 +7,7 @@ import {
 } from "../lib/validacion";
 
 describe("Zod de partida (espejo del backend PartidaIn)", () => {
-  const base = { codigo_sap: "", cantidad: "2", unidad: "PZA", tipo_acero: "", descripcion: "PTR", medidas: "" };
+  const base = { codigo_sap: "", cantidad: "2", unidad: "PZ", tipo_acero: "", descripcion: "PTR", medidas: "" };
 
   it("acepta una partida válida", () => {
     expect(partidaSchema.safeParse(base).success).toBe(true);
@@ -17,8 +17,10 @@ describe("Zod de partida (espejo del backend PartidaIn)", () => {
     expect(partidaSchema.safeParse({ ...base, cantidad: "-3" }).success).toBe(false);
     expect(partidaSchema.safeParse({ ...base, cantidad: "abc" }).success).toBe(false);
   });
-  it("exige unidad y descripción", () => {
+  it("exige unidad DEL CATÁLOGO y descripción", () => {
     expect(partidaSchema.safeParse({ ...base, unidad: " " }).success).toBe(false);
+    expect(partidaSchema.safeParse({ ...base, unidad: "PZA" }).success).toBe(false);
+    expect(partidaSchema.safeParse({ ...base, unidad: "LOTE" }).success).toBe(false);
     expect(partidaSchema.safeParse({ ...base, descripcion: "" }).success).toBe(false);
   });
   it("codigo_sap, tipo_acero y medidas son opcionales", () => {

@@ -156,7 +156,7 @@ def test_sucursal_nueva_titular_y_folio_desde_contador(
         headers=headers_v,
         json={
             "cliente": "DINCO",
-            "partidas": [{"cantidad": "1", "unidad": "PZA", "descripcion": "X"}],
+            "partidas": [{"cantidad": "1", "unidad": "PZ", "descripcion": "X"}],
         },
     )
     sid = r.json()["id"]

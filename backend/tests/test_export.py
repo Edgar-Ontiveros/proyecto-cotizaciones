@@ -21,7 +21,7 @@ from app.models.usuario import Rol
 BASE = "/api/v1/solicitudes"
 EXPORT = "/api/v1/solicitudes/export"
 
-PARTIDA = {"cantidad": "2", "unidad": "PZA", "descripcion": "PTR 2X2"}
+PARTIDA = {"cantidad": "2", "unidad": "PZ", "descripcion": "PTR 2X2"}
 
 
 @pytest.fixture
@@ -67,11 +67,35 @@ def test_listado_banda_solo_en_abiertas(client, entorno, auth_headers):
     assert items[borrador]["horas_habiles"] is None
 
 
+def _cotizada(client, entorno, auth_headers):
+    """Enviada → captura completa de la opción A → COTIZADA."""
+    sid = _enviada(client, entorno, auth_headers)
+    headers = auth_headers(entorno.comprador)
+    detalle = client.get(f"{BASE}/{sid}", headers=headers).json()
+    r = client.put(
+        f"{BASE}/{sid}/opciones/A",
+        headers=headers,
+        json={
+            "moneda": "MXN",
+            "vigencia": "2026-08-31",
+            "renglones": [
+                {"partida_id": p["id"], "precio_unitario": "10.00", "tiempo_entrega": "1 semana"}
+                for p in detalle["partidas"]
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert client.post(f"{BASE}/{sid}/cotizar", headers=headers).status_code == 200
+    return sid
+
+
 def test_listado_sin_n_mas_uno(client, entorno, auth_headers):
     """El número de queries del listado NO crece con el número de filas
-    abiertas (eventos de apertura en un query para toda la página)."""
+    abiertas NI con el de cotizadas (F8b: el monto de referencia también sale
+    en un query fijo por página)."""
     headers = auth_headers(entorno.vendedor)
     _enviada(client, entorno, auth_headers)
+    _cotizada(client, entorno, auth_headers)
 
     def contar() -> int:
         queries: list[str] = []
@@ -86,11 +110,12 @@ def test_listado_sin_n_mas_uno(client, entorno, auth_headers):
             event.remove(engine, "before_cursor_execute", registrar)
         return len(queries)
 
-    con_una = contar()
-    for _ in range(4):
+    con_pocas = contar()
+    for _ in range(3):
         _enviada(client, entorno, auth_headers)
-    con_cinco = contar()
-    assert con_cinco == con_una  # queries fijos, sin N+1
+        _cotizada(client, entorno, auth_headers)
+    con_muchas = contar()
+    assert con_muchas == con_pocas  # queries fijos, sin N+1
 
 
 # -------------------------------------------------------------------- export

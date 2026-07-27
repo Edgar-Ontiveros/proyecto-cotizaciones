@@ -42,8 +42,6 @@ class CotizacionOpcion(Base):
     moneda: Mapped[Moneda | None] = mapped_column(MonedaEnum)
     vigencia: Mapped[date | None] = mapped_column(Date)
     comentarios: Mapped[str | None] = mapped_column(Text)
-    # Visible SOLO para comprador y admin (se excluye en schemas de respuesta).
-    proveedor: Mapped[str | None]
     total: Mapped[Decimal] = mapped_column(Numeric(14, 2), server_default=text("0"))
     completa: Mapped[bool] = mapped_column(server_default=false())
 
@@ -51,8 +49,10 @@ class CotizacionOpcion(Base):
 
 
 class OpcionPartida(Base):
-    """Precio y tiempo de entrega POR PARTIDA dentro de cada opción (así viene
-    el formato real). importe = cantidad × precio_unitario."""
+    """Renglón RICO por partida dentro de cada opción (F8b): cantidad/unidad
+    COTIZADAS (pueden diferir de lo pedido — KG cotizados sobre PZ pedidas),
+    proveedor por renglón, no_encontrada y alternativa.
+    importe = cantidad_del_renglón × precio_unitario."""
 
     __tablename__ = "opcion_partidas"
     __table_args__ = (UniqueConstraint("opcion_id", "partida_id"),)
@@ -60,6 +60,9 @@ class OpcionPartida(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     opcion_id: Mapped[int] = mapped_column(ForeignKey("cotizacion_opciones.id"))
     partida_id: Mapped[int] = mapped_column(ForeignKey("solicitud_partidas.id"))
+    # Cantidad/unidad cotizadas; nacen precargadas de la partida.
+    cantidad: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    unidad: Mapped[str]  # catálogo PZ/KG/TON/MTS/M2 (CHECK en BD)
     # Nullables: la captura puede ser parcial; la obligatoriedad de precio y
     # tiempo de entrega se exige al marcar la cotización completa.
     # Numeric(14,4): los precios reales traen 3–4 decimales; el importe (14,2)
@@ -67,5 +70,12 @@ class OpcionPartida(Base):
     precio_unitario: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
     importe: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     tiempo_entrega: Mapped[str | None] = mapped_column(Text)
+    # Visible SOLO para comprador y admin (se excluye en schemas de respuesta).
+    proveedor: Mapped[str | None]
+    # El comprador no consiguió el material: renglón completo sin precio.
+    no_encontrada: Mapped[bool] = mapped_column(server_default=false())
+    # Cotiza un similar en el mismo renglón; exige descripción y precio.
+    es_alternativa: Mapped[bool] = mapped_column(server_default=false())
+    alternativa_descripcion: Mapped[str | None] = mapped_column(Text)
 
     opcion: Mapped[CotizacionOpcion] = relationship(back_populates="partidas")

@@ -24,6 +24,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import { useNoConfirmar, useSeleccionar, useSolicitud } from "../../api/hooks";
+import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { dinero, fecha } from "../../lib/format";
 import type { MotivoNoConfirmada, OpcionOut, SolicitudDetailOut } from "../../lib/types";
@@ -65,24 +66,75 @@ function CartaOpcion({
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Partida</Table.Th>
+            <Table.Th>Cotizado</Table.Th>
             <Table.Th>P. unitario</Table.Th>
             <Table.Th>Importe</Table.Th>
             <Table.Th>Entrega</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {opcion.renglones.map((r) => (
-            <Table.Tr key={r.id}>
-              <Table.Td>
-                {r.num_partida}. {partidasPorId.get(r.partida_id)?.descripcion ?? ""}
-              </Table.Td>
-              <Table.Td>{r.precio_unitario ?? "—"}</Table.Td>
-              <Table.Td>
-                {r.importe !== null && opcion.moneda ? dinero(r.importe, opcion.moneda) : "—"}
-              </Table.Td>
-              <Table.Td>{r.tiempo_entrega ?? "—"}</Table.Td>
-            </Table.Tr>
-          ))}
+          {opcion.renglones.map((r) => {
+            const partida = partidasPorId.get(r.partida_id);
+            const difiere =
+              partida !== undefined &&
+              (Number(partida.cantidad) !== Number(r.cantidad) || partida.unidad !== r.unidad);
+            return (
+              <Table.Tr
+                key={r.id}
+                bg={
+                  r.no_encontrada
+                    ? "var(--mantine-color-gray-1)"
+                    : r.es_alternativa
+                      ? "var(--mantine-color-orange-0)"
+                      : undefined
+                }
+              >
+                <Table.Td>
+                  {r.num_partida}. {partida?.descripcion ?? ""}
+                  {r.es_alternativa && (
+                    <>
+                      {" "}
+                      <Badge size="xs" color="acento.7" variant="filled">
+                        ALTERNATIVA
+                      </Badge>
+                      <Text size="xs" c="acento.8">
+                        {r.alternativa_descripcion}
+                      </Text>
+                    </>
+                  )}
+                </Table.Td>
+                {r.no_encontrada ? (
+                  <Table.Td colSpan={4}>
+                    <Text size="xs" fw={600} c="dimmed">
+                      No disponible — el comprador no consiguió este material
+                    </Text>
+                  </Table.Td>
+                ) : (
+                  <>
+                    <Table.Td>
+                      {difiere && partida ? (
+                        <>
+                          <Text size="xs" c="dimmed">
+                            pedido: {partida.cantidad} {partida.unidad}
+                          </Text>
+                          <Text size="xs" fw={600}>
+                            cotizado: {r.cantidad} {r.unidad}
+                          </Text>
+                        </>
+                      ) : (
+                        `${r.cantidad} ${r.unidad}`
+                      )}
+                    </Table.Td>
+                    <Table.Td>{r.precio_unitario ?? "—"}</Table.Td>
+                    <Table.Td>
+                      {r.importe !== null && opcion.moneda ? dinero(r.importe, opcion.moneda) : "—"}
+                    </Table.Td>
+                    <Table.Td>{r.tiempo_entrega ?? "—"}</Table.Td>
+                  </>
+                )}
+              </Table.Tr>
+            );
+          })}
         </Table.Tbody>
       </Table>
       {opcion.comentarios && (
@@ -191,9 +243,12 @@ export function Comparador() {
   return (
     <Stack>
       <Group justify="space-between">
-        <Title order={3}>
-          Opciones de {solicitud.folio} · {solicitud.cliente_nombre}
-        </Title>
+        <Group>
+          <VolverBoton />
+          <Title order={3}>
+            Opciones de {solicitud.folio} · {solicitud.cliente_nombre}
+          </Title>
+        </Group>
         <Group>
           {puedeConfirmar && (
             <Button variant="outline" color="orange" onClick={abrirNoConcretado}>

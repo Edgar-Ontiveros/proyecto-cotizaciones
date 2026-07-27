@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useMiPanel, useSolicitudes } from "../../api/hooks";
-import { BadgeEstado, Dinero, SemaforoBanda } from "../../components/compartidos";
+import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../../components/compartidos";
 import { fecha, horas, pct } from "../../lib/format";
 import type { SolicitudOut } from "../../lib/types";
 
@@ -135,9 +135,7 @@ export function PanelComprador() {
     {
       accessor: "monto",
       title: "Monto",
-      render: (s: SolicitudOut) => (
-        <Dinero monto={s.monto_confirmado} moneda={s.moneda_confirmada} />
-      ),
+      render: (s: SolicitudOut) => <MontoSolicitud solicitud={s} />,
     },
   ];
 

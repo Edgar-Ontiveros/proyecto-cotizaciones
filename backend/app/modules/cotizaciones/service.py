@@ -22,6 +22,8 @@ from app.modules.cotizaciones.schemas import (
     OpcionCompradorOut,
     OpcionIn,
     OpcionOut,
+    RenglonCompradorOut,
+    RenglonIn,
     RenglonOut,
 )
 from app.modules.notificaciones import service as notificaciones
@@ -42,10 +44,53 @@ class _Renglon(Protocol):
 
     precio_unitario: Decimal | None
     tiempo_entrega: str | None
+    no_encontrada: bool
 
 
 def _importe(cantidad: Decimal, precio_unitario: Decimal) -> Decimal:
     return (cantidad * precio_unitario).quantize(_CENTAVOS, rounding=ROUND_HALF_UP)
+
+
+def _renglon_vacio(renglon: RenglonIn) -> bool:
+    """Sin información capturada: no se persiste (guardado parcial)."""
+    return (
+        renglon.precio_unitario is None
+        and renglon.tiempo_entrega is None
+        and renglon.proveedor is None
+        and not renglon.no_encontrada
+        and not renglon.es_alternativa
+    )
+
+
+def _validar_renglon(renglon: RenglonIn, num_partida: int) -> None:
+    """Reglas del renglón rico (F8b): no_encontrada excluye precio y
+    alternativa; la alternativa exige descripción y precio."""
+    if renglon.no_encontrada and renglon.es_alternativa:
+        raise AppError(
+            422,
+            f"partida {num_partida}: un renglón no encontrado no puede ser alternativa",
+            "renglon_invalido",
+        )
+    if renglon.no_encontrada and (
+        renglon.precio_unitario is not None or renglon.alternativa_descripcion
+    ):
+        raise AppError(
+            422,
+            f"partida {num_partida}: un renglón no encontrado no lleva precio ni alternativa",
+            "renglon_invalido",
+        )
+    if renglon.es_alternativa and not (renglon.alternativa_descripcion or "").strip():
+        raise AppError(
+            422,
+            f"partida {num_partida}: la alternativa exige describir qué se está ofreciendo",
+            "renglon_invalido",
+        )
+    if renglon.es_alternativa and renglon.precio_unitario is None:
+        raise AppError(
+            422,
+            f"partida {num_partida}: la alternativa exige precio",
+            "renglon_invalido",
+        )
 
 
 def _partidas_de(db: Session, solicitud_id: int) -> list[SolicitudPartida]:
@@ -88,15 +133,21 @@ def _faltantes_de(
     renglones_por_partida: dict[int, Any],
     partidas: list[SolicitudPartida],
 ) -> list[str]:
-    """Obligatorios al completar (§4.8): moneda y vigencia por opción; precio y
-    tiempo de entrega en un renglón por CADA partida de la solicitud."""
+    """Obligatorios al completar (F8b): moneda y vigencia por opción; por CADA
+    partida, un renglón completo = no_encontrada O (precio + tiempo_entrega);
+    y al menos UN renglón cotizado (una opción 100% no-encontrada no es
+    cotización — para eso está el rechazo)."""
     faltantes = []
     if moneda is None:
         faltantes.append(f"opción {letra}: falta moneda")
     if vigencia is None:
         faltantes.append(f"opción {letra}: falta vigencia")
+    cotizados = 0
     for partida in partidas:
         renglon: _Renglon | None = renglones_por_partida.get(partida.id)
+        if renglon is not None and renglon.no_encontrada:
+            continue  # completo sin precio: el material no se consiguió
+        cotizados += 1  # cotizado o pendiente de cotizar (faltantes abajo)
         if renglon is None or renglon.precio_unitario is None:
             faltantes.append(
                 f"opción {letra}: falta precio_unitario en la partida {partida.num_partida}"
@@ -105,16 +156,44 @@ def _faltantes_de(
             faltantes.append(
                 f"opción {letra}: falta tiempo_entrega en la partida {partida.num_partida}"
             )
+    if partidas and cotizados == 0:
+        faltantes.append(
+            f"opción {letra}: no tiene ningún renglón cotizado (si nada se "
+            "consiguió, rechaza la solicitud)"
+        )
     return faltantes
 
 
-def _datos_opcion(db: Session, opcion: CotizacionOpcion) -> dict[str, Any]:
+def _datos_renglon(fila: OpcionPartida, num_partida: int) -> dict[str, Any]:
+    return {
+        "id": fila.id,
+        "partida_id": fila.partida_id,
+        "num_partida": num_partida,
+        "cantidad": fila.cantidad,
+        "unidad": fila.unidad,
+        "precio_unitario": fila.precio_unitario,
+        "importe": fila.importe,
+        "tiempo_entrega": fila.tiempo_entrega,
+        "no_encontrada": fila.no_encontrada,
+        "es_alternativa": fila.es_alternativa,
+        "alternativa_descripcion": fila.alternativa_descripcion,
+    }
+
+
+def _datos_opcion(db: Session, opcion: CotizacionOpcion, con_proveedor: bool) -> dict[str, Any]:
+    """El proveedor del renglón SOLO existe en la vista de compras (§4.8)."""
     filas = db.execute(
         select(OpcionPartida, SolicitudPartida.num_partida)
         .join(SolicitudPartida, OpcionPartida.partida_id == SolicitudPartida.id)
         .where(OpcionPartida.opcion_id == opcion.id)
         .order_by(SolicitudPartida.num_partida)
     ).all()
+    renglones: list[RenglonOut] = [
+        RenglonCompradorOut(**_datos_renglon(fila, num), proveedor=fila.proveedor)
+        if con_proveedor
+        else RenglonOut(**_datos_renglon(fila, num))
+        for fila, num in filas
+    ]
     return {
         "id": opcion.id,
         "letra": opcion.letra,
@@ -123,31 +202,38 @@ def _datos_opcion(db: Session, opcion: CotizacionOpcion) -> dict[str, Any]:
         "comentarios": opcion.comentarios,
         "total": opcion.total,
         "completa": opcion.completa,
-        "renglones": [
-            RenglonOut(
-                id=fila.id,
-                partida_id=fila.partida_id,
-                num_partida=num_partida,
-                precio_unitario=fila.precio_unitario,
-                importe=fila.importe,
-                tiempo_entrega=fila.tiempo_entrega,
-            )
-            for fila, num_partida in filas
-        ],
+        "renglones": renglones,
     }
 
 
 def opciones_de(db: Session, solicitud_id: int) -> list[OpcionOut]:
     """Vista SIN proveedor (vendedor y gerente)."""
-    return [OpcionOut(**_datos_opcion(db, o)) for o in _opciones(db, solicitud_id)]
+    return [
+        OpcionOut(**_datos_opcion(db, o, con_proveedor=False)) for o in _opciones(db, solicitud_id)
+    ]
 
 
 def opciones_comprador_de(db: Session, solicitud_id: int) -> list[OpcionCompradorOut]:
-    """Vista CON proveedor (comprador y admin)."""
+    """Vista CON proveedor por renglón (comprador y admin)."""
     return [
-        OpcionCompradorOut(**_datos_opcion(db, o), proveedor=o.proveedor)
+        OpcionCompradorOut(**_datos_opcion(db, o, con_proveedor=True))
         for o in _opciones(db, solicitud_id)
     ]
+
+
+def referencias_opcion_a(
+    db: Session, solicitud_ids: list[int]
+) -> dict[int, tuple[Decimal, Moneda | None]]:
+    """total y moneda de la opción A por solicitud (monto de referencia de una
+    COTIZADA, §4.9) — UN query para todo el conjunto (sin N+1)."""
+    if not solicitud_ids:
+        return {}
+    filas = db.execute(
+        select(
+            CotizacionOpcion.solicitud_id, CotizacionOpcion.total, CotizacionOpcion.moneda
+        ).where(CotizacionOpcion.solicitud_id.in_(solicitud_ids), CotizacionOpcion.letra == Letra.A)
+    ).all()
+    return {sid: (total, moneda) for sid, total, moneda in filas}
 
 
 def guardar_opcion(
@@ -186,15 +272,16 @@ def guardar_opcion(
             )
         vistos.add(renglon.partida_id)
 
+    # Validación del renglón rico ANTES de mutar nada (F8b).
+    for renglon in data.renglones:
+        if not _renglon_vacio(renglon):
+            _validar_renglon(renglon, partidas_por_id[renglon.partida_id].num_partida)
+
     if correccion:
         # La corrección no puede dejar la opción incompleta (resp. 21). Se
         # valida contra el body ANTES de mutar nada: si falta algo, la opción
         # persistida queda intacta.
-        renglones_body = {
-            r.partida_id: r
-            for r in data.renglones
-            if not (r.precio_unitario is None and r.tiempo_entrega is None)
-        }
+        renglones_body = {r.partida_id: r for r in data.renglones if not _renglon_vacio(r)}
         faltantes = _faltantes_de(letra.value, data.moneda, data.vigencia, renglones_body, partidas)
         if faltantes:
             raise AppError(
@@ -213,27 +300,37 @@ def guardar_opcion(
     opcion.moneda = data.moneda
     opcion.vigencia = data.vigencia
     opcion.comentarios = data.comentarios
-    opcion.proveedor = data.proveedor
 
     total = Decimal("0")
     for renglon in data.renglones:
-        if renglon.precio_unitario is None and renglon.tiempo_entrega is None:
+        if _renglon_vacio(renglon):
             continue  # sin información todavía: no se persiste
+        partida = partidas_por_id[renglon.partida_id]
+        # Cantidad/unidad del RENGLÓN: precargadas de la partida si no vienen.
+        cantidad = renglon.cantidad if renglon.cantidad is not None else partida.cantidad
+        unidad = renglon.unidad if renglon.unidad is not None else partida.unidad
         importe = None
         if renglon.precio_unitario is not None:
-            importe = _importe(
-                partidas_por_id[renglon.partida_id].cantidad, renglon.precio_unitario
-            )
+            # El importe usa la cantidad DEL RENGLÓN (lo cotizado), no la
+            # pedida: 500 KG cotizados sobre 20 PZ pedidas.
+            importe = _importe(cantidad, renglon.precio_unitario)
             total += importe
         db.add(
             OpcionPartida(
                 opcion_id=opcion.id,
                 partida_id=renglon.partida_id,
+                cantidad=cantidad,
+                unidad=unidad,
                 precio_unitario=renglon.precio_unitario,
                 importe=importe,
                 tiempo_entrega=renglon.tiempo_entrega,
+                proveedor=renglon.proveedor,
+                no_encontrada=renglon.no_encontrada,
+                es_alternativa=renglon.es_alternativa,
+                alternativa_descripcion=(renglon.alternativa_descripcion or "").strip() or None,
             )
         )
+    # Total = SOLO renglones cotizados (los no-encontrados no tienen importe).
     opcion.total = total.quantize(_CENTAVOS)
 
     if correccion:
@@ -251,7 +348,7 @@ def guardar_opcion(
     else:
         opcion.completa = False
     db.commit()
-    return OpcionCompradorOut(**_datos_opcion(db, opcion), proveedor=opcion.proveedor)
+    return OpcionCompradorOut(**_datos_opcion(db, opcion, con_proveedor=True))
 
 
 def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> None:

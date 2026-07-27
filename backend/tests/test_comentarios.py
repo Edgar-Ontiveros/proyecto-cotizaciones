@@ -8,7 +8,7 @@ from app.models.usuario import Rol
 
 BASE = "/api/v1/solicitudes"
 
-PARTIDA = {"cantidad": "5", "unidad": "PZA", "descripcion": "PLACA A-36"}
+PARTIDA = {"cantidad": "5", "unidad": "PZ", "descripcion": "PLACA A-36"}
 
 
 @pytest.fixture

@@ -13,7 +13,7 @@ BASE = "/api/v1/solicitudes"
 PARTIDA = {
     "codigo_sap": "205494",
     "cantidad": "40",
-    "unidad": "PZA",
+    "unidad": "PZ",
     "tipo_acero": "A-36",
     "descripcion": 'ANGULO 2" X 1/4"',
     "medidas": "6.10 MTS",

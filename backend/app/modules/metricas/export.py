@@ -20,11 +20,11 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.permissions import get_current_user
 from app.models.catalogos import MotivoRechazo
-from app.models.cotizacion import CotizacionOpcion, Letra
 from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Prioridad, Solicitud
 from app.models.sucursal import Sucursal
 from app.models.usuario import Usuario
+from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.metricas.ciclos import cargar_ciclos
 from app.modules.solicitudes import service as solicitudes_service
 
@@ -71,15 +71,13 @@ def _sucursales(db: Session, ids: set[int]) -> dict[int, tuple[str, str]]:
 
 
 def _opciones_a(db: Session, ids: list[int]) -> dict[int, tuple[Decimal, str | None]]:
-    """total y moneda de la opción A (monto de referencia de una COTIZADA)."""
-    if not ids:
-        return {}
-    filas = db.execute(
-        select(
-            CotizacionOpcion.solicitud_id, CotizacionOpcion.total, CotizacionOpcion.moneda
-        ).where(CotizacionOpcion.solicitud_id.in_(ids), CotizacionOpcion.letra == Letra.A)
-    ).all()
-    return {sid: (total, moneda.value if moneda else None) for sid, total, moneda in filas}
+    """total y moneda de la opción A (monto de referencia de una COTIZADA) —
+    misma fuente que el listado (F8b): cotizaciones.referencias_opcion_a."""
+    referencias = cotizaciones_service.referencias_opcion_a(db, ids)
+    return {
+        sid: (total, moneda.value if moneda else None)
+        for sid, (total, moneda) in referencias.items()
+    }
 
 
 def _motivos_rechazo(db: Session, ids: list[int]) -> dict[int, str]:

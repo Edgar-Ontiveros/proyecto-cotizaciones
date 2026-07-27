@@ -13,7 +13,7 @@ from app.models.usuario import Rol
 BASE = "/api/v1/solicitudes"
 USUARIOS = "/api/v1/usuarios"
 
-PARTIDA = {"cantidad": "2", "unidad": "PZA", "descripcion": "PTR 2X2"}
+PARTIDA = {"cantidad": "2", "unidad": "PZ", "descripcion": "PTR 2X2"}
 CUERPO = {"cliente": "DINCO", "prioridad": "NORMAL", "partidas": [PARTIDA]}
 
 
