@@ -14,6 +14,8 @@ from app.modules.catalogos.router import router as catalogos_router
 from app.modules.clientes.router import router as clientes_router
 from app.modules.comentarios.router import router as comentarios_router
 from app.modules.cotizaciones.router import router as cotizaciones_router
+from app.modules.metricas.export import router as export_router
+from app.modules.metricas.router import router as metricas_router
 from app.modules.reasignaciones.router import router as reasignaciones_router
 from app.modules.solicitudes.router import router as solicitudes_router
 from app.modules.sucursales.router import router as sucursales_router
@@ -87,8 +89,12 @@ def health() -> JSONResponse:
 app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(usuarios_router, prefix=API_PREFIX)
 app.include_router(clientes_router, prefix=API_PREFIX)
+# El export va ANTES del router de solicitudes: /solicitudes/export debe
+# ganarle a /solicitudes/{solicitud_id}.
+app.include_router(export_router, prefix=API_PREFIX)
 app.include_router(solicitudes_router, prefix=API_PREFIX)
 app.include_router(cotizaciones_router, prefix=API_PREFIX)
+app.include_router(metricas_router, prefix=API_PREFIX)
 app.include_router(comentarios_router, prefix=API_PREFIX)
 app.include_router(reasignaciones_router, prefix=API_PREFIX)
 app.include_router(sucursales_router, prefix=API_PREFIX)

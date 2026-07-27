@@ -3,9 +3,11 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
 from app.models.solicitud import Estado, Prioridad
 from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionOut
+from app.modules.metricas.schemas import CicloOut
 
 
 class PartidaIn(BaseModel):
@@ -66,6 +68,11 @@ class SolicitudOut(BaseModel):
     enviado_en: datetime | None
     cotizado_en: datetime | None
     confirmado_en: datetime | None
+    # Ciclo VIGENTE (F6): solo para ENVIADA/EN_PROCESO en el listado; null en
+    # el resto (las bandas SIEMPRE se calculan, nunca se materializan).
+    banda: Banda | None = None
+    dias_transcurridos: int | None = None
+    horas_habiles: float | None = None
 
 
 class HistorialOut(BaseModel):
@@ -95,6 +102,7 @@ class SolicitudDetailOut(SolicitudOut):
     opciones: list[OpcionOut]
     historial: list[HistorialOut]
     comentarios: list[ComentarioOut]
+    ciclos: list[CicloOut] = []  # desglose completo (F6)
 
 
 class SolicitudDetailCompradorOut(SolicitudDetailOut):

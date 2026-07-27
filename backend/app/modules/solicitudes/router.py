@@ -8,6 +8,8 @@ from app.core.permissions import get_current_user, require_roles
 from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones import service as cotizaciones_service
+from app.modules.metricas import ciclos as ciclos_mod
+from app.modules.metricas.schemas import CicloOut
 from app.modules.solicitudes import service
 from app.modules.solicitudes.schemas import (
     RechazarIn,
@@ -69,12 +71,19 @@ def listar_solicitudes(
         limit=limit,
         offset=offset,
     )
-    return SolicitudListOut(
-        items=[_a_out(db, solicitud, nombre) for solicitud, nombre in filas],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+    # Ciclo vigente (F6) SOLO para ENVIADA/EN_PROCESO, en queries fijos para
+    # toda la página (sin N+1).
+    vigentes = ciclos_mod.ciclo_vigente(db, [solicitud for solicitud, _ in filas])
+    items = []
+    for solicitud, nombre in filas:
+        item = _a_out(db, solicitud, nombre)
+        ciclo = vigentes.get(solicitud.id)
+        if ciclo is not None:
+            item.banda = ciclo.banda
+            item.dias_transcurridos = ciclo.t
+            item.horas_habiles = round(ciclo.horas_habiles, 2)
+        items.append(item)
+    return SolicitudListOut(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{solicitud_id}", response_model=None)
@@ -88,8 +97,25 @@ def detalle_solicitud(
     la respuesta se serializa tal cual se construye, sin re-validación de
     FastAPI que pudiera mezclar las dos vistas."""
     solicitud = service.obtener_scoped(db, solicitud_id, user)
+    ciclos = [
+        CicloOut(
+            numero=c.numero,
+            apertura=c.apertura,
+            cierre=c.cierre,
+            horas_habiles=round(c.horas_habiles, 2),
+            dias_transcurridos=c.t,
+            banda=c.banda,
+        )
+        for c in ciclos_mod.cargar_ciclos(db, [solicitud.id]).get(solicitud.id, [])
+    ]
+    base = _a_out(db, solicitud)
+    if ciclos and ciclos[-1].cierre is None:
+        base.banda = ciclos[-1].banda
+        base.dias_transcurridos = ciclos[-1].dias_transcurridos
+        base.horas_habiles = ciclos[-1].horas_habiles
     datos = dict(
-        **_a_out(db, solicitud).model_dump(),
+        **base.model_dump(),
+        ciclos=ciclos,
         partidas=service.partidas_de(db, solicitud.id),
         historial=service.historial_de(db, solicitud.id),
         comentarios=service.comentarios_de(db, solicitud.id),

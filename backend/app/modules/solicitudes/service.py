@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from typing import cast
 
 from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.orm import Session
@@ -173,8 +174,7 @@ def validar_completitud_para_envio(db: Session, solicitud: Solicitud) -> None:
         )
 
 
-def listar(
-    db: Session,
+def stmt_listado(
     user: Usuario,
     *,
     estado: Estado | None,
@@ -186,11 +186,16 @@ def listar(
     desde: date | None,
     hasta: date | None,
     buscar: str | None,
-    limit: int,
-    offset: int,
-) -> tuple[list[tuple[Solicitud, str | None]], int]:
-    stmt = select(Solicitud, Cliente.nombre_normalizado).outerjoin(
-        Cliente, Solicitud.cliente_id == Cliente.id
+) -> Select[tuple[Solicitud, str | None]]:
+    """Query del listado con scoping + filtros. El export (F6) usa EXACTAMENTE
+    este mismo builder — mismos filtros, mismo alcance."""
+    # cast: el outerjoin hace nullable el nombre del cliente, pero el tipado
+    # de select() no lo refleja.
+    stmt = cast(
+        "Select[tuple[Solicitud, str | None]]",
+        select(Solicitud, Cliente.nombre_normalizado).outerjoin(
+            Cliente, Solicitud.cliente_id == Cliente.id
+        ),
     )
     stmt = scope_solicitudes_query(user, stmt)
     if estado is not None:
@@ -218,6 +223,37 @@ def listar(
         stmt = stmt.where(
             or_(Solicitud.folio.ilike(patron), Cliente.nombre_normalizado.ilike(patron))
         )
+    return stmt
+
+
+def listar(
+    db: Session,
+    user: Usuario,
+    *,
+    estado: Estado | None,
+    prioridad: Prioridad | None,
+    cliente_id: int | None,
+    sucursal_id: int | None,
+    comprador_id: int | None,
+    vendedor_id: int | None,
+    desde: date | None,
+    hasta: date | None,
+    buscar: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[tuple[Solicitud, str | None]], int]:
+    stmt = stmt_listado(
+        user,
+        estado=estado,
+        prioridad=prioridad,
+        cliente_id=cliente_id,
+        sucursal_id=sucursal_id,
+        comprador_id=comprador_id,
+        vendedor_id=vendedor_id,
+        desde=desde,
+        hasta=hasta,
+        buscar=buscar,
+    )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     filas = db.execute(
         stmt.order_by(Solicitud.creado_en.desc(), Solicitud.id.desc()).limit(limit).offset(offset)
