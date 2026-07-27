@@ -6,6 +6,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import SessionLocal
 from app.models.historial import HistorialEstado
+from app.models.notificacion import Notificacion
 from app.models.solicitud import Estado, Prioridad, Solicitud
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import Rol, Usuario
@@ -140,6 +141,8 @@ def test_folios_concurrentes_unicos_y_consecutivos(_database):
         assert ultimo == n
     finally:
         limpieza = SessionLocal()
+        # Los envíos generan notificaciones (F7) que referencian por FK.
+        limpieza.execute(delete(Notificacion).where(Notificacion.solicitud_id.in_(ids)))
         limpieza.execute(delete(HistorialEstado).where(HistorialEstado.solicitud_id.in_(ids)))
         limpieza.execute(delete(Solicitud).where(Solicitud.id.in_(ids)))
         limpieza.execute(delete(FolioCounter).where(FolioCounter.sucursal_id == sucursal.id))

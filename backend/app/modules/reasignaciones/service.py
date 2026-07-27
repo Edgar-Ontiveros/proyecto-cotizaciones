@@ -12,6 +12,7 @@ from app.core.errors import AppError
 from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Solicitud
 from app.models.usuario import Rol, Usuario
+from app.modules.notificaciones import service as notificaciones
 from app.modules.solicitudes.service import obtener_scoped
 
 ESTADOS_ABIERTOS = (Estado.ENVIADA, Estado.EN_PROCESO)
@@ -51,7 +52,7 @@ def _aplicar_comprador(db: Session, solicitud: Solicitud, destino: Usuario, admi
     )
     solicitud.comprador_id = destino.id
     _evento(db, solicitud, admin, texto)
-    # TODO(F7): notificar al comprador nuevo (y al anterior).
+    notificaciones.notificar_reasignacion(db, solicitud, destino)
 
 
 def _aplicar_vendedor(db: Session, solicitud: Solicitud, destino: Usuario, admin: Usuario) -> None:
@@ -61,7 +62,7 @@ def _aplicar_vendedor(db: Session, solicitud: Solicitud, destino: Usuario, admin
     )
     solicitud.vendedor_id = destino.id
     _evento(db, solicitud, admin, texto)
-    # TODO(F7): notificar al vendedor nuevo.
+    notificaciones.notificar_reasignacion(db, solicitud, destino)
 
 
 def _lock_de(

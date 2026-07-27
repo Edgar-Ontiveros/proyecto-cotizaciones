@@ -74,7 +74,9 @@ def test_migracion_roles_f5_up_down_limpia():
             precio = columnas("opcion_partidas")["precio_unitario"]["type"]
             assert (precio.precision, precio.scale) == (14, 4)
 
-            command.downgrade(cfg, "-1")
+            # Al revés hasta ANTES de la migración F5 (no "-1": desde F7 el
+            # head ya no es la migración de roles).
+            command.downgrade(cfg, "0dde5d71d797")
             assert "alcance_gerente" in columnas("usuarios")
             precio = columnas("opcion_partidas")["precio_unitario"]["type"]
             assert (precio.precision, precio.scale) == (14, 2)

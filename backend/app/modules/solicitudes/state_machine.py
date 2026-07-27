@@ -22,6 +22,7 @@ from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Solicitud
 from app.models.sucursal import CompradorSucursal, Sucursal
 from app.models.usuario import Rol, Usuario
+from app.modules.notificaciones import service as notificaciones
 from app.modules.solicitudes.folios import siguiente_folio
 
 
@@ -162,6 +163,13 @@ def ejecutar_transicion(
         _efecto_enviar(db, solicitud)
     elif a == Estado.RECHAZADA:
         _validar_motivo(db, motivo_id)
+
+    # Notificaciones EN la transacción de la transición (F7): si algo de
+    # aquí en adelante falla, el rollback se lleva también la notificación.
+    notificaciones.notificar_transicion(db, solicitud, de, a)
+    if a == Estado.RECHAZADA:
+        assert motivo_id is not None  # _validar_motivo ya lo garantizó
+        notificaciones.notificar_rechazo(db, solicitud, motivo_id)
 
     ahora = datetime.now(UTC)
     if a == Estado.COTIZADA and solicitud.cotizado_en is None:

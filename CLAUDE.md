@@ -111,6 +111,7 @@ docker compose -f infra/compose.dev.yml up -d      # Postgres 17 local
 cd backend && uv sync && uv run alembic upgrade head
 uv run python -m app.cli seed                      # datos reales demo (idempotente)
 uv run uvicorn app.main:app --reload               # API :8000
+uv run python -m app.scheduler                     # scheduler (proceso aparte; SCHEDULER_BANDAS_SEGUNDOS para bajar el intervalo en dev)
 cd frontend && npm install && npm run dev          # Vite :5173 (proxy /api → :8000)
 
 # calidad (obligatorio antes de cerrar cualquier fase)

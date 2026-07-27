@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     jwt_refresh_days: int = 7
     env: Literal["dev", "test", "prod"] = "dev"
     log_level: str = "INFO"
+    # Intervalo del job de bandas del scheduler (900 s = 15 min); env var
+    # SCHEDULER_BANDAS_SEGUNDOS para bajarlo en desarrollo.
+    scheduler_bandas_segundos: int = 900
 
 
 @lru_cache

@@ -97,7 +97,7 @@ Sin tiempos máximos (resp. 28) pero con evaluación (resp. 49) y alerta al 3er 
 | Lenta | > 2 días hábiles | Rojo + alerta a administración al iniciar el 3er día hábil |
 
 - Reloj por ciclo: ENVIADA (o reenvío) → COTIZADA | RECHAZADA (resp. 32). Tiempo en RECHAZADA no cuenta (resp. 31); el reenvío inicia ciclo nuevo.
-- Horario hábil: L–V 08:00–18:00, sábado 08:00–13:00, menos `dias_festivos` administrables (resp. 29).
+- Horario hábil: L–V 08:00–18:00, sábado 08:00–13:00, menos `dias_festivos` administrables (resp. 29). Los festivos son NACIONALES en v1 (aplican a todas las sucursales); festivo por sucursal = v2 si negocio lo confirma.
 - El reloj corre en la **zona horaria de la sucursal** — con Juárez, Hermosillo, Mexicali, Culiacán, Monterrey y León hay 5+ zonas IANA. Toda la aritmética vive en `core/horario_habil.py` (el módulo más testeado del sistema).
 - KPIs de comprador: mediana de horas hábiles, % en banda esperada, distribución; reglas conocidas por los compradores antes de arrancar (resp. 49).
 

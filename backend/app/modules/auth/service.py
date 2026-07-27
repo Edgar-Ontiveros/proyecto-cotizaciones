@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models.refresh_token import RefreshToken
 from app.models.usuario import Usuario
+from app.modules.notificaciones import service as notificaciones
 
 
 def authenticate(db: Session, email: str, password: str) -> Usuario:
@@ -54,8 +55,12 @@ def rotate_refresh_token(db: Session, raw_token: str) -> tuple[str, str]:
     if row is None:
         raise AppError(401, "Refresh token inválido o revocado", "invalid_refresh")
     if row.revocado_en is not None:
-        # TODO(F7): notificar a administración el posible robo de sesión.
+        # Reuso de un refresh ya revocado = posible robo: cascada + aviso a
+        # TODOS los admins activos, en la misma transacción (F7).
         revoke_all_user_tokens(db, row.usuario_id)
+        afectado = db.get(Usuario, row.usuario_id)
+        if afectado is not None:
+            notificaciones.notificar_reuso_refresh(db, afectado)
         db.commit()
         raise AppError(401, "Refresh token inválido o revocado", "invalid_refresh")
 

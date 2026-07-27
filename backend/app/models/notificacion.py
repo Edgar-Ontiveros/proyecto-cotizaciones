@@ -1,4 +1,4 @@
-"""Notificaciones in-app (la mecánica de generación llega en F7)."""
+"""Notificaciones in-app (F7): eventos transaccionales y alertas de banda."""
 
 from datetime import datetime
 
@@ -18,4 +18,7 @@ class Notificacion(Base):
     tipo: Mapped[str]
     mensaje: Mapped[str] = mapped_column(Text)
     leida: Mapped[bool] = mapped_column(server_default=false())
+    # Clave de idempotencia de las alertas del scheduler; NULL en las
+    # notificaciones de eventos (el UNIQUE admite múltiples NULL).
+    dedup: Mapped[str | None] = mapped_column(Text, unique=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

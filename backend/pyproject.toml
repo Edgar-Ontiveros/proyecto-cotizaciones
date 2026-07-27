@@ -45,10 +45,11 @@ warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
 
-# openpyxl no publica stubs y types-openpyxl sería una dependencia nueva
-# (prohibido sin autorización): se ignoran solo sus imports.
+# openpyxl y apscheduler no publican stubs y sus paquetes types-* serían
+# dependencias nuevas (prohibido sin autorización): se ignoran solo sus
+# imports.
 [[tool.mypy.overrides]]
-module = "openpyxl.*"
+module = ["openpyxl.*", "apscheduler.*"]
 ignore_missing_imports = true
 
 # mypy "strict" solo para app/core/* (CLAUDE.md); el resto en modo normal.

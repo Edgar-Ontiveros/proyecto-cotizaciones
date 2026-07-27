@@ -14,6 +14,7 @@ from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
 from app.models.usuario import Rol, Usuario
 from app.modules.clientes.service import obtener_o_crear
+from app.modules.notificaciones import service as notificaciones
 from app.modules.solicitudes.schemas import (
     ComentarioOut,
     HistorialOut,
@@ -134,9 +135,18 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
     )
     solicitud.prioridad = data.prioridad
     solicitud.notas = data.notas
+    # Antes de reemplazar: si el comprador ya tenía opciones, la edición
+    # descarta su captura — la notificación lo dice explícitamente.
+    tenia_captura = bool(
+        db.scalar(
+            select(func.count())
+            .select_from(CotizacionOpcion)
+            .where(CotizacionOpcion.solicitud_id == solicitud.id)
+        )
+    )
     _reemplazar_partidas(db, solicitud, data.partidas)
     if solicitud.estado in (Estado.ENVIADA, Estado.EN_PROCESO):
-        # TODO(F7): notificar al comprador asignado de la edición.
+        notificaciones.notificar_edicion(db, solicitud, captura_descartada=tenia_captura)
         comentario = (
             "Solicitud editada por el vendedor"
             if user.rol == Rol.VENDEDOR

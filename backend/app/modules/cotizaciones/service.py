@@ -24,6 +24,7 @@ from app.modules.cotizaciones.schemas import (
     OpcionOut,
     RenglonOut,
 )
+from app.modules.notificaciones import service as notificaciones
 from app.modules.solicitudes.service import obtener_scoped
 from app.modules.solicitudes.state_machine import (
     autoriza_compras,
@@ -237,7 +238,7 @@ def guardar_opcion(
 
     if correccion:
         opcion.completa = True
-        # TODO(F7): notificar al vendedor de la corrección.
+        notificaciones.notificar_correccion(db, solicitud)
         db.add(
             HistorialEstado(
                 solicitud_id=solicitud.id,
@@ -278,7 +279,7 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario)
             raise AppError(
                 422, "Una solicitud cotizada debe conservar al menos una opción", "opcion_unica"
             )
-        # TODO(F7): notificar al vendedor de la corrección.
+        notificaciones.notificar_correccion(db, solicitud)
         db.add(
             HistorialEstado(
                 solicitud_id=solicitud.id,
@@ -325,7 +326,7 @@ def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
         )
     for opcion in opciones:
         opcion.completa = True
-    # TODO(F7): notificar al vendedor de la cotización.
+    # La notificación al vendedor la genera la transición (state_machine, F7).
     return ejecutar_transicion(db, solicitud.id, Estado.COTIZADA, user)
 
 
