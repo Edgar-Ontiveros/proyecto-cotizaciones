@@ -18,10 +18,10 @@ cambiadas (un usuario existente se deja INTACTO).
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.cli.seed import DIAS_FESTIVOS, MOTIVOS_RECHAZO, SUCURSALES
+from app.cli.seed import DIAS_FESTIVOS, MOTIVOS_RECHAZO, PASSWORD_DEFAULT, SUCURSALES
 from app.core.security import generate_temp_password, hash_password
 from app.models.catalogos import DiaFestivo, MotivoRechazo
-from app.models.sucursal import FolioCounter, Sucursal
+from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import Rol, Usuario
 
 USUARIOS_REALES = [
@@ -31,8 +31,56 @@ USUARIOS_REALES = [
     ("Luis Jimenez", "ljimenez@herinox.com.mx", Rol.GERENTE_COMPRAS),
 ]
 
+# --con-demo (mini-fase): cuentas de SIMULACIÓN con contraseña fija conocida
+# (Herinox2026!, cambio forzado al primer uso), marcadas como demo.
+USUARIOS_DEMO = [
+    ("Vendedor Demo", "vendedor.demo@herinox.demo", Rol.VENDEDOR),
+    ("Comprador Demo", "comprador.demo@herinox.demo", Rol.COMPRADOR),
+]
+SUCURSAL_DEMO = "Matriz"
 
-def run(db: Session) -> tuple[dict[str, int], dict[str, str]]:
+
+def _agregar_demo(db: Session) -> int:
+    """Cuentas demo + titularidad de Matriz para el comprador demo (solo si
+    Matriz no tiene ya titular). Idempotente. Devuelve usuarios creados."""
+    matriz = db.scalar(select(Sucursal).where(Sucursal.nombre == SUCURSAL_DEMO))
+    if matriz is None:  # las sucursales se sembraron justo antes
+        raise RuntimeError(f"Sucursal {SUCURSAL_DEMO} inexistente en el seed")
+    password_hash = hash_password(PASSWORD_DEFAULT)
+    creados = 0
+    demo_por_email: dict[str, Usuario] = {}
+    for nombre, email, rol in USUARIOS_DEMO:
+        usuario = db.scalar(select(Usuario).where(func.lower(Usuario.email) == email))
+        if usuario is None:
+            usuario = Usuario(
+                nombre=nombre,
+                email=email,
+                password_hash=password_hash,
+                rol=rol,
+                activo=True,
+                must_change_password=True,
+                sucursal_id=matriz.id if rol == Rol.VENDEDOR else None,
+            )
+            db.add(usuario)
+            db.flush()
+            creados += 1
+        demo_por_email[email] = usuario
+
+    comprador_demo = demo_por_email["comprador.demo@herinox.demo"]
+    titular = db.scalar(
+        select(CompradorSucursal).where(
+            CompradorSucursal.sucursal_id == matriz.id, CompradorSucursal.titular
+        )
+    )
+    if titular is None:
+        # Sin esto, enviar en Matriz daría el 409 de sucursal sin titular.
+        db.add(
+            CompradorSucursal(comprador_id=comprador_demo.id, sucursal_id=matriz.id, titular=True)
+        )
+    return creados
+
+
+def run(db: Session, con_demo: bool = False) -> tuple[dict[str, int], dict[str, str]]:
     """Devuelve (conteos, temporales) — temporales SOLO de los usuarios recién
     creados en esta corrida; el llamador las imprime una única vez."""
     for nombre, prefijo, tz in SUCURSALES:
@@ -77,7 +125,6 @@ def run(db: Session) -> tuple[dict[str, int], dict[str, str]]:
         )
         temporales[email] = password
 
-    db.commit()
     conteos = {
         "sucursales": len(SUCURSALES),
         "motivos_rechazo": len(MOTIVOS_RECHAZO),
@@ -85,4 +132,8 @@ def run(db: Session) -> tuple[dict[str, int], dict[str, str]]:
         "usuarios_reales": len(USUARIOS_REALES),
         "usuarios_creados": len(temporales),
     }
+    if con_demo:
+        # Sin el flag, el comando queda EXACTAMENTE igual (ni la clave existe).
+        conteos["usuarios_demo_creados"] = _agregar_demo(db)
+    db.commit()
     return conteos, temporales

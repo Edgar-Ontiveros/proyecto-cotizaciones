@@ -6,8 +6,10 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import func, select
 
+from app.cli.seed import PASSWORD_DEFAULT
 from app.cli.seed_produccion import USUARIOS_REALES
 from app.cli.seed_produccion import run as seed_produccion
+from app.core.security import verify_password
 from app.models.catalogos import DiaFestivo, MotivoRechazo
 from app.models.solicitud import Solicitud
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
@@ -146,6 +148,72 @@ def test_seed_produccion_conteos_y_cero_demos(db):
     assert db.scalar(select(func.count()).select_from(CompradorSucursal)) == 0
     assert db.scalar(select(func.count()).select_from(MotivoRechazo)) == 5
     assert db.scalar(select(func.count()).select_from(DiaFestivo)) == 14
+
+
+def test_seed_produccion_con_demo(db):
+    """--con-demo (mini-fase): agrega las DOS cuentas demo con contraseña
+    fija y cambio forzado, y al comprador demo como titular de Matriz."""
+    conteos, temporales = seed_produccion(db, con_demo=True)
+    assert conteos["usuarios_creados"] == 4  # los reales, intactos
+    assert conteos["usuarios_demo_creados"] == 2
+    assert len(temporales) == 4  # las demo NO llevan temporal (clave fija)
+
+    assert db.scalar(select(func.count()).select_from(Usuario)) == 6
+    vendedor = db.scalar(select(Usuario).where(Usuario.email == "vendedor.demo@herinox.demo"))
+    comprador = db.scalar(select(Usuario).where(Usuario.email == "comprador.demo@herinox.demo"))
+    assert vendedor is not None and comprador is not None
+    matriz = db.scalar(select(Sucursal).where(Sucursal.nombre == "Matriz"))
+    assert matriz is not None
+    assert vendedor.rol == Rol.VENDEDOR and vendedor.sucursal_id == matriz.id
+    assert comprador.rol == Rol.COMPRADOR
+    # Contraseña FIJA con cambio forzado al primer uso.
+    for usuario in (vendedor, comprador):
+        assert verify_password(PASSWORD_DEFAULT, usuario.password_hash)
+        assert usuario.must_change_password and usuario.activo
+    # Titularidad de Matriz para el comprador demo (enviar ya no daría 409).
+    titular = db.scalar(
+        select(CompradorSucursal).where(
+            CompradorSucursal.sucursal_id == matriz.id, CompradorSucursal.titular
+        )
+    )
+    assert titular is not None and titular.comprador_id == comprador.id
+
+    # Segunda corrida CON flag: no duplica ni pisa la contraseña cambiada.
+    comprador.password_hash = "hash-cambiado"
+    db.commit()
+    conteos2, temporales2 = seed_produccion(db, con_demo=True)
+    assert conteos2["usuarios_demo_creados"] == 0 and temporales2 == {}
+    assert db.scalar(select(func.count()).select_from(Usuario)) == 6
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(CompradorSucursal)
+            .where(CompradorSucursal.sucursal_id == matriz.id)
+        )
+        == 1
+    )
+    db.refresh(comprador)
+    assert comprador.password_hash == "hash-cambiado"
+
+
+def test_seed_produccion_con_demo_respeta_titular_existente(db, make_user):
+    """Si Matriz YA tiene titular, el comprador demo NO lo desplaza."""
+    seed_produccion(db)  # siembra sucursales
+    matriz = db.scalar(select(Sucursal).where(Sucursal.nombre == "Matriz"))
+    assert matriz is not None
+    titular_real = make_user(Rol.COMPRADOR)
+    db.add(CompradorSucursal(comprador_id=titular_real.id, sucursal_id=matriz.id, titular=True))
+    db.commit()
+
+    seed_produccion(db, con_demo=True)
+    titulares = list(
+        db.scalars(
+            select(CompradorSucursal).where(
+                CompradorSucursal.sucursal_id == matriz.id, CompradorSucursal.titular
+            )
+        )
+    )
+    assert len(titulares) == 1 and titulares[0].comprador_id == titular_real.id
 
 
 def test_seed_produccion_idempotente_sin_pisar_passwords(db):

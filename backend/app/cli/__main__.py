@@ -10,9 +10,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="comando", required=True)
     sub.add_parser("seed", help="Carga los datos DEMO de arranque (idempotente)")
-    sub.add_parser(
+    produccion = sub.add_parser(
         "seed-produccion",
         help="Arranque de PRODUCCIÓN: sucursales, catálogos y los 4 usuarios reales",
+    )
+    produccion.add_argument(
+        "--con-demo",
+        action="store_true",
+        help="Agrega Vendedor/Comprador Demo (password Herinox2026!) con titular en Matriz",
     )
     args = parser.parse_args()
 
@@ -28,7 +33,7 @@ def main() -> None:
         from app.cli.seed_produccion import run as run_produccion
 
         with SessionLocal() as db:
-            conteos, temporales = run_produccion(db)
+            conteos, temporales = run_produccion(db, con_demo=args.con_demo)
         if temporales:
             # Contraseñas temporales: se muestran UNA sola vez, aquí.
             print("\nContraseñas temporales (un solo uso, cambio forzado al entrar):")
