@@ -11,6 +11,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 
 from alembic import command
+from app.models.catalogos import FamiliaMotivo, MotivoRechazo
 from app.models.sucursal import CompradorSucursal
 from app.models.usuario import Rol
 from app.modules.usuarios.service import MATRIZ_GESTION
@@ -337,17 +338,41 @@ def test_director_ventas_global_sin_proveedor_y_confirma(
     assert confirmacion["usuario_id"] == entorno.dventas.id
 
 
-def test_gerente_compras_ve_con_proveedor_pero_no_cotiza(
-    client, entorno, cotizada_mixta, auth_headers
-):
+def test_gerente_compras_ve_con_proveedor_y_corrige(client, entorno, cotizada_mixta, auth_headers):
     headers = auth_headers(entorno.gcompras)
     detalle = client.get(f"{BASE}/{cotizada_mixta}", headers=headers).json()
     proveedores = {r_["proveedor"] for r_ in detalle["opciones"][0]["renglones"]}
     assert "Aceros del Norte" in proveedores  # CON proveedor (área compras)
-    # Pero NO captura/cotiza/rechaza ni edita (reasigna, no cotiza).
-    r = client.put(f"{BASE}/{cotizada_mixta}/opciones/B", headers=headers, json={"renglones": []})
-    assert r.status_code == 403
-    assert client.post(f"{BASE}/{cotizada_mixta}/cotizar", headers=headers).status_code == 403
+    # F8c.1: SÍ ejecuta el lado compras — corrige la COTIZADA (antes 403).
+    pid_pz, pid_kg = [p["id"] for p in detalle["partidas"]]
+    r = client.put(
+        f"{BASE}/{cotizada_mixta}/opciones/A",
+        headers=headers,
+        json={
+            "vigencia": "2026-08-31",
+            "renglones": [
+                {
+                    "partida_id": pid_pz,
+                    "moneda": "MXN",
+                    "precio_unitario": "650.00",
+                    "tiempo_entrega": "1 semana",
+                    "proveedor": "Aceros del Norte",
+                },
+                {
+                    "partida_id": pid_kg,
+                    "moneda": "USD",
+                    "precio_unitario": "5.00",
+                    "tiempo_entrega": "3 semanas",
+                    "proveedor": "Rolled Alloys",
+                },
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["total_mxn"] == "13000.00"
+    # Cotizar sobre una COTIZADA: conflicto de ESTADO, ya no de permisos.
+    r = client.post(f"{BASE}/{cotizada_mixta}/cotizar", headers=headers)
+    assert r.status_code == 409 and r.json()["code"] == "estado_conflicto"
     # Métricas por vendedor: 403 explícito.
     assert client.get("/api/v1/metricas/por-vendedor", headers=headers).status_code == 403
     # Métricas por comprador: SÍ.
@@ -363,6 +388,92 @@ def test_gerente_compras_ve_con_proveedor_pero_no_cotiza(
         client.get("/api/v1/metricas/por-comprador", headers=auth_headers(entorno.gsuc)).status_code
         == 403
     )
+
+
+def _renglon_mxn(pid: int) -> dict:
+    return {
+        "partida_id": pid,
+        "moneda": "MXN",
+        "precio_unitario": "600.00",
+        "tiempo_entrega": "1 semana",
+        "proveedor": "Aceros del Norte",
+    }
+
+
+def test_gerente_compras_cotiza_ciclo_del_comprador_asignado(client, entorno, auth_headers):
+    """F8c.1: el gerente cubre al equipo — captura sobre una ENVIADA asignada
+    a OTRO comprador (auto-toma incluida) y cotiza. El ciclo cuenta para el
+    comprador ASIGNADO; el historial registra al GERENTE como ejecutor real."""
+    headers_v = auth_headers(entorno.vendedor)
+    headers_g = auth_headers(entorno.gcompras)
+    r = client.post(BASE, headers=headers_v, json={"cliente": "DINCO", "partidas": [PARTIDA_PZ]})
+    sid = r.json()["id"]
+    assert client.post(f"{BASE}/{sid}/enviar", headers=headers_v).status_code == 200
+    pid = client.get(f"{BASE}/{sid}", headers=headers_g).json()["partidas"][0]["id"]
+    # La captura del gerente sobre ENVIADA dispara la auto-toma, igual que la
+    # del comprador.
+    r = client.put(
+        f"{BASE}/{sid}/opciones/A",
+        headers=headers_g,
+        json={"vigencia": "2026-08-31", "renglones": [_renglon_mxn(pid)]},
+    )
+    assert r.status_code == 200, r.text
+    assert client.post(f"{BASE}/{sid}/cotizar", headers=headers_g).status_code == 200
+
+    detalle = client.get(f"{BASE}/{sid}", headers=headers_g).json()
+    assert detalle["estado"] == "COTIZADA"
+    toma = next(h for h in detalle["historial"] if h["a"] == "EN_PROCESO")
+    cotizada = next(h for h in detalle["historial"] if h["a"] == "COTIZADA")
+    assert toma["usuario_id"] == entorno.gcompras.id
+    assert cotizada["usuario_id"] == entorno.gcompras.id
+
+    # Atribución SIN cambio: el ciclo es del comprador ASIGNADO, no del gerente.
+    filas = client.get("/api/v1/metricas/por-comprador", headers=headers_g).json()
+    fila = next(f for f in filas if f["id"] == entorno.comprador.id)
+    assert fila["ciclos_cerrados"] == 1
+    assert all(f["id"] != entorno.gcompras.id for f in filas)
+
+
+def test_gerente_compras_captura_en_dos_sucursales_y_rechaza(client, db, entorno, auth_headers):
+    """Alcance GLOBAL real: el gerente ejecuta el lado compras sobre
+    solicitudes de DOS sucursales distintas (cotiza una, rechaza la otra)."""
+    db.add(
+        CompradorSucursal(
+            comprador_id=entorno.otro_comprador.id, sucursal_id=entorno.suc_b.id, titular=True
+        )
+    )
+    motivo = MotivoRechazo(familia=FamiliaMotivo.FALTA_INFORMACION, texto="Motivo F8c.1")
+    db.add(motivo)
+    db.commit()
+    headers_g = auth_headers(entorno.gcompras)
+    sids: dict[str, int] = {}
+    for clave, vendedor in (("a", entorno.vendedor), ("b", entorno.vendedor_b)):
+        headers_v = auth_headers(vendedor)
+        r = client.post(
+            BASE, headers=headers_v, json={"cliente": "DINCO", "partidas": [PARTIDA_PZ]}
+        )
+        sids[clave] = r.json()["id"]
+        assert client.post(f"{BASE}/{sids[clave]}/enviar", headers=headers_v).status_code == 200
+
+    # Sucursal A: captura completa + cotizar.
+    pid = client.get(f"{BASE}/{sids['a']}", headers=headers_g).json()["partidas"][0]["id"]
+    r = client.put(
+        f"{BASE}/{sids['a']}/opciones/A",
+        headers=headers_g,
+        json={"vigencia": "2026-08-31", "renglones": [_renglon_mxn(pid)]},
+    )
+    assert r.status_code == 200, r.text
+    assert client.post(f"{BASE}/{sids['a']}/cotizar", headers=headers_g).status_code == 200
+
+    # Sucursal B (comprador asignado DISTINTO): tomar + rechazar con motivo.
+    assert client.post(f"{BASE}/{sids['b']}/tomar", headers=headers_g).status_code == 200
+    r = client.post(
+        f"{BASE}/{sids['b']}/rechazar", headers=headers_g, json={"motivo_id": motivo.id}
+    )
+    assert r.status_code == 200 and r.json()["estado"] == "RECHAZADA"
+    detalle = client.get(f"{BASE}/{sids['b']}", headers=headers_g).json()
+    rechazo = next(h for h in detalle["historial"] if h["a"] == "RECHAZADA")
+    assert rechazo["usuario_id"] == entorno.gcompras.id
 
 
 def test_gerente_sucursal_fuera_de_su_sucursal_404(client, entorno, auth_headers, make_sucursal):

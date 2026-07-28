@@ -30,7 +30,7 @@ class Lado(StrEnum):
     """Quién dispara cada transición (modelo de permisos final, F5):
 
     - VENTAS: vendedor DUEÑO, gerente de LA SUCURSAL de la solicitud, o admin.
-    - COMPRAS: comprador ASIGNADO, o admin.
+    - COMPRAS: comprador ASIGNADO, gerente_compras (cualquier solicitud), o admin.
     - ADMINISTRACION: solo admin (reversión de NO_CONFIRMADA).
 
     El admin puede ejecutar CUALQUIER transición de la matriz."""
@@ -73,9 +73,11 @@ def autoriza_ventas(usuario: Usuario, solicitud: Solicitud) -> bool:
 
 
 def autoriza_compras(usuario: Usuario, solicitud: Solicitud) -> bool:
-    """Lado compras: comprador asignado o admin. gerente_compras NO captura ni
-    cotiza ni rechaza (las métricas miden a compradores reales): reasigna."""
-    if usuario.rol == Rol.ADMIN:
+    """Lado compras (F8c.1): comprador ASIGNADO, gerente_compras sobre
+    CUALQUIER solicitud (cubre al equipo), o admin. La atribución NO cambia:
+    los ciclos siguen contando para el comprador ASIGNADO; el historial
+    registra al ejecutor real."""
+    if usuario.rol in (Rol.ADMIN, Rol.GERENTE_COMPRAS):
         return True
     return usuario.rol == Rol.COMPRADOR and solicitud.comprador_id == usuario.id
 

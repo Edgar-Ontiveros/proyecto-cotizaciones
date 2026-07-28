@@ -90,7 +90,7 @@ Partidas: `num_partida` (auto), `codigo_sap` (opcional; "SERVICIO" cuando no hay
 | `vendedor` | Ventas · propio | Solo SUS solicitudes | Crear/editar/enviar/reenviar/cancelar, seleccionar opción (TC si hay USD), marcar no confirmada |
 | `comprador` | Compras · asignadas | Las asignadas, CON proveedor | Tomar, capturar renglón rico, completar, rechazar con motivo, corregir cotizadas |
 | `gerente_sucursal` | Ventas · su sucursal (exige `sucursal_id`; sin BORRADOR ajenos; sin proveedor) | Su sucursal | Acciones de LADO VENTAS en su sucursal + administra VENDEDORES de su sucursal (crear/editar/reset/baja segura/reasignar). Nada de compras ni métricas de compradores |
-| `gerente_compras` | Compras · global | Todo CON proveedor/costos, métricas de compras (% no encontrados incluido), territorios | Administra COMPRADORES (CRUD, bajas, titularidades, reasignaciones). NO cotiza/captura/rechaza; no ve métricas por vendedor |
+| `gerente_compras` | Compras · global | Todo CON proveedor/costos, métricas de compras (% no encontrados incluido), territorios | Ejecuta el lado COMPRAS sobre cualquier solicitud (F8c.1: tomar/capturar/cotizar/corregir/rechazar; el ciclo se atribuye al comprador ASIGNADO, el historial registra al ejecutor) + administra COMPRADORES (CRUD, bajas, titularidades, reasignaciones). No ve métricas por vendedor |
 | `director_ventas` | Ventas · global | Todo ventas SIN proveedor ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas) y gerentes_sucursal |
 | `admin` | Todo | Todo | Control absoluto; ÚNICO que gestiona gerente_compras, director_ventas y admins |
 
