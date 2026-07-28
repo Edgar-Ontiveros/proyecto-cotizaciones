@@ -39,7 +39,7 @@ def entorno(db, make_user, make_sucursal):
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=cuu.id),
         comprador=make_user(Rol.COMPRADOR),
         otro_comprador=make_user(Rol.COMPRADOR),
-        gerente_cuu=make_user(Rol.GERENTE, sucursal_id=cuu.id),
+        gerente_cuu=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=cuu.id),
         admin=make_user(Rol.ADMIN),
     )
 
@@ -233,21 +233,24 @@ def test_dinero_por_moneda_jamas_mezclado(client, db, entorno, auth_headers):
         moneda_confirmada=Moneda.MXN,
         confirmado_en=_utc(2026, 3, 20, 12),
     )
+    # F8c: una confirmada que ERA USD ya viene consolidada (500 × 18.50).
     _sintetica(
         db,
         entorno,
         estado=Estado.CONFIRMADA,
-        monto_confirmado=Decimal("500.00"),
-        moneda_confirmada=Moneda.USD,
+        monto_confirmado=Decimal("9250.00"),
+        moneda_confirmada=Moneda.MXN,
+        tipo_cambio=Decimal("18.50"),
         confirmado_en=_utc(2026, 3, 21, 12),
     )
     cotizada = _sintetica(db, entorno, estado=Estado.COTIZADA, cotizado_en=_utc(2026, 3, 15, 12))
+    # Opción A MIXTA (F8c): subtotales por moneda que JAMÁS se suman.
     db.add(
         CotizacionOpcion(
             solicitud_id=cotizada.id,
             letra=Letra.A,
-            moneda=Moneda.MXN,
-            total=Decimal("700.00"),
+            total_mxn=Decimal("700.00"),
+            total_usd=Decimal("120.00"),
             completa=True,
         )
     )
@@ -256,8 +259,7 @@ def test_dinero_por_moneda_jamas_mezclado(client, db, entorno, auth_headers):
         CotizacionOpcion(
             solicitud_id=cotizada.id,
             letra=Letra.B,
-            moneda=Moneda.USD,
-            total=Decimal("9999.00"),
+            total_mxn=Decimal("9999.00"),
             completa=True,
         )
     )
@@ -265,14 +267,17 @@ def test_dinero_por_moneda_jamas_mezclado(client, db, entorno, auth_headers):
 
     headers = auth_headers(entorno.admin)
     body = client.get(RESUMEN, params=MARZO, headers=headers).json()
-    # Series separadas: MXN y USD jamás sumados entre sí.
-    assert body["dinero_confirmado"] == {"MXN": "1000.00", "USD": "500.00"}
-    assert body["dinero_referencia"] == {"MXN": "700.00"}
+    # Confirmado: UNA serie consolidada MXN (1000 + 9250); referencia: series
+    # separadas por moneda de la opción A.
+    assert body["dinero_confirmado"] == {"MXN": "10250.00"}
+    assert body["dinero_referencia"] == {"MXN": "700.00", "USD": "120.00"}
+    # Sin opción ganadora ligada (datos sintéticos), el desglose queda vacío.
+    assert body["dinero_confirmado_desglose"] == {}
 
     # Filtro de moneda: restringe las series, no las mezcla.
     body = client.get(RESUMEN, params={**MARZO, "moneda": "USD"}, headers=headers).json()
-    assert body["dinero_confirmado"] == {"USD": "500.00"}
-    assert body["dinero_referencia"] == {}
+    assert body["dinero_confirmado"] == {}  # todo confirmado vive en MXN
+    assert body["dinero_referencia"] == {"USD": "120.00"}
 
 
 def test_conversion_y_sin_desenlace(client, db, entorno, auth_headers):
@@ -550,7 +555,8 @@ def test_filtros_por_rol(client, db, entorno, auth_headers):
     assert any(v["id"] == entorno.otro_vendedor.id for v in body["vendedores"])
 
     body = client.get("/api/v1/metricas/filtros", headers=auth_headers(entorno.gerente_cuu)).json()
-    assert body["compradores"] is not None
+    # v2 (F8c): el gerente de sucursal ya NO ve compradores (área compras).
+    assert body["compradores"] is None
     # Vendedores: SOLO los de su sucursal.
     assert {v["id"] for v in body["vendedores"]} == {
         entorno.vendedor.id,

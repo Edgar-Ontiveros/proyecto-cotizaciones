@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import get_current_user, require_roles
+from app.core.permissions import get_current_user, require_roles, ve_proveedor
 from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones import service as cotizaciones_service
@@ -87,7 +87,9 @@ def listar_solicitudes(
             item.horas_habiles = round(ciclo.horas_habiles, 2)
         referencia = referencias.get(solicitud.id)
         if referencia is not None:
-            item.monto_referencia, item.moneda_referencia = referencia
+            mxn, usd = referencia
+            item.referencia_mxn = mxn or None
+            item.referencia_usd = usd or None
         items.append(item)
     return SolicitudListOut(items=items, total=total, limit=limit, offset=offset)
 
@@ -98,10 +100,10 @@ def detalle_solicitud(
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SolicitudDetailOut | SolicitudDetailCompradorOut:
-    """El schema se elige por rol (§4.8): comprador y admin ven proveedor;
-    para vendedor y gerente la clave NO existe en el JSON. response_model=None:
-    la respuesta se serializa tal cual se construye, sin re-validación de
-    FastAPI que pudiera mezclar las dos vistas."""
+    """El schema se elige por ÁREA (§4.8, v2): comprador, gerente_compras y
+    admin ven proveedor; para el lado ventas la clave NO existe en el JSON.
+    response_model=None: la respuesta se serializa tal cual se construye, sin
+    re-validación de FastAPI que pudiera mezclar las dos vistas."""
     solicitud = service.obtener_scoped(db, solicitud_id, user)
     ciclos = [
         CicloOut(
@@ -122,7 +124,9 @@ def detalle_solicitud(
     if solicitud.estado == Estado.COTIZADA:
         referencia = cotizaciones_service.referencias_opcion_a(db, [solicitud.id]).get(solicitud.id)
         if referencia is not None:
-            base.monto_referencia, base.moneda_referencia = referencia
+            mxn, usd = referencia
+            base.referencia_mxn = mxn or None
+            base.referencia_usd = usd or None
     datos = dict(
         **base.model_dump(),
         ciclos=ciclos,
@@ -130,7 +134,7 @@ def detalle_solicitud(
         historial=service.historial_de(db, solicitud.id),
         comentarios=service.comentarios_de(db, solicitud.id),
     )
-    if user.rol in (Rol.COMPRADOR, Rol.ADMIN):
+    if ve_proveedor(user.rol):
         return SolicitudDetailCompradorOut(
             **datos, opciones=cotizaciones_service.opciones_comprador_de(db, solicitud.id)
         )

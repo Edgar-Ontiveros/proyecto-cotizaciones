@@ -64,16 +64,20 @@ export function FolioCliente({ folio, cliente }: { folio: string | null; cliente
   return <Text fw={500}>{folioCliente(folio, cliente)}</Text>;
 }
 
-/** Monto de la fila del listado (F8b): confirmado si existe; si no, el de
- * REFERENCIA (opción A de una COTIZADA) con etiqueta "ref.". */
+/** Monto de la fila del listado (F8c): confirmado CONSOLIDADO en MXN si
+ * existe; si no, la REFERENCIA por moneda ("MX$ … + US$ …") con "ref.". */
 export function MontoSolicitud({ solicitud }: { solicitud: SolicitudOut }) {
   if (solicitud.monto_confirmado !== null && solicitud.moneda_confirmada !== null) {
     return <Dinero monto={solicitud.monto_confirmado} moneda={solicitud.moneda_confirmada} />;
   }
-  if (solicitud.monto_referencia !== null && solicitud.moneda_referencia !== null) {
+  const partes = [
+    solicitud.referencia_mxn !== null ? dinero(solicitud.referencia_mxn, "MXN") : null,
+    solicitud.referencia_usd !== null ? dinero(solicitud.referencia_usd, "USD") : null,
+  ].filter(Boolean);
+  if (partes.length > 0) {
     return (
       <Group gap={4} wrap="nowrap">
-        <Dinero monto={solicitud.monto_referencia} moneda={solicitud.moneda_referencia} />
+        <Text fw={600}>{partes.join(" + ")}</Text>
         <Text size="xs" c="dimmed">
           ref.
         </Text>

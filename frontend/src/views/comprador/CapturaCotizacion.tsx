@@ -58,7 +58,6 @@ import { HistorialComentarios } from "../vendedor/DetalleSolicitud";
 const LETRAS: Letra[] = ["A", "B", "C", "D", "E"];
 
 interface OpcionForm {
-  moneda: Moneda | null;
   vigencia: string | null;
   comentarios: string;
   renglones: Record<number, RenglonForm>; // por partida_id
@@ -74,6 +73,7 @@ function formDesdeServidor(
     renglones[p.id] = {
       cantidad: p.cantidad,
       unidad: p.unidad as Unidad,
+      moneda: "MXN", // default de captura (F8c)
       precio: "",
       tiempo: "",
       proveedor: "",
@@ -86,6 +86,7 @@ function formDesdeServidor(
     renglones[r.partida_id] = {
       cantidad: r.cantidad,
       unidad: r.unidad,
+      moneda: r.moneda ?? "MXN",
       precio: r.precio_unitario ?? "",
       tiempo: r.tiempo_entrega ?? "",
       proveedor: r.proveedor ?? "",
@@ -95,7 +96,6 @@ function formDesdeServidor(
     };
   }
   return {
-    moneda: opcion?.moneda ?? null,
     vigencia: opcion?.vigencia ?? null,
     comentarios: opcion?.comentarios ?? "",
     renglones,
@@ -141,15 +141,19 @@ function EditorOpcion({
       ? "Obligatorio para cotizar"
       : undefined;
 
-  // Referencia local; el total real lo da el servidor tras guardar.
-  const totalLocal = solicitud.partidas.reduce((acc, p) => {
-    const r = form.renglones[p.id];
-    if (!r || r.noEncontrada) return acc;
-    const precio = Number(r.precio);
-    const cantidad = Number(r.cantidad);
-    if (!precio || Number.isNaN(precio) || Number.isNaN(cantidad)) return acc;
-    return acc + precio * cantidad;
-  }, 0);
+  // Referencia local POR MONEDA; los totales reales los da el servidor.
+  const totalesLocales = solicitud.partidas.reduce(
+    (acc, p) => {
+      const r = form.renglones[p.id];
+      if (!r || r.noEncontrada) return acc;
+      const precio = Number(r.precio);
+      const cantidad = Number(r.cantidad);
+      if (!precio || Number.isNaN(precio) || Number.isNaN(cantidad)) return acc;
+      acc[r.moneda] += precio * cantidad;
+      return acc;
+    },
+    { MXN: 0, USD: 0 } as Record<Moneda, number>,
+  );
 
   const guardar = () => {
     const locales: Record<number, string> = {};
@@ -163,7 +167,6 @@ function EditorOpcion({
       {
         letra,
         body: {
-          moneda: form.moneda,
           vigencia: form.vigencia,
           comentarios: form.comentarios.trim() || null,
           renglones: solicitud.partidas.map((p) =>
@@ -191,14 +194,6 @@ function EditorOpcion({
   return (
     <Stack gap="sm" mt="sm">
       <Group align="flex-end" gap="sm">
-        <Select
-          label="Moneda"
-          data={["MXN", "USD"]}
-          value={form.moneda}
-          onChange={(v) => setForm((f) => ({ ...f, moneda: (v as Moneda) ?? null }))}
-          error={errorDe("moneda")}
-          w={110}
-        />
         <DatePickerInput
           label="Vigencia"
           value={form.vigencia}
@@ -226,6 +221,7 @@ function EditorOpcion({
             <Table.Th>Pedido</Table.Th>
             <Table.Th w={110}>Cantidad</Table.Th>
             <Table.Th w={150}>Unidad</Table.Th>
+            <Table.Th w={100}>Moneda</Table.Th>
             <Table.Th w={130}>Precio unit.</Table.Th>
             <Table.Th w={130}>Entrega</Table.Th>
             <Table.Th w={170}>Proveedor</Table.Th>
@@ -278,6 +274,16 @@ function EditorOpcion({
                     disabled={deshabilitado}
                     allowDeselect={false}
                     onChange={(v) => setRenglon(p.id, { unidad: (v as Unidad) ?? r.unidad })}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <Select
+                    data={["MXN", "USD"]}
+                    value={r.moneda}
+                    disabled={deshabilitado}
+                    allowDeselect={false}
+                    error={errorDe("moneda", p.num_partida)}
+                    onChange={(v) => setRenglon(p.id, { moneda: (v as Moneda) ?? r.moneda })}
                   />
                 </Table.Td>
                 <Table.Td>
@@ -363,11 +369,11 @@ function EditorOpcion({
                     <Text size="sm" c="dimmed">
                       —
                     </Text>
-                  ) : renglonServidor?.importe != null && form.moneda ? (
-                    <Text size="sm">{dinero(renglonServidor.importe, form.moneda)}</Text>
-                  ) : importeLocal !== null && form.moneda ? (
+                  ) : renglonServidor?.importe != null && renglonServidor.moneda ? (
+                    <Text size="sm">{dinero(renglonServidor.importe, renglonServidor.moneda)}</Text>
+                  ) : importeLocal !== null ? (
                     <Text size="sm" c="dimmed">
-                      ≈ {dinero(importeLocal, form.moneda)}
+                      ≈ {dinero(importeLocal, r.moneda)}
                     </Text>
                   ) : (
                     "—"
@@ -390,21 +396,111 @@ function EditorOpcion({
       />
       <Group justify="space-between">
         <Group gap="xs">
-          <Text fw={600}>Total {opcionServidor ? "(servidor)" : "(referencia)"}:</Text>
-          {opcionServidor && form.moneda ? (
+          <Text fw={600}>Subtotales {opcionServidor ? "(servidor)" : "(referencia)"}:</Text>
+          {opcionServidor ? (
             <Text fw={700} c="herinox.7">
-              {dinero(opcionServidor.total, form.moneda)}
+              {[
+                Number(opcionServidor.total_mxn) > 0 ? dinero(opcionServidor.total_mxn, "MXN") : null,
+                Number(opcionServidor.total_usd) > 0 ? dinero(opcionServidor.total_usd, "USD") : null,
+              ]
+                .filter(Boolean)
+                .join(" + ") || dinero("0", "MXN")}
             </Text>
-          ) : form.moneda ? (
-            <Text c="dimmed">≈ {dinero(totalLocal, form.moneda)}</Text>
           ) : (
-            <Text c="dimmed">captura la moneda</Text>
+            <Text c="dimmed">
+              ≈{" "}
+              {[
+                totalesLocales.MXN > 0 ? dinero(totalesLocales.MXN, "MXN") : null,
+                totalesLocales.USD > 0 ? dinero(totalesLocales.USD, "USD") : null,
+              ]
+                .filter(Boolean)
+                .join(" + ") || dinero(0, "MXN")}
+            </Text>
           )}
         </Group>
         <Button onClick={guardar} loading={guardarOpcion.isPending}>
           Guardar avance
         </Button>
       </Group>
+    </Stack>
+  );
+}
+
+
+function VistaOpcionesLectura({ solicitud }: { solicitud: SolicitudDetailOut }) {
+  return (
+    <Stack gap="sm">
+      <Title order={5}>Opciones cotizadas</Title>
+      {solicitud.opciones.map((o) => {
+        const ganadora = solicitud.opcion_seleccionada_id === o.id;
+        return (
+          <Paper
+            key={o.id}
+            withBorder
+            p="sm"
+            style={ganadora ? { borderColor: "var(--mantine-color-green-6)" } : undefined}
+          >
+            <Group gap="xs" mb="xs">
+              <Badge variant="filled">Opción {o.letra}</Badge>
+              {ganadora && <Badge color="green">GANADORA — genera la orden de compra</Badge>}
+              <Text size="sm" fw={600}>
+                {[
+                  Number(o.total_mxn) > 0 ? dinero(o.total_mxn, "MXN") : null,
+                  Number(o.total_usd) > 0 ? dinero(o.total_usd, "USD") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" + ") || dinero("0", "MXN")}
+              </Text>
+              {ganadora && solicitud.tipo_cambio && (
+                <Text size="sm" c="dimmed">
+                  TC {solicitud.tipo_cambio} → {dinero(solicitud.monto_confirmado ?? "0", "MXN")}
+                </Text>
+              )}
+            </Group>
+            <Table withColumnBorders fz="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>No.</Table.Th>
+                  <Table.Th>Cotizado</Table.Th>
+                  <Table.Th>Moneda</Table.Th>
+                  <Table.Th>Precio unit.</Table.Th>
+                  <Table.Th>Importe</Table.Th>
+                  <Table.Th>Entrega</Table.Th>
+                  <Table.Th>Proveedor</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {o.renglones.map((r) => (
+                  <Table.Tr key={r.id} bg={r.no_encontrada ? "var(--mantine-color-gray-1)" : undefined}>
+                    <Table.Td>{r.num_partida}</Table.Td>
+                    <Table.Td>
+                      {r.no_encontrada ? (
+                        <Text size="sm" c="dimmed">
+                          No encontrada
+                        </Text>
+                      ) : (
+                        `${r.cantidad} ${r.unidad}`
+                      )}
+                      {r.es_alternativa && (
+                        <Text size="xs" c="acento.8">
+                          ALTERNATIVA: {r.alternativa_descripcion}
+                        </Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>{r.moneda ?? "—"}</Table.Td>
+                    <Table.Td>{r.precio_unitario ?? "—"}</Table.Td>
+                    <Table.Td>
+                      {r.importe !== null && r.moneda ? dinero(r.importe, r.moneda) : "—"}
+                    </Table.Td>
+                    <Table.Td>{r.tiempo_entrega ?? "—"}</Table.Td>
+                    <Table.Td>{r.proveedor ?? "—"}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Paper>
+        );
+      })}
     </Stack>
   );
 }
@@ -671,6 +767,10 @@ export function CapturaCotizacion() {
             ))}
           </Tabs>
         </>
+      )}
+
+      {!capturable && solicitud.opciones.length > 0 && (
+        <VistaOpcionesLectura solicitud={solicitud} />
       )}
 
       <HistorialComentarios solicitud={solicitud} />

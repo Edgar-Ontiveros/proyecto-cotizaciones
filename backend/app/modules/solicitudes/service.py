@@ -56,7 +56,7 @@ def _reemplazar_partidas(db: Session, solicitud: Solicitud, partidas: list[Parti
     db.execute(
         update(CotizacionOpcion)
         .where(CotizacionOpcion.solicitud_id == solicitud.id)
-        .values(total=0, completa=False)
+        .values(total_mxn=0, total_usd=0, completa=False)
     )
     db.execute(delete(SolicitudPartida).where(SolicitudPartida.solicitud_id == solicitud.id))
     for numero, partida in enumerate(partidas, start=1):
@@ -300,6 +300,7 @@ def a_out(db: Session, solicitud: Solicitud, cliente_nombre: str | None = None) 
         opcion_seleccionada_id=solicitud.opcion_seleccionada_id,
         monto_confirmado=solicitud.monto_confirmado,
         moneda_confirmada=solicitud.moneda_confirmada,
+        tipo_cambio=solicitud.tipo_cambio,
         motivo_no_confirmada=solicitud.motivo_no_confirmada,
         creado_en=solicitud.creado_en,
         enviado_en=solicitud.enviado_en,

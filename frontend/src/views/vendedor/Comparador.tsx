@@ -16,6 +16,7 @@ import {
   Table,
   Text,
   Textarea,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
@@ -24,6 +25,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import { useNoConfirmar, useSeleccionar, useSolicitud } from "../../api/hooks";
+import { consolidadoMXN } from "../../lib/renglon";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { dinero, fecha } from "../../lib/format";
@@ -55,9 +57,19 @@ function CartaOpcion({
         </Badge>
         {ganadora && <Badge color="green">Seleccionada</Badge>}
       </Group>
-      <Text size="28px" fw={700} c="herinox.7">
-        {opcion.moneda ? dinero(opcion.total, opcion.moneda) : opcion.total}
+      <Text size="24px" fw={700} c="herinox.7">
+        {[
+          Number(opcion.total_mxn) > 0 ? dinero(opcion.total_mxn, "MXN") : null,
+          Number(opcion.total_usd) > 0 ? dinero(opcion.total_usd, "USD") : null,
+        ]
+          .filter(Boolean)
+          .join(" + ") || dinero("0", "MXN")}
       </Text>
+      {ganadora && solicitud.tipo_cambio && (
+        <Text size="sm" c="dimmed">
+          TC {solicitud.tipo_cambio} → total {dinero(solicitud.monto_confirmado ?? "0", "MXN")}
+        </Text>
+      )}
       <Text size="sm" c="dimmed" mb="xs">
         Vigencia: {opcion.vigencia ? fecha(opcion.vigencia) : "—"}
       </Text>
@@ -125,9 +137,11 @@ function CartaOpcion({
                         `${r.cantidad} ${r.unidad}`
                       )}
                     </Table.Td>
-                    <Table.Td>{r.precio_unitario ?? "—"}</Table.Td>
                     <Table.Td>
-                      {r.importe !== null && opcion.moneda ? dinero(r.importe, opcion.moneda) : "—"}
+                      {r.precio_unitario ?? "—"} {r.moneda ?? ""}
+                    </Table.Td>
+                    <Table.Td>
+                      {r.importe !== null && r.moneda ? dinero(r.importe, r.moneda) : "—"}
                     </Table.Td>
                     <Table.Td>{r.tiempo_entrega ?? "—"}</Table.Td>
                   </>
@@ -148,6 +162,46 @@ function CartaOpcion({
         </Button>
       )}
     </Card>
+  );
+}
+
+function ModalConfirmarConTC({
+  opcion,
+  onAceptar,
+}: {
+  opcion: OpcionOut;
+  onAceptar: (opcion: OpcionOut, tipoCambio: string) => void;
+}) {
+  const [tc, setTc] = useState("");
+  const consolidado = consolidadoMXN(opcion.total_mxn, opcion.total_usd, tc);
+  return (
+    <Stack>
+      <Text size="sm">
+        La opción {opcion.letra} tiene renglones en USD: captura el tipo de cambio para fijar el
+        monto oficial CONSOLIDADO en MXN.
+      </Text>
+      <TextInput
+        label="Tipo de cambio (MXN por USD)"
+        placeholder="18.5000"
+        value={tc}
+        onChange={(e) => setTc(e.currentTarget.value)}
+      />
+      {consolidado !== null && (
+        <Text size="sm" fw={600}>
+          {dinero(opcion.total_usd, "USD")} × {Number(tc).toFixed(4)} ={" "}
+          {dinero(Number(opcion.total_usd) * Number(tc), "MXN")}
+          {Number(opcion.total_mxn) > 0 && <> + {dinero(opcion.total_mxn, "MXN")}</>} → Total{" "}
+          <b>{dinero(consolidado, "MXN")}</b>
+        </Text>
+      )}
+      <Button
+        color="acento.6"
+        disabled={consolidado === null}
+        onClick={() => onAceptar(opcion, tc.trim())}
+      >
+        Confirmar pedido con este tipo de cambio
+      </Button>
+    </Stack>
   );
 }
 
@@ -188,32 +242,46 @@ export function Comparador() {
 
   const puedeConfirmar = solicitud.estado === "COTIZADA";
 
-  const confirmar = (opcion: OpcionOut) =>
+  const ejecutarConfirmacion = (opcion: OpcionOut, tipoCambio: string | null) => {
+    modals.closeAll();
+    void seleccionar
+      .mutateAsync({ letra: opcion.letra, tipo_cambio: tipoCambio })
+      .then(() => {
+        notifications.show({ message: "Pedido confirmado", color: "green" });
+        navigate(`/vendedor/solicitudes/${solicitudId}`);
+      })
+      .catch((e: unknown) =>
+        notifications.show({
+          message: e instanceof ApiError ? e.detail : "No se pudo confirmar",
+          color: "red",
+        }),
+      );
+  };
+
+  const confirmar = (opcion: OpcionOut) => {
+    if (Number(opcion.total_usd) > 0) {
+      // F8c: hay renglones USD — el TC es obligatorio y se muestra el
+      // consolidado ANTES de aceptar.
+      modals.open({
+        title: `Confirmar con la opción ${opcion.letra}`,
+        children: <ModalConfirmarConTC opcion={opcion} onAceptar={ejecutarConfirmacion} />,
+      });
+      return;
+    }
     modals.openConfirmModal({
       title: `Confirmar con la opción ${opcion.letra}`,
       children: (
         <Text size="sm">
           El pedido quedará confirmado con la opción {opcion.letra} por{" "}
-          <b>{opcion.moneda ? dinero(opcion.total, opcion.moneda) : opcion.total}</b>. Esta acción
-          fija el monto oficial y no se puede deshacer.
+          <b>{dinero(opcion.total_mxn, "MXN")}</b>. Esta acción fija el monto oficial y no se
+          puede deshacer.
         </Text>
       ),
       labels: { confirm: "Confirmar pedido", cancel: "Volver" },
       confirmProps: { color: "acento.6" },
-      onConfirm: () =>
-        void seleccionar
-          .mutateAsync(opcion.letra)
-          .then(() => {
-            notifications.show({ message: "Pedido confirmado", color: "green" });
-            navigate(`/vendedor/solicitudes/${solicitudId}`);
-          })
-          .catch((e: unknown) =>
-            notifications.show({
-              message: e instanceof ApiError ? e.detail : "No se pudo confirmar",
-              color: "red",
-            }),
-          ),
+      onConfirm: () => ejecutarConfirmacion(opcion, null),
     });
+  };
 
   const abrirNoConcretado = () => {
     modals.open({

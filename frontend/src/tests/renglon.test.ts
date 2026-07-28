@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   aplicarNoEncontrada,
+  consolidadoMXN,
   corregirYReenviar,
   renglonABody,
   validarRenglonLocal,
@@ -11,6 +12,7 @@ import {
 const base: RenglonForm = {
   cantidad: "20",
   unidad: "PZ",
+  moneda: "MXN",
   precio: "",
   tiempo: "",
   proveedor: "",
@@ -84,6 +86,7 @@ describe("renglonABody", () => {
       partida_id: 7,
       cantidad: "20",
       unidad: "PZ",
+      moneda: "MXN",
       precio_unitario: "10.5",
       tiempo_entrega: null,
       proveedor: null,
@@ -115,5 +118,16 @@ describe("corregir-y-reenviar (F8b)", () => {
       corregirYReenviar({ editar: () => Promise.reject(new Error("422")), enviar }),
     ).rejects.toThrow("422");
     expect(enviar).not.toHaveBeenCalled();
+  });
+});
+
+describe("consolidadoMXN (F8c)", () => {
+  it("consolida MXN + USD x TC con redondeo a 2", () => {
+    expect(consolidadoMXN("12000.00", "500.00", "18.5")).toBe(21250);
+    expect(consolidadoMXN("0.00", "351.00", "18.50")).toBe(6493.5);
+  });
+  it("sin TC con USD presente no hay consolidado; 100% MXN lo ignora", () => {
+    expect(consolidadoMXN("100.00", "50.00", "")).toBeNull();
+    expect(consolidadoMXN("100.00", "0.00", "")).toBe(100);
   });
 });

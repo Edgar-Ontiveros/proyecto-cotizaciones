@@ -157,6 +157,7 @@ export interface RenglonBody {
   partida_id: number;
   cantidad: string | null;
   unidad: string | null;
+  moneda: string | null;
   precio_unitario: string | null;
   tiempo_entrega: string | null;
   proveedor: string | null;
@@ -166,7 +167,6 @@ export interface RenglonBody {
 }
 
 export interface OpcionBody {
-  moneda: string | null;
   vigencia: string | null;
   comentarios: string | null;
   renglones: RenglonBody[];
@@ -201,8 +201,8 @@ export function useCotizar(id: number) {
 export function useSeleccionar(id: number) {
   const invalidar = useInvalidarSolicitudes();
   return useMutation({
-    mutationFn: (letra: Letra) =>
-      api<SolicitudOut>(`/solicitudes/${id}/seleccionar`, { method: "POST", body: { letra } }),
+    mutationFn: (body: { letra: Letra; tipo_cambio: string | null }) =>
+      api<SolicitudOut>(`/solicitudes/${id}/seleccionar`, { method: "POST", body }),
     onSuccess: () => invalidar(id),
   });
 }

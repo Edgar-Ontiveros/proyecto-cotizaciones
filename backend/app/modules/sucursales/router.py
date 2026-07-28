@@ -18,6 +18,9 @@ from app.modules.sucursales.schemas import (
 router = APIRouter(tags=["sucursales"])
 
 admin_required = require_roles(Rol.ADMIN)
+# Territorios y titularidades (F8c): también gerente_compras (área compras
+# global); las sucursales mismas siguen siendo solo de admin.
+compras_required = require_roles(Rol.ADMIN, Rol.GERENTE_COMPRAS)
 
 
 @router.get("/sucursales", response_model=list[SucursalOut])
@@ -62,7 +65,7 @@ def actualizar_folio_counter(
 def cambiar_titular(
     sucursal_id: int,
     body: TitularIn,
-    _admin: Usuario = Depends(admin_required),
+    _admin: Usuario = Depends(compras_required),
     db: Session = Depends(get_db),
 ) -> None:
     service.cambiar_titular(db, sucursal_id, body.comprador_id)
@@ -70,7 +73,7 @@ def cambiar_titular(
 
 @router.get("/territorios", response_model=TerritoriosOut)
 def obtener_territorios(
-    _admin: Usuario = Depends(admin_required),
+    _admin: Usuario = Depends(compras_required),
     db: Session = Depends(get_db),
 ):
     return TerritoriosOut(items=service.territorios(db))

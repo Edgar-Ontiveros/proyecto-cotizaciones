@@ -55,13 +55,18 @@ def _enviada(client, entorno, auth_headers, partidas=(PARTIDA, PARTIDA_2)):
 def _capturar_opcion(client, entorno, auth_headers, sid, letra="A"):
     detalle = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.comprador)).json()
     renglones = [
-        {"partida_id": p["id"], "precio_unitario": "100.00", "tiempo_entrega": "1 semana"}
+        {
+            "partida_id": p["id"],
+            "moneda": "MXN",
+            "precio_unitario": "100.00",
+            "tiempo_entrega": "1 semana",
+        }
         for p in detalle["partidas"]
     ]
     r = client.put(
         f"{BASE}/{sid}/opciones/{letra}",
         headers=auth_headers(entorno.comprador),
-        json={"moneda": "MXN", "vigencia": "2026-08-31", "renglones": renglones},
+        json={"vigencia": "2026-08-31", "renglones": renglones},
     )
     assert r.status_code == 200, r.text
 

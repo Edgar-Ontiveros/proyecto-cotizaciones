@@ -39,10 +39,13 @@ class CotizacionOpcion(Base):
     )
     # Nullables en DDL: la captura puede ser parcial; "marcar completa" exige
     # moneda y vigencia por opción (se valida en F4).
-    moneda: Mapped[Moneda | None] = mapped_column(MonedaEnum)
     vigencia: Mapped[date | None] = mapped_column(Date)
     comentarios: Mapped[str | None] = mapped_column(Text)
-    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), server_default=text("0"))
+    # SUBTOTALES por moneda (F8c): la moneda vive en el RENGLÓN; una opción
+    # puede mezclar MXN y USD y sus totales JAMÁS se suman entre sí aquí —
+    # solo se consolidan al confirmar, con tipo de cambio explícito.
+    total_mxn: Mapped[Decimal] = mapped_column(Numeric(14, 2), server_default=text("0"))
+    total_usd: Mapped[Decimal] = mapped_column(Numeric(14, 2), server_default=text("0"))
     completa: Mapped[bool] = mapped_column(server_default=false())
 
     partidas: Mapped[list["OpcionPartida"]] = relationship(back_populates="opcion")
@@ -63,6 +66,8 @@ class OpcionPartida(Base):
     # Cantidad/unidad cotizadas; nacen precargadas de la partida.
     cantidad: Mapped[Decimal] = mapped_column(Numeric(14, 3))
     unidad: Mapped[str]  # catálogo PZ/KG/TON/MTS/M2 (CHECK en BD)
+    # Moneda POR RENGLÓN (F8c); obligatoria al completar un renglón cotizado.
+    moneda: Mapped[Moneda | None] = mapped_column(MonedaEnum)
     # Nullables: la captura puede ser parcial; la obligatoriedad de precio y
     # tiempo de entrega se exige al marcar la cotización completa.
     # Numeric(14,4): los precios reales traen 3–4 decimales; el importe (14,2)

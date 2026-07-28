@@ -61,8 +61,10 @@ class SolicitudOut(BaseModel):
     notas: str | None
     # Confirmación (F4): opción ganadora y monto oficial.
     opcion_seleccionada_id: int | None
+    # Confirmación (F8c): monto CONSOLIDADO en MXN; el TC usado se expone.
     monto_confirmado: Decimal | None
     moneda_confirmada: Moneda | None
+    tipo_cambio: Decimal | None
     motivo_no_confirmada: str | None
     creado_en: datetime
     enviado_en: datetime | None
@@ -73,10 +75,10 @@ class SolicitudOut(BaseModel):
     banda: Banda | None = None
     dias_transcurridos: int | None = None
     horas_habiles: float | None = None
-    # Monto de REFERENCIA (F8b, §4.9): total y moneda de la opción A, SOLO
-    # cuando el estado es COTIZADA; null en el resto.
-    monto_referencia: Decimal | None = None
-    moneda_referencia: Moneda | None = None
+    # Referencia (F8b/F8c, §4.9): SUBTOTALES por moneda de la opción A, SOLO
+    # cuando el estado es COTIZADA; null en el resto (cero → null).
+    referencia_mxn: Decimal | None = None
+    referencia_usd: Decimal | None = None
 
 
 class HistorialOut(BaseModel):

@@ -87,7 +87,7 @@ def _validar_desactivacion(db: Session, sucursal: Sucursal) -> None:
         select(Usuario.nombre).where(
             Usuario.sucursal_id == sucursal.id,
             Usuario.activo,
-            Usuario.rol.in_((Rol.VENDEDOR, Rol.GERENTE)),
+            Usuario.rol.in_((Rol.VENDEDOR, Rol.GERENTE_SUCURSAL)),
         )
     ).all()
     titular = db.scalar(

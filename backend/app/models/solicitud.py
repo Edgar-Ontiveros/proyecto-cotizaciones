@@ -81,12 +81,15 @@ class Solicitud(Base):
     )
     notas: Mapped[str | None] = mapped_column(Text)
 
-    # Confirmación (F4): opción ganadora y monto oficial.
+    # Confirmación (F4/F8c): opción ganadora y monto oficial CONSOLIDADO en
+    # MXN (total_mxn + total_usd × tipo_cambio); moneda_confirmada queda fija
+    # en MXN desde F8c. El desglose original vive en la opción ganadora.
     opcion_seleccionada_id: Mapped[int | None] = mapped_column(
         ForeignKey("cotizacion_opciones.id", use_alter=True)
     )
     monto_confirmado: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     moneda_confirmada: Mapped[Moneda | None] = mapped_column(MonedaEnum)
+    tipo_cambio: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
     motivo_no_confirmada: Mapped[str | None] = mapped_column(Text)
 
     # Hitos (UTC). Solo creado_en es NOT NULL.

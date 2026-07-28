@@ -10,12 +10,22 @@ from app.core.database import Base
 
 
 class Rol(StrEnum):
+    """Modelo v2 por ÁREA (F8c): ventas = vendedor/gerente_sucursal/
+    director_ventas · compras = comprador/gerente_compras · admin = maestro.
+    Solo admin crea/gestiona gerente_compras, director_ventas y admins."""
+
     VENDEDOR = "vendedor"
     COMPRADOR = "comprador"
     ADMIN = "admin"
-    # Siempre de sucursal (F5): el alcance "global" desapareció — los
-    # directores se dan de alta como admin.
-    GERENTE = "gerente"
+    # Área ventas, SOLO su sucursal (exige sucursal_id). Administra a los
+    # vendedores de su sucursal.
+    GERENTE_SUCURSAL = "gerente_sucursal"
+    # Área compras, alcance global CON proveedor/costos. Administra
+    # compradores; reasigna pero NO cotiza.
+    GERENTE_COMPRAS = "gerente_compras"
+    # Área ventas, alcance global consolidado SIN proveedor. Administra
+    # vendedores y gerentes de sucursal.
+    DIRECTOR_VENTAS = "director_ventas"
 
 
 class Usuario(Base):

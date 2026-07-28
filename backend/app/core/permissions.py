@@ -69,14 +69,23 @@ class require_roles:
         return user
 
 
+def ve_proveedor(rol: Rol) -> bool:
+    """Área COMPRAS + admin: los ÚNICOS que ven proveedor/costos (§4.8). Los
+    roles de ventas (vendedor, gerente_sucursal, director_ventas) reciben
+    schemas donde la clave ni existe."""
+    return rol in (Rol.COMPRADOR, Rol.GERENTE_COMPRAS, Rol.ADMIN)
+
+
 def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
     """Aplica el alcance de datos del usuario a una consulta de solicitudes.
 
-    Regla (CLAUDE.md #7 — permisos en el query, nunca solo en frontend):
-      - vendedor: solo sus solicitudes (vendedor_id = user.id), borradores incluidos
-      - comprador: solo las asignadas a él (comprador_id = user.id)
-      - gerente: siempre su sucursal, sin BORRADOR ajenos; sin sucursal_id
+    Regla v2 por ÁREA + ALCANCE (CLAUDE.md #7 — permisos en el query):
+      - vendedor: solo sus solicitudes, borradores incluidos
+      - comprador: solo las asignadas a él
+      - gerente_sucursal: su sucursal, sin BORRADOR ajenos; sin sucursal_id
         (datos viejos) NO ve nada — fail-closed
+      - director_ventas y gerente_compras: GLOBAL, sin borradores (el
+        borrador es privado del vendedor hasta que lo envía)
       - admin: sin filtro
     """
     from sqlalchemy import false
@@ -89,7 +98,9 @@ def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
         return stmt.where(Solicitud.vendedor_id == user.id)
     if user.rol == Rol.COMPRADOR:
         return stmt.where(Solicitud.comprador_id == user.id)
-    # gerente
+    if user.rol in (Rol.DIRECTOR_VENTAS, Rol.GERENTE_COMPRAS):
+        return stmt.where(Solicitud.estado != Estado.BORRADOR)
+    # gerente_sucursal
     if user.sucursal_id is None:
         return stmt.where(false())
     return stmt.where(

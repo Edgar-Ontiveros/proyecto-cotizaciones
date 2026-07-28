@@ -1,7 +1,21 @@
 /** Vista principal del comprador: MI PANEL (los números con los que lo
  * evalúan) arriba y su COLA abajo (urgentes primero, luego T descendente). */
 
-import { Alert, Badge, Card, Group, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Card,
+  Group,
+  SimpleGrid,
+  Stack,
+  Tabs,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { DatePickerInput } from "@mantine/dates";
+import { useDebouncedValue } from "@mantine/hooks";
+import dayjs from "dayjs";
 import { DataTable } from "mantine-datatable";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -69,20 +83,61 @@ function MiPanel() {
 
 const PAGE = 25;
 
+function FiltrosTabla({
+  rango,
+  setRango,
+  buscar,
+  setBuscar,
+}: {
+  rango: [string | null, string | null];
+  setRango: (v: [string | null, string | null]) => void;
+  buscar: string;
+  setBuscar: (v: string) => void;
+}) {
+  return (
+    <Group mb="sm" gap="sm">
+      <DatePickerInput
+        type="range"
+        placeholder="Rango de fechas"
+        value={rango}
+        onChange={setRango}
+        clearable
+        w={240}
+      />
+      <TextInput
+        placeholder="Buscar folio o cliente"
+        value={buscar}
+        onChange={(e) => setBuscar(e.currentTarget.value)}
+        w={220}
+      />
+    </Group>
+  );
+}
+
 export function PanelComprador() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<string | null>("cola");
   const [pagina, setPagina] = useState(1);
+  // Fix 2b (F8c): rango de fechas + buscar para Cotizadas y Todas.
+  const [rango, setRango] = useState<[string | null, string | null]>([null, null]);
+  const [buscar, setBuscar] = useState("");
+  const [buscarDebounced] = useDebouncedValue(buscar, 300);
+  const filtros = {
+    desde: rango[0] ? dayjs(rango[0]).format("YYYY-MM-DD") : undefined,
+    hasta: rango[1] ? dayjs(rango[1]).format("YYYY-MM-DD") : undefined,
+    buscar: buscarDebounced || undefined,
+  };
 
   // Cola: hasta 100 abiertas de cada estado, orden en cliente.
   const enviadas = useSolicitudes({ estado: "ENVIADA", limit: 100 });
   const enProceso = useSolicitudes({ estado: "EN_PROCESO", limit: 100 });
   const cotizadas = useSolicitudes({
     estado: "COTIZADA",
+    ...filtros,
     limit: PAGE,
     offset: (pagina - 1) * PAGE,
   });
-  const todas = useSolicitudes({ limit: PAGE, offset: (pagina - 1) * PAGE });
+  const todas = useSolicitudes({ ...filtros, limit: PAGE, offset: (pagina - 1) * PAGE });
 
   const cola = useMemo(() => {
     const items = [...(enviadas.data?.items ?? []), ...(enProceso.data?.items ?? [])];
@@ -166,6 +221,18 @@ export function PanelComprador() {
           />
         </Tabs.Panel>
         <Tabs.Panel value="cotizadas" pt="sm">
+          <FiltrosTabla
+            rango={rango}
+            setRango={(v) => {
+              setRango(v);
+              setPagina(1);
+            }}
+            buscar={buscar}
+            setBuscar={(v) => {
+              setBuscar(v);
+              setPagina(1);
+            }}
+          />
           <DataTable<SolicitudOut>
             withTableBorder
             highlightOnHover
@@ -182,6 +249,18 @@ export function PanelComprador() {
           />
         </Tabs.Panel>
         <Tabs.Panel value="todas" pt="sm">
+          <FiltrosTabla
+            rango={rango}
+            setRango={(v) => {
+              setRango(v);
+              setPagina(1);
+            }}
+            buscar={buscar}
+            setBuscar={(v) => {
+              setBuscar(v);
+              setPagina(1);
+            }}
+          />
           <DataTable<SolicitudOut>
             withTableBorder
             highlightOnHover

@@ -284,19 +284,20 @@ SOLICITUDES_DEMO: list[tuple[str, str, Prioridad, str, list[_Partida]]] = [
 # renglón alternativa y uno no_encontrada para verlos en UI. Precios realistas
 # de acero. La vigencia es fija para que el seed sea determinista.
 VIGENCIA_DEMO = date(2026, 8, 31)
-_Opcion = tuple[Letra, Moneda, list[dict[str, object]]]
+_Opcion = tuple[Letra, list[dict[str, object]]]
 OPCIONES_DEMO: dict[str, list[_Opcion]] = {
     "cotizada_mxn": [
         (
             Letra.A,
-            Moneda.MXN,
             [
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("98.50"),
                     "tiempo_entrega": "5 días hábiles",
                     "proveedor": "Aceros y Metales del Norte",
                 },
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("18450.00"),
                     "tiempo_entrega": "1 semana",
                     "proveedor": "Aceros y Metales del Norte",
@@ -305,9 +306,9 @@ OPCIONES_DEMO: dict[str, list[_Opcion]] = {
         ),
         (
             Letra.B,
-            Moneda.MXN,
             [
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("94.80"),
                     "tiempo_entrega": "2 semanas",
                     "proveedor": "Inoxidables GV",
@@ -323,9 +324,9 @@ OPCIONES_DEMO: dict[str, list[_Opcion]] = {
     "cotizada_usd": [
         (
             Letra.A,
-            Moneda.USD,
             [
                 {
+                    "moneda": Moneda.USD,
                     "precio_unitario": Decimal("5.85"),
                     "tiempo_entrega": "3 semanas",
                     "proveedor": "Rolled Alloys",
@@ -336,14 +337,15 @@ OPCIONES_DEMO: dict[str, list[_Opcion]] = {
     "confirmada": [
         (
             Letra.A,
-            Moneda.MXN,
             [
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("112.00"),
                     "tiempo_entrega": "1 semana",
                     "proveedor": "Aceros Camesa",
                 },
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("1500.00"),
                     "tiempo_entrega": "1 semana",
                     "proveedor": "Aceros Camesa",
@@ -352,14 +354,15 @@ OPCIONES_DEMO: dict[str, list[_Opcion]] = {
         ),
         (
             Letra.B,
-            Moneda.MXN,
             [
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("108.50"),
                     "tiempo_entrega": "10 días hábiles",
                     "proveedor": "Metales de Sinaloa",
                 },
                 {
+                    "moneda": Moneda.MXN,
                     "precio_unitario": Decimal("1200.00"),
                     "tiempo_entrega": "10 días hábiles",
                     "proveedor": "Metales de Sinaloa",
@@ -370,8 +373,13 @@ OPCIONES_DEMO: dict[str, list[_Opcion]] = {
     "no_confirmada": [
         (
             Letra.A,
-            Moneda.MXN,
-            [{"precio_unitario": Decimal("1450.00"), "tiempo_entrega": "4 semanas"}],
+            [
+                {
+                    "moneda": Moneda.MXN,
+                    "precio_unitario": Decimal("1450.00"),
+                    "tiempo_entrega": "4 semanas",
+                }
+            ],
         )
     ],
 }
@@ -466,13 +474,12 @@ def _demo_solicitudes(db: Session) -> int:
                 .order_by(SolicitudPartida.num_partida)
             ).all()
             # El primer guardar_opcion sobre ENVIADA ejecuta la auto-toma real.
-            for letra, moneda, renglones in OPCIONES_DEMO[flujo]:
+            for letra, renglones in OPCIONES_DEMO[flujo]:
                 guardar_opcion(
                     db,
                     solicitud.id,
                     letra,
                     OpcionIn(
-                        moneda=moneda,
                         vigencia=VIGENCIA_DEMO,
                         renglones=[
                             RenglonIn(partida_id=pid, **datos)
@@ -534,6 +541,18 @@ def run(db: Session) -> dict[str, int]:
         sucursales[nombre] = sucursal
 
     _get_or_create_usuario(db, "Edgar", "edgar@herinox.demo", Rol.ADMIN, password_hash)
+    # Placeholders renombrables de los roles v2 (F8c): 2 gerentes de compras,
+    # 1 director de ventas y un segundo admin maestro.
+    _get_or_create_usuario(
+        db, "Gerente Compras 1", "gcompras1@herinox.demo", Rol.GERENTE_COMPRAS, password_hash
+    )
+    _get_or_create_usuario(
+        db, "Gerente Compras 2", "gcompras2@herinox.demo", Rol.GERENTE_COMPRAS, password_hash
+    )
+    _get_or_create_usuario(
+        db, "Director Ventas", "dventas@herinox.demo", Rol.DIRECTOR_VENTAS, password_hash
+    )
+    _get_or_create_usuario(db, "Admin Maestro 2", "maestro2@herinox.demo", Rol.ADMIN, password_hash)
 
     for nombre, territorio in COMPRADORES:
         comprador = _get_or_create_usuario(
@@ -559,7 +578,7 @@ def run(db: Session) -> dict[str, int]:
             db,
             nombre,
             email_provisional(nombre),
-            Rol.GERENTE,
+            Rol.GERENTE_SUCURSAL,
             password_hash,
             sucursal_id=sucursales[nombre_sucursal].id,
         )
@@ -598,7 +617,9 @@ def run(db: Session) -> dict[str, int]:
         "compradores": len(COMPRADORES),
         "gerentes": len(GERENTES),
         "vendedores": sum(len(v) for v in VENDEDORES.values()),
-        "admins": 1,
+        "admins": 2,
+        "gerentes_compras": 2,
+        "directores_ventas": 1,
         "motivos_rechazo": len(MOTIVOS_RECHAZO),
         "dias_festivos": len(DIAS_FESTIVOS),
         "solicitudes_demo": solicitudes_demo,

@@ -30,7 +30,7 @@ def entorno(db, make_user, make_sucursal):
         sucursal=sucursal,
         comprador=comprador,
         vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
-        gerente=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
+        gerente=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=sucursal.id),
         admin=make_user(Rol.ADMIN),
         motivo=motivo,
     )
@@ -165,13 +165,13 @@ def test_mezcla_cotizado_y_no_encontrada_completa_ok(client, db, entorno, enviad
         enviada.id,
         "A",
         {
-            "moneda": "MXN",
             "vigencia": "2026-08-31",
             "renglones": [
                 {
                     "partida_id": enviada.partida_ids[0],
                     "cantidad": "500",
                     "unidad": "KG",
+                    "moneda": "MXN",
                     "precio_unitario": "62.50",
                     "tiempo_entrega": "1 semana",
                     "proveedor": "Aceros del Norte",
@@ -191,16 +191,16 @@ def test_mezcla_cotizado_y_no_encontrada_completa_ok(client, db, entorno, enviad
     assert no_enc["no_encontrada"] is True and no_enc["importe"] is None
     # cantidad/unidad del no-encontrado: precargadas de la partida (120 KG).
     assert (no_enc["cantidad"], no_enc["unidad"]) == ("120.000", "KG")
-    # Total EXCLUYE renglones no encontrados.
-    assert body["total"] == "31250.00"
+    # Total EXCLUYE renglones no encontrados (subtotal MXN desde F8c).
+    assert body["total_mxn"] == "31250.00" and body["total_usd"] == "0.00"
 
     # Marcar completa: válida (todos completos y al menos uno cotizado).
     assert client.post(f"{BASE}/{enviada.id}/cotizar", headers=headers).status_code == 200
     # El monto de referencia del listado sale de la opción A.
     listado = client.get(BASE, headers=auth_headers(entorno.vendedor)).json()
     fila = next(i for i in listado["items"] if i["id"] == enviada.id)
-    assert fila["monto_referencia"] == "31250.00"
-    assert fila["moneda_referencia"] == "MXN"
+    assert fila["referencia_mxn"] == "31250.00"
+    assert fila["referencia_usd"] is None
 
 
 def test_opcion_cien_por_ciento_no_encontrada_no_cotiza(client, entorno, enviada, auth_headers):
@@ -211,7 +211,6 @@ def test_opcion_cien_por_ciento_no_encontrada_no_cotiza(client, entorno, enviada
         enviada.id,
         "A",
         {
-            "moneda": "MXN",
             "vigencia": "2026-08-31",
             "renglones": [
                 {"partida_id": pid, "no_encontrada": True} for pid in enviada.partida_ids
@@ -232,16 +231,17 @@ def test_alternativa_visible_y_marcada(client, entorno, enviada, auth_headers):
         enviada.id,
         "A",
         {
-            "moneda": "MXN",
             "vigencia": "2026-08-31",
             "renglones": [
                 {
                     "partida_id": enviada.partida_ids[0],
+                    "moneda": "MXN",
                     "precio_unitario": "100.00",
                     "tiempo_entrega": "1 semana",
                 },
                 {
                     "partida_id": enviada.partida_ids[1],
+                    "moneda": "MXN",
                     "es_alternativa": True,
                     "alternativa_descripcion": "SOLERA INOX 3/16 X 2 (espesor superior)",
                     "precio_unitario": "180.00",
@@ -311,7 +311,7 @@ def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
     fila = next(
         i for i in client.get(BASE, headers=headers_v).json()["items"] if i["id"] == enviada.id
     )
-    assert fila["monto_referencia"] is None and fila["moneda_referencia"] is None
+    assert fila["referencia_mxn"] is None and fila["referencia_usd"] is None
 
     headers_c = auth_headers(entorno.comprador)
     for letra, precio in (("A", "100.00"), ("B", "90.00")):
@@ -321,10 +321,14 @@ def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
             enviada.id,
             letra,
             {
-                "moneda": "MXN",
                 "vigencia": "2026-08-31",
                 "renglones": [
-                    {"partida_id": pid, "precio_unitario": precio, "tiempo_entrega": "1 semana"}
+                    {
+                        "partida_id": pid,
+                        "moneda": "MXN",
+                        "precio_unitario": precio,
+                        "tiempo_entrega": "1 semana",
+                    }
                     for pid in enviada.partida_ids
                 ],
             },
@@ -336,9 +340,9 @@ def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
     fila = next(
         i for i in client.get(BASE, headers=headers_v).json()["items"] if i["id"] == enviada.id
     )
-    assert fila["monto_referencia"] == "14000.00" and fila["moneda_referencia"] == "MXN"
+    assert fila["referencia_mxn"] == "14000.00" and fila["referencia_usd"] is None
     detalle = client.get(f"{BASE}/{enviada.id}", headers=headers_v).json()
-    assert detalle["monto_referencia"] == "14000.00"
+    assert detalle["referencia_mxn"] == "14000.00"
 
     # CONFIRMADA: la referencia vuelve a null; manda el monto confirmado.
     r = client.post(f"{BASE}/{enviada.id}/seleccionar", headers=headers_v, json={"letra": "B"})
@@ -346,5 +350,6 @@ def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
     fila = next(
         i for i in client.get(BASE, headers=headers_v).json()["items"] if i["id"] == enviada.id
     )
-    assert fila["monto_referencia"] is None
-    assert fila["monto_confirmado"] == "12600.00"  # 90×20 + 90×120
+    assert fila["referencia_mxn"] is None
+    assert fila["monto_confirmado"] == "12600.00"  # 90×20 + 90×120 (100% MXN, sin TC)
+    assert fila["tipo_cambio"] is None

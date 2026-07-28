@@ -30,8 +30,8 @@ def entorno(db, make_user, make_sucursal):
         sucursal=sucursal,
         vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
         comprador=comprador,
-        gerente=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
-        gerente_otra=make_user(Rol.GERENTE, sucursal_id=otra.id),
+        gerente=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=sucursal.id),
+        gerente_otra=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=otra.id),
         admin=make_user(Rol.ADMIN),
         motivo=motivo,
     )
@@ -51,13 +51,18 @@ def _cotizada(client, entorno, auth_headers):
     headers_c = auth_headers(entorno.comprador)
     detalle = client.get(f"{BASE}/{sid}", headers=headers_c).json()
     renglones = [
-        {"partida_id": p["id"], "precio_unitario": "100.00", "tiempo_entrega": "1 semana"}
+        {
+            "partida_id": p["id"],
+            "moneda": "MXN",
+            "precio_unitario": "100.00",
+            "tiempo_entrega": "1 semana",
+        }
         for p in detalle["partidas"]
     ]
     r = client.put(
         f"{BASE}/{sid}/opciones/A",
         headers=headers_c,
-        json={"moneda": "MXN", "vigencia": "2026-08-31", "renglones": renglones},
+        json={"vigencia": "2026-08-31", "renglones": renglones},
     )
     assert r.status_code == 200, r.text
     assert client.post(f"{BASE}/{sid}/cotizar", headers=headers_c).status_code == 200
@@ -102,7 +107,8 @@ def test_gerente_edita_de_su_sucursal(client, entorno, auth_headers):
     assert r.status_code == 200, r.text
     evento = _ultimo_evento(client, headers_g, sid)
     assert evento["usuario_id"] == entorno.gerente.id
-    assert evento["comentario"] == "Solicitud editada por gerente"
+    # v2: el rol se llama gerente_sucursal — el comentario lo refleja.
+    assert evento["comentario"] == "Solicitud editada por gerente_sucursal"
 
 
 def test_gerente_selecciona_y_no_confirma(client, entorno, auth_headers):
@@ -148,7 +154,17 @@ def test_gerente_no_ejecuta_lado_compras(client, entorno, auth_headers):
 def test_gerente_no_administra(client, entorno, auth_headers):
     headers_g = auth_headers(entorno.gerente)
     assert client.get("/api/v1/territorios", headers=headers_g).status_code == 403
-    assert client.get("/api/v1/usuarios", headers=headers_g).status_code == 403
+    # v2 (F8c): el gerente de sucursal SÍ lista usuarios, pero SOLO los
+    # vendedores de su sucursal; crear compradores le da 403 exacto.
+    r = client.get("/api/v1/usuarios", headers=headers_g)
+    assert r.status_code == 200
+    assert all(u["rol"] == "vendedor" for u in r.json()["items"])
+    r = client.post(
+        "/api/v1/usuarios",
+        headers=headers_g,
+        json={"nombre": "X", "email": "x@herinox.demo", "rol": "comprador"},
+    )
+    assert r.status_code == 403 and r.json()["code"] == "gestion_no_permitida"
     assert client.get("/api/v1/sucursales", headers=headers_g).status_code == 403
 
 

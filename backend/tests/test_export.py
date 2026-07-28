@@ -76,10 +76,14 @@ def _cotizada(client, entorno, auth_headers):
         f"{BASE}/{sid}/opciones/A",
         headers=headers,
         json={
-            "moneda": "MXN",
             "vigencia": "2026-08-31",
             "renglones": [
-                {"partida_id": p["id"], "precio_unitario": "10.00", "tiempo_entrega": "1 semana"}
+                {
+                    "partida_id": p["id"],
+                    "moneda": "MXN",
+                    "precio_unitario": "10.00",
+                    "tiempo_entrega": "1 semana",
+                }
                 for p in detalle["partidas"]
             ],
         },
@@ -186,7 +190,10 @@ def test_export_valido_con_fechas_locales(client, db, entorno, auth_headers):
     assert fila[7] == esperado
     # Último ciclo cerrado: 2 horas hábiles (15:00→17:00 local de un jueves).
     assert fila[11] == "ESPERADA" and fila[12] == 2.0
-    assert fila[13] == 1234.5 and fila[14] == "MXN"
+    # F8c: columnas Monto MXN/USD (desglose de la ganadora — aquí no hay
+    # opción, la fila se creó directo), TC y Confirmado MXN consolidado.
+    assert fila[13] is None and fila[14] is None and fila[15] is None
+    assert fila[16] == 1234.5
 
 
 def test_export_respeta_filtros_y_scoping(client, db, entorno, auth_headers, make_user):

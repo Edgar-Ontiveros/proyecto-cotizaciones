@@ -42,8 +42,8 @@ def entorno(db, make_user, make_sucursal):
         vend_b=make_user(Rol.VENDEDOR, sucursal_id=suc_b.id),
         comp_a=comp_a,
         comp_b=comp_b,
-        ger_suc_a=make_user(Rol.GERENTE, sucursal_id=suc_a.id),
-        ger_suc_b=make_user(Rol.GERENTE, sucursal_id=suc_b.id),
+        ger_suc_a=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=suc_a.id),
+        ger_suc_b=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=suc_b.id),
         admin=make_user(Rol.ADMIN),
         motivo=motivo,
     )

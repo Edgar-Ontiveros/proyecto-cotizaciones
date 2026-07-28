@@ -74,8 +74,8 @@ def entorno(db, make_user, make_sucursal):
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
         comprador_asignado=comprador,
         otro_comprador=make_user(Rol.COMPRADOR),
-        gerente_sucursal=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
-        gerente_otra_sucursal=make_user(Rol.GERENTE, sucursal_id=otra_sucursal.id),
+        gerente_sucursal=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=sucursal.id),
+        gerente_otra_sucursal=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=otra_sucursal.id),
         admin=make_user(Rol.ADMIN),
         motivo=motivo,
     )
@@ -151,7 +151,7 @@ def test_gerente_sin_sucursal_no_autoriza_ventas(db, entorno, make_user):
 
     from app.models.usuario import Usuario
 
-    gerente = make_user(Rol.GERENTE, sucursal_id=entorno.sucursal.id)
+    gerente = make_user(Rol.GERENTE_SUCURSAL, sucursal_id=entorno.sucursal.id)
     db.execute(update(Usuario).where(Usuario.id == gerente.id).values(sucursal_id=None))
     db.commit()
     db.refresh(gerente)

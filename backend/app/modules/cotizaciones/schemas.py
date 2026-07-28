@@ -16,6 +16,9 @@ class RenglonIn(BaseModel):
     partida_id: int
     cantidad: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=3)
     unidad: UnidadCatalogo | None = None
+    # Moneda POR RENGLÓN (F8c): default de captura en UI = MXN; obligatoria
+    # al completar un renglón cotizado.
+    moneda: Moneda | None = None
     precio_unitario: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
     tiempo_entrega: str | None = None
     proveedor: str | None = None
@@ -29,9 +32,9 @@ class RenglonIn(BaseModel):
 class OpcionIn(BaseModel):
     """Reemplazo completo de una opción. Importes y totales SIEMPRE los calcula
     el backend: cualquier importe/total del body se ignora (campos extra
-    descartados por Pydantic). El proveedor vive en el RENGLÓN desde F8b."""
+    descartados por Pydantic). El proveedor vive en el RENGLÓN desde F8b y la
+    moneda también, desde F8c."""
 
-    moneda: Moneda | None = None
     vigencia: date | None = None
     comentarios: str | None = None
     renglones: list[RenglonIn] = []
@@ -39,6 +42,8 @@ class OpcionIn(BaseModel):
 
 class SeleccionIn(BaseModel):
     letra: Letra
+    # Obligatorio si la opción tiene renglones USD; prohibido si es 100% MXN.
+    tipo_cambio: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=4)
 
 
 class NoConfirmarIn(BaseModel):
@@ -55,6 +60,7 @@ class RenglonOut(BaseModel):
     num_partida: int
     cantidad: Decimal
     unidad: str
+    moneda: Moneda | None
     precio_unitario: Decimal | None
     importe: Decimal | None
     tiempo_entrega: str | None
@@ -72,10 +78,12 @@ class RenglonCompradorOut(RenglonOut):
 class OpcionOut(BaseModel):
     id: int
     letra: Letra
-    moneda: Moneda | None
     vigencia: date | None
     comentarios: str | None
-    total: Decimal
+    # Subtotales POR MONEDA (F8c): jamás se suman entre sí en el backend; el
+    # consolidado solo nace al confirmar, con tipo de cambio explícito.
+    total_mxn: Decimal
+    total_usd: Decimal
     completa: bool
     renglones: list[RenglonOut]
 

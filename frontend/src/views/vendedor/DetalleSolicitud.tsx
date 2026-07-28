@@ -211,8 +211,13 @@ export function DetalleSolicitud() {
       {solicitud.estado === "CONFIRMADA" && (
         <Alert color="green" title="Pedido confirmado">
           <Group gap="xs">
-            <Text size="sm">Monto oficial:</Text>
+            <Text size="sm">Monto oficial (consolidado MXN):</Text>
             <Dinero monto={solicitud.monto_confirmado} moneda={solicitud.moneda_confirmada} />
+            {solicitud.tipo_cambio && (
+              <Text size="sm" c="dimmed">
+                (tipo de cambio {solicitud.tipo_cambio})
+              </Text>
+            )}
           </Group>
         </Alert>
       )}

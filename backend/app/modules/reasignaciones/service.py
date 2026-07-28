@@ -135,6 +135,14 @@ def reasignar_vendedor_masivo(
     db: Session, de_id: int, a_id: int, admin: Usuario, commit: bool = True
 ) -> int:
     destino = validar_destino(db, a_id, Rol.VENDEDOR, "vendedor_invalido")
+    if admin.rol == Rol.GERENTE_SUCURSAL and destino.sucursal_id != admin.sucursal_id:
+        # v2: el gerente de sucursal solo mueve solicitudes DENTRO de la suya
+        # (las de otra sucursal truenan abajo con sucursal_distinta).
+        raise AppError(
+            403,
+            "Un gerente de sucursal solo reasigna hacia vendedores de SU sucursal",
+            "gestion_no_permitida",
+        )
     no_terminales = tuple(e for e in Estado if e not in ESTADOS_TERMINALES)
     solicitudes = _lock_de(db, Solicitud.vendedor_id, de_id, no_terminales)
     fuera = [s for s in solicitudes if s.sucursal_id != destino.sucursal_id]

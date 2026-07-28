@@ -15,10 +15,12 @@ def _payload_vendedor(sucursal_id: int) -> dict:
     }
 
 
-@pytest.mark.parametrize("rol", [Rol.VENDEDOR, Rol.COMPRADOR, Rol.GERENTE])
+# v2 (F8c): los roles gestores entran a /usuarios con su matriz; solo
+# vendedor y comprador quedan totalmente fuera.
+@pytest.mark.parametrize("rol", [Rol.VENDEDOR, Rol.COMPRADOR])
 def test_endpoints_rechazan_no_admin(client, make_user, make_sucursal, auth_headers, rol):
     sucursal = make_sucursal()
-    kwargs = {"sucursal_id": sucursal.id} if rol in (Rol.VENDEDOR, Rol.GERENTE) else {}
+    kwargs = {"sucursal_id": sucursal.id} if rol in (Rol.VENDEDOR, Rol.GERENTE_SUCURSAL) else {}
     user = make_user(rol, **kwargs)
     otro = make_user(Rol.VENDEDOR, sucursal_id=sucursal.id)
     headers = auth_headers(user)
@@ -114,7 +116,7 @@ def test_crear_gerente_sin_sucursal_422(client, make_user, auth_headers):
     r = client.post(
         USUARIOS,
         headers=auth_headers(admin),
-        json={"nombre": "Gerente X", "email": "gerente.x@test.demo", "rol": "gerente"},
+        json={"nombre": "Gerente X", "email": "gerente.x@test.demo", "rol": "gerente_sucursal"},
     )
     assert r.status_code == 422
     assert r.json()["code"] == "sucursal_requerida"

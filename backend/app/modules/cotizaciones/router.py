@@ -59,7 +59,9 @@ def seleccionar_opcion(
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return solicitudes_service.a_out(db, service.seleccionar(db, solicitud_id, body.letra, user))
+    return solicitudes_service.a_out(
+        db, service.seleccionar(db, solicitud_id, body.letra, user, body.tipo_cambio)
+    )
 
 
 @router.post("/no-confirmar", response_model=SolicitudOut)

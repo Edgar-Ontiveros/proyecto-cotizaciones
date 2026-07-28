@@ -60,20 +60,21 @@ MATRIZ: dict[tuple[Estado, Estado], Lado] = {
 
 
 def autoriza_ventas(usuario: Usuario, solicitud: Solicitud) -> bool:
-    """Lado ventas: vendedor dueño, gerente de la sucursal (siempre de
-    sucursal desde F5; sin sucursal_id no autoriza — fail-closed) o admin.
-    También gobierna la edición (PATCH) y los comentarios de ese lado."""
-    if usuario.rol == Rol.ADMIN:
+    """Lado ventas v2: vendedor dueño, gerente_sucursal de LA sucursal
+    (fail-closed sin sucursal_id), director_ventas sobre CUALQUIER solicitud,
+    o admin. También gobierna la edición (PATCH) y comentarios del lado."""
+    if usuario.rol in (Rol.ADMIN, Rol.DIRECTOR_VENTAS):
         return True
     if usuario.rol == Rol.VENDEDOR:
         return solicitud.vendedor_id == usuario.id
-    if usuario.rol == Rol.GERENTE:
+    if usuario.rol == Rol.GERENTE_SUCURSAL:
         return usuario.sucursal_id is not None and usuario.sucursal_id == solicitud.sucursal_id
     return False
 
 
 def autoriza_compras(usuario: Usuario, solicitud: Solicitud) -> bool:
-    """Lado compras: comprador asignado o admin. El gerente NUNCA captura."""
+    """Lado compras: comprador asignado o admin. gerente_compras NO captura ni
+    cotiza ni rechaza (las métricas miden a compradores reales): reasigna."""
     if usuario.rol == Rol.ADMIN:
         return True
     return usuario.rol == Rol.COMPRADOR and solicitud.comprador_id == usuario.id

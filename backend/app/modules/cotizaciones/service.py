@@ -45,6 +45,7 @@ class _Renglon(Protocol):
     precio_unitario: Decimal | None
     tiempo_entrega: str | None
     no_encontrada: bool
+    moneda: Moneda | None
 
 
 def _importe(cantidad: Decimal, precio_unitario: Decimal) -> Decimal:
@@ -128,18 +129,15 @@ def _renglones_de(db: Session, opcion_id: int) -> dict[int, OpcionPartida]:
 
 def _faltantes_de(
     letra: str,
-    moneda: Moneda | None,
     vigencia: date | None,
     renglones_por_partida: dict[int, Any],
     partidas: list[SolicitudPartida],
 ) -> list[str]:
-    """Obligatorios al completar (F8b): moneda y vigencia por opción; por CADA
-    partida, un renglón completo = no_encontrada O (precio + tiempo_entrega);
-    y al menos UN renglón cotizado (una opción 100% no-encontrada no es
-    cotización — para eso está el rechazo)."""
+    """Obligatorios al completar (F8b/F8c): vigencia por opción; por CADA
+    partida, un renglón completo = no_encontrada O (moneda + precio +
+    tiempo_entrega); y al menos UN renglón cotizado (una opción 100%
+    no-encontrada no es cotización — para eso está el rechazo)."""
     faltantes = []
-    if moneda is None:
-        faltantes.append(f"opción {letra}: falta moneda")
     if vigencia is None:
         faltantes.append(f"opción {letra}: falta vigencia")
     cotizados = 0
@@ -148,6 +146,8 @@ def _faltantes_de(
         if renglon is not None and renglon.no_encontrada:
             continue  # completo sin precio: el material no se consiguió
         cotizados += 1  # cotizado o pendiente de cotizar (faltantes abajo)
+        if renglon is None or renglon.moneda is None:
+            faltantes.append(f"opción {letra}: falta moneda en la partida {partida.num_partida}")
         if renglon is None or renglon.precio_unitario is None:
             faltantes.append(
                 f"opción {letra}: falta precio_unitario en la partida {partida.num_partida}"
@@ -171,6 +171,7 @@ def _datos_renglon(fila: OpcionPartida, num_partida: int) -> dict[str, Any]:
         "num_partida": num_partida,
         "cantidad": fila.cantidad,
         "unidad": fila.unidad,
+        "moneda": fila.moneda,
         "precio_unitario": fila.precio_unitario,
         "importe": fila.importe,
         "tiempo_entrega": fila.tiempo_entrega,
@@ -197,10 +198,10 @@ def _datos_opcion(db: Session, opcion: CotizacionOpcion, con_proveedor: bool) ->
     return {
         "id": opcion.id,
         "letra": opcion.letra,
-        "moneda": opcion.moneda,
         "vigencia": opcion.vigencia,
         "comentarios": opcion.comentarios,
-        "total": opcion.total,
+        "total_mxn": opcion.total_mxn,
+        "total_usd": opcion.total_usd,
         "completa": opcion.completa,
         "renglones": renglones,
     }
@@ -223,17 +224,17 @@ def opciones_comprador_de(db: Session, solicitud_id: int) -> list[OpcionComprado
 
 def referencias_opcion_a(
     db: Session, solicitud_ids: list[int]
-) -> dict[int, tuple[Decimal, Moneda | None]]:
-    """total y moneda de la opción A por solicitud (monto de referencia de una
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """(total_mxn, total_usd) de la opción A por solicitud (referencia de una
     COTIZADA, §4.9) — UN query para todo el conjunto (sin N+1)."""
     if not solicitud_ids:
         return {}
     filas = db.execute(
         select(
-            CotizacionOpcion.solicitud_id, CotizacionOpcion.total, CotizacionOpcion.moneda
+            CotizacionOpcion.solicitud_id, CotizacionOpcion.total_mxn, CotizacionOpcion.total_usd
         ).where(CotizacionOpcion.solicitud_id.in_(solicitud_ids), CotizacionOpcion.letra == Letra.A)
     ).all()
-    return {sid: (total, moneda) for sid, total, moneda in filas}
+    return {sid: (mxn, usd) for sid, mxn, usd in filas}
 
 
 def guardar_opcion(
@@ -282,7 +283,7 @@ def guardar_opcion(
         # valida contra el body ANTES de mutar nada: si falta algo, la opción
         # persistida queda intacta.
         renglones_body = {r.partida_id: r for r in data.renglones if not _renglon_vacio(r)}
-        faltantes = _faltantes_de(letra.value, data.moneda, data.vigencia, renglones_body, partidas)
+        faltantes = _faltantes_de(letra.value, data.vigencia, renglones_body, partidas)
         if faltantes:
             raise AppError(
                 422,
@@ -297,11 +298,10 @@ def guardar_opcion(
         db.flush()
     else:
         db.execute(delete(OpcionPartida).where(OpcionPartida.opcion_id == opcion.id))
-    opcion.moneda = data.moneda
     opcion.vigencia = data.vigencia
     opcion.comentarios = data.comentarios
 
-    total = Decimal("0")
+    totales = {Moneda.MXN: Decimal("0"), Moneda.USD: Decimal("0")}
     for renglon in data.renglones:
         if _renglon_vacio(renglon):
             continue  # sin información todavía: no se persiste
@@ -312,15 +312,18 @@ def guardar_opcion(
         importe = None
         if renglon.precio_unitario is not None:
             # El importe usa la cantidad DEL RENGLÓN (lo cotizado), no la
-            # pedida: 500 KG cotizados sobre 20 PZ pedidas.
+            # pedida: 500 KG cotizados sobre 20 PZ pedidas. Suma al SUBTOTAL
+            # de SU moneda (F8c) — MXN y USD jamás se mezclan aquí.
             importe = _importe(cantidad, renglon.precio_unitario)
-            total += importe
+            if renglon.moneda is not None:
+                totales[renglon.moneda] += importe
         db.add(
             OpcionPartida(
                 opcion_id=opcion.id,
                 partida_id=renglon.partida_id,
                 cantidad=cantidad,
                 unidad=unidad,
+                moneda=renglon.moneda,
                 precio_unitario=renglon.precio_unitario,
                 importe=importe,
                 tiempo_entrega=renglon.tiempo_entrega,
@@ -330,8 +333,9 @@ def guardar_opcion(
                 alternativa_descripcion=(renglon.alternativa_descripcion or "").strip() or None,
             )
         )
-    # Total = SOLO renglones cotizados (los no-encontrados no tienen importe).
-    opcion.total = total.quantize(_CENTAVOS)
+    # Subtotales = SOLO renglones cotizados (los no-encontrados no suman).
+    opcion.total_mxn = totales[Moneda.MXN].quantize(_CENTAVOS)
+    opcion.total_usd = totales[Moneda.USD].quantize(_CENTAVOS)
 
     if correccion:
         opcion.completa = True
@@ -412,7 +416,6 @@ def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
     for opcion in opciones:
         faltantes += _faltantes_de(
             opcion.letra.value,
-            opcion.moneda,
             opcion.vigencia,
             _renglones_de(db, opcion.id),
             partidas,
@@ -427,9 +430,17 @@ def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
     return ejecutar_transicion(db, solicitud.id, Estado.COTIZADA, user)
 
 
-def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> Solicitud:
-    """COTIZADA→CONFIRMADA (lado ventas: vendedor dueño, gerente de la
-    sucursal o admin): fija opción ganadora y monto oficial (§4.9)."""
+def seleccionar(
+    db: Session,
+    solicitud_id: int,
+    letra: Letra,
+    user: Usuario,
+    tipo_cambio: Decimal | None = None,
+) -> Solicitud:
+    """COTIZADA→CONFIRMADA (lado ventas): fija opción ganadora y el monto
+    oficial CONSOLIDADO EN MXN (F8c) = total_mxn + total_usd × tipo_cambio.
+    El TC es OBLIGATORIO si hay renglones USD y PROHIBIDO si la opción es
+    100 % MXN (cero datos basura)."""
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo el lado ventas selecciona la opción", "forbidden")
@@ -446,9 +457,27 @@ def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> 
         )
     if not opcion.completa:
         raise AppError(422, f"La opción {letra.value} está incompleta", "opcion_invalida")
+    if opcion.total_usd > 0 and tipo_cambio is None:
+        raise AppError(
+            422,
+            f"La opción {letra.value} tiene renglones en USD: se requiere tipo_cambio",
+            "tipo_cambio_requerido",
+        )
+    if opcion.total_usd == 0 and tipo_cambio is not None:
+        raise AppError(
+            422,
+            f"La opción {letra.value} es 100 % MXN: no envíes tipo_cambio",
+            "tipo_cambio_invalido",
+        )
     solicitud.opcion_seleccionada_id = opcion.id
-    solicitud.monto_confirmado = opcion.total
-    solicitud.moneda_confirmada = opcion.moneda
+    consolidado = opcion.total_mxn
+    if tipo_cambio is not None:
+        consolidado = (opcion.total_mxn + opcion.total_usd * tipo_cambio).quantize(
+            _CENTAVOS, rounding=ROUND_HALF_UP
+        )
+    solicitud.monto_confirmado = consolidado
+    solicitud.moneda_confirmada = Moneda.MXN
+    solicitud.tipo_cambio = tipo_cambio
     return ejecutar_transicion(db, solicitud.id, Estado.CONFIRMADA, user)
 
 

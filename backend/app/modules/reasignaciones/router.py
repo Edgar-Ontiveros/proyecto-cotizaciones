@@ -16,14 +16,17 @@ from app.modules.solicitudes.schemas import SolicitudOut
 
 router = APIRouter(tags=["reasignaciones"])
 
-admin_required = require_roles(Rol.ADMIN)
+# v2 (F8c): compras global reasigna compradores; el lado ventas gerencial
+# reasigna vendedores (el gerente de sucursal, acotado a la suya en service).
+compras_required = require_roles(Rol.ADMIN, Rol.GERENTE_COMPRAS)
+ventas_required = require_roles(Rol.ADMIN, Rol.DIRECTOR_VENTAS, Rol.GERENTE_SUCURSAL)
 
 
 @router.post("/solicitudes/{solicitud_id}/reasignar-comprador", response_model=SolicitudOut)
 def reasignar_comprador(
     solicitud_id: int,
     body: ReasignarCompradorIn,
-    user: Usuario = Depends(admin_required),
+    user: Usuario = Depends(compras_required),
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(
@@ -35,7 +38,7 @@ def reasignar_comprador(
 def reasignar_vendedor(
     solicitud_id: int,
     body: ReasignarVendedorIn,
-    user: Usuario = Depends(admin_required),
+    user: Usuario = Depends(ventas_required),
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(
@@ -46,7 +49,7 @@ def reasignar_vendedor(
 @router.post("/reasignaciones/comprador", response_model=ReasignacionMasivaOut)
 def reasignar_comprador_masivo(
     body: ReasignacionMasivaIn,
-    user: Usuario = Depends(admin_required),
+    user: Usuario = Depends(compras_required),
     db: Session = Depends(get_db),
 ):
     n = service.reasignar_comprador_masivo(db, body.de_id, body.a_id, user)
@@ -56,7 +59,7 @@ def reasignar_comprador_masivo(
 @router.post("/reasignaciones/vendedor", response_model=ReasignacionMasivaOut)
 def reasignar_vendedor_masivo(
     body: ReasignacionMasivaIn,
-    user: Usuario = Depends(admin_required),
+    user: Usuario = Depends(ventas_required),
     db: Session = Depends(get_db),
 ):
     n = service.reasignar_vendedor_masivo(db, body.de_id, body.a_id, user)

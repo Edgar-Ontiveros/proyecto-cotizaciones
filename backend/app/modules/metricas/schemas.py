@@ -39,8 +39,11 @@ class ResumenOut(BaseModel):
     distribucion_bandas: dict[str, int]
     rojas_ahora: int  # foto del momento, independiente del periodo
     embudo: dict[str, int]  # estado actual → conteo (creadas en el periodo)
-    # Dinero SIEMPRE por moneda, jamás sumado entre monedas (CLAUDE.md #11).
+    # F8c: dinero CONFIRMADO = UNA serie consolidada MXN (TC fijado al
+    # confirmar); el desglose original por moneda queda como dato secundario.
+    # El de REFERENCIA sigue por moneda separada (aún no hay TC).
     dinero_confirmado: dict[str, Decimal]
+    dinero_confirmado_desglose: dict[str, Decimal]
     dinero_referencia: dict[str, Decimal]
     conversion: ConversionOut
 
@@ -108,3 +111,21 @@ class FiltrosOut(BaseModel):
     sucursales: list[OpcionFiltroOut]
     compradores: list[OpcionFiltroOut] | None
     vendedores: list[OpcionFiltroOut] | None
+
+
+class NoEncontradosGrupoOut(BaseModel):
+    """% de renglones no encontrados por comprador (F8c)."""
+
+    id: int
+    nombre: str
+    total_renglones: int
+    no_encontrados: int
+    pct: float | None
+
+
+class NoEncontradosOut(BaseModel):
+    total_renglones: int
+    no_encontrados: int
+    pct: float | None
+    por_comprador: list[NoEncontradosGrupoOut]
+    top_materiales: list[MaterialOut]

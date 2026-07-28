@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.permissions import get_current_user
 from app.models.catalogos import MotivoRechazo
+from app.models.cotizacion import CotizacionOpcion
 from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Prioridad, Solicitud
 from app.models.sucursal import Sucursal
@@ -46,8 +47,10 @@ _ENCABEZADOS = [
     ("Confirmado", 17),
     ("Banda último ciclo", 16),
     ("Horas hábiles último ciclo", 22),
-    ("Monto", 14),
-    ("Moneda", 8),
+    ("Monto MXN", 14),
+    ("Monto USD", 14),
+    ("Tipo de cambio", 12),
+    ("Confirmado MXN", 16),
     ("Motivo", 34),
 ]
 _FORMATO_FECHA = "yyyy-mm-dd hh:mm"
@@ -70,14 +73,23 @@ def _sucursales(db: Session, ids: set[int]) -> dict[int, tuple[str, str]]:
     return {sid: (nombre, tz) for sid, nombre, tz in filas}
 
 
-def _opciones_a(db: Session, ids: list[int]) -> dict[int, tuple[Decimal, str | None]]:
-    """total y moneda de la opción A (monto de referencia de una COTIZADA) —
-    misma fuente que el listado (F8b): cotizaciones.referencias_opcion_a."""
-    referencias = cotizaciones_service.referencias_opcion_a(db, ids)
-    return {
-        sid: (total, moneda.value if moneda else None)
-        for sid, (total, moneda) in referencias.items()
-    }
+def _opciones_a(db: Session, ids: list[int]) -> dict[int, tuple[Decimal, Decimal]]:
+    """(total_mxn, total_usd) de la opción A (referencia de una COTIZADA) —
+    misma fuente que el listado: cotizaciones.referencias_opcion_a."""
+    return cotizaciones_service.referencias_opcion_a(db, ids)
+
+
+def _desgloses_ganadores(db: Session, ids: list[int]) -> dict[int, tuple[Decimal, Decimal]]:
+    """(total_mxn, total_usd) de la opción GANADORA de cada CONFIRMADA (F8c):
+    el desglose original antes de consolidar con el TC."""
+    if not ids:
+        return {}
+    filas = db.execute(
+        select(Solicitud.id, CotizacionOpcion.total_mxn, CotizacionOpcion.total_usd)
+        .join(CotizacionOpcion, Solicitud.opcion_seleccionada_id == CotizacionOpcion.id)
+        .where(Solicitud.id.in_(ids))
+    ).all()
+    return {sid: (mxn, usd) for sid, mxn, usd in filas}
 
 
 def _motivos_rechazo(db: Session, ids: list[int]) -> dict[int, str]:
@@ -149,6 +161,9 @@ def exportar_solicitudes(
     )
     ciclos = cargar_ciclos(db, ids)
     referencias = _opciones_a(db, [s.id for s in solicitudes if s.estado == Estado.COTIZADA])
+    desgloses = _desgloses_ganadores(
+        db, [s.id for s in solicitudes if s.estado == Estado.CONFIRMADA]
+    )
     motivos = _motivos_rechazo(db, [s.id for s in solicitudes if s.estado == Estado.RECHAZADA])
 
     wb = Workbook()
@@ -162,13 +177,16 @@ def exportar_solicitudes(
         sucursal_nombre, tz = sucursales[solicitud.sucursal_id]
         lista_ciclos = ciclos.get(solicitud.id, [])
         ultimo = lista_ciclos[-1] if lista_ciclos else None
-        monto: Decimal | None = None
-        moneda: str | None = None
+        # F8c: desglose por moneda (referencia u opción ganadora), TC y el
+        # consolidado MXN de las confirmadas.
+        monto_mxn: Decimal | None = None
+        monto_usd: Decimal | None = None
+        confirmado: Decimal | None = None
         if solicitud.estado == Estado.CONFIRMADA:
-            monto = solicitud.monto_confirmado
-            moneda = solicitud.moneda_confirmada.value if solicitud.moneda_confirmada else None
+            monto_mxn, monto_usd = desgloses.get(solicitud.id, (None, None))
+            confirmado = solicitud.monto_confirmado
         elif solicitud.estado == Estado.COTIZADA:
-            monto, moneda = referencias.get(solicitud.id, (None, None))
+            monto_mxn, monto_usd = referencias.get(solicitud.id, (None, None))
         motivo: str | None = None
         if solicitud.estado == Estado.RECHAZADA:
             motivo = motivos.get(solicitud.id)
@@ -190,8 +208,10 @@ def exportar_solicitudes(
                 _local(solicitud.confirmado_en, tz),
                 ultimo.banda.value if ultimo else None,
                 round(ultimo.horas_habiles, 2) if ultimo else None,
-                monto,
-                moneda,
+                monto_mxn or None,
+                monto_usd or None,
+                solicitud.tipo_cambio,
+                confirmado,
                 motivo,
             ]
         )

@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.modules.metricas.schemas import (
     GrupoOut,
     MaterialesOut,
     MiPanelOut,
+    NoEncontradosOut,
     ResumenOut,
 )
 from app.modules.metricas.service import Dimension, Filtros
@@ -21,6 +23,10 @@ from app.modules.metricas.service import Dimension, Filtros
 router = APIRouter(prefix="/metricas", tags=["metricas"])
 
 comprador_required = require_roles(Rol.COMPRADOR)
+# Gates v2 por área (F8c): métricas de COMPRADORES solo para compras global y
+# admin; métricas por VENDEDOR solo para el lado ventas gerencial y admin.
+compras_required = require_roles(Rol.ADMIN, Rol.GERENTE_COMPRAS)
+ventas_gerencial_required = require_roles(Rol.ADMIN, Rol.DIRECTOR_VENTAS, Rol.GERENTE_SUCURSAL)
 
 
 def filtros_query(
@@ -54,10 +60,10 @@ def resumen(
     return service.resumen(db, user, f)
 
 
-def _tabla(dimension: Dimension):
+def _tabla(dimension: Dimension, guard: Any = get_current_user):
     def endpoint(
         f: Filtros = Depends(filtros_query),
-        user: Usuario = Depends(get_current_user),
+        user: Usuario = Depends(guard),
         db: Session = Depends(get_db),
     ) -> list[GrupoOut]:
         return service.tabla_por(db, user, f, dimension)
@@ -65,10 +71,22 @@ def _tabla(dimension: Dimension):
     return endpoint
 
 
-router.get("/por-comprador", response_model=list[GrupoOut])(_tabla("comprador"))
+router.get("/por-comprador", response_model=list[GrupoOut])(_tabla("comprador", compras_required))
 router.get("/por-sucursal", response_model=list[GrupoOut])(_tabla("sucursal"))
-router.get("/por-vendedor", response_model=list[GrupoOut])(_tabla("vendedor"))
+router.get("/por-vendedor", response_model=list[GrupoOut])(
+    _tabla("vendedor", ventas_gerencial_required)
+)
 router.get("/por-cliente", response_model=list[GrupoOut])(_tabla("cliente"))
+
+
+@router.get("/no-encontrados", response_model=NoEncontradosOut)
+def no_encontrados(
+    f: Filtros = Depends(filtros_query),
+    limite: int = Query(default=10, ge=1, le=50),
+    user: Usuario = Depends(compras_required),
+    db: Session = Depends(get_db),
+):
+    return service.no_encontrados(db, user, f, limite)
 
 
 @router.get("/materiales", response_model=MaterialesOut)

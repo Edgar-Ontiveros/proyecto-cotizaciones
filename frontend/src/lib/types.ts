@@ -1,7 +1,13 @@
 // Tipos espejo de los schemas Pydantic del backend (fuente de verdad).
 // Los Decimal del backend viajan como string en JSON.
 
-export type Rol = "vendedor" | "comprador" | "gerente" | "admin";
+export type Rol =
+  | "vendedor"
+  | "comprador"
+  | "gerente_sucursal"
+  | "gerente_compras"
+  | "director_ventas"
+  | "admin";
 
 export type Estado =
   | "BORRADOR"
@@ -68,9 +74,11 @@ export interface SolicitudOut {
   banda: Banda | null;
   dias_transcurridos: number | null;
   horas_habiles: number | null;
-  // Monto de REFERENCIA (F8b): total/moneda de la opción A, solo COTIZADA.
-  monto_referencia: string | null;
-  moneda_referencia: Moneda | null;
+  // Referencia (F8c): SUBTOTALES por moneda de la opción A, solo COTIZADA.
+  referencia_mxn: string | null;
+  referencia_usd: string | null;
+  // TC usado al confirmar (solo si la ganadora tenía USD).
+  tipo_cambio: string | null;
 }
 
 export type Unidad = "PZ" | "KG" | "TON" | "MTS" | "M2";
@@ -82,6 +90,8 @@ export interface RenglonOut {
   // Cantidad/unidad COTIZADAS (pueden diferir de lo pedido).
   cantidad: string;
   unidad: Unidad;
+  // Moneda POR RENGLÓN (F8c).
+  moneda: Moneda | null;
   precio_unitario: string | null;
   importe: string | null;
   tiempo_entrega: string | null;
@@ -96,10 +106,11 @@ export interface RenglonOut {
 export interface OpcionOut {
   id: number;
   letra: Letra;
-  moneda: Moneda | null;
   vigencia: string | null;
   comentarios: string | null;
-  total: string;
+  // Subtotales POR MONEDA (F8c): jamás se suman sin tipo de cambio.
+  total_mxn: string;
+  total_usd: string;
   completa: boolean;
   renglones: RenglonOut[];
 }

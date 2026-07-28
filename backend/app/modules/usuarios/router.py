@@ -15,10 +15,13 @@ from app.modules.usuarios.schemas import (
     UsuarioUpdate,
 )
 
-# Regla dura: TODA la administración de cuentas es solo para admin.
+# v2 (F8c): la administración de cuentas se abre a los roles gestores; QUIÉN
+# puede tocar a QUIÉN lo decide la MATRIZ_GESTION en el service (403 exacto).
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 
-admin_required = require_roles(Rol.ADMIN)
+gestion_required = require_roles(
+    Rol.ADMIN, Rol.DIRECTOR_VENTAS, Rol.GERENTE_SUCURSAL, Rol.GERENTE_COMPRAS
+)
 
 
 @router.get("", response_model=UsuarioListOut)
@@ -29,10 +32,10 @@ def listar_usuarios(
     q: str | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    _admin: Usuario = Depends(admin_required),
+    gestor: Usuario = Depends(gestion_required),
     db: Session = Depends(get_db),
 ):
-    items, total = service.listar(db, rol, sucursal_id, activo, q, limit, offset)
+    items, total = service.listar(db, gestor, rol, sucursal_id, activo, q, limit, offset)
     return UsuarioListOut(
         items=[UsuarioOut.model_validate(u) for u in items],
         total=total,
@@ -44,10 +47,10 @@ def listar_usuarios(
 @router.post("", response_model=UsuarioCreadoOut, status_code=status.HTTP_201_CREATED)
 def crear_usuario(
     body: UsuarioCreate,
-    _admin: Usuario = Depends(admin_required),
+    gestor: Usuario = Depends(gestion_required),
     db: Session = Depends(get_db),
 ):
-    user, password_temporal = service.crear(db, body)
+    user, password_temporal = service.crear(db, body, gestor)
     out = UsuarioCreadoOut.model_validate(user)
     out.password_temporal = password_temporal
     return out
@@ -57,35 +60,35 @@ def crear_usuario(
 def actualizar_usuario(
     usuario_id: int,
     body: UsuarioUpdate,
-    admin: Usuario = Depends(admin_required),
+    gestor: Usuario = Depends(gestion_required),
     db: Session = Depends(get_db),
 ):
-    return service.actualizar(db, usuario_id, body, admin)
+    return service.actualizar(db, usuario_id, body, gestor)
 
 
 @router.post("/{usuario_id}/reset-password", response_model=ResetPasswordOut)
 def reset_password(
     usuario_id: int,
-    _admin: Usuario = Depends(admin_required),
+    gestor: Usuario = Depends(gestion_required),
     db: Session = Depends(get_db),
 ):
-    return ResetPasswordOut(password_temporal=service.reset_password(db, usuario_id))
+    return ResetPasswordOut(password_temporal=service.reset_password(db, usuario_id, gestor))
 
 
 @router.post("/{usuario_id}/desactivar", response_model=UsuarioOut)
 def desactivar_usuario(
     usuario_id: int,
     body: DesactivarIn | None = None,
-    admin: Usuario = Depends(admin_required),
+    gestor: Usuario = Depends(gestion_required),
     db: Session = Depends(get_db),
 ):
-    return service.desactivar(db, usuario_id, admin, body)
+    return service.desactivar(db, usuario_id, gestor, body)
 
 
 @router.post("/{usuario_id}/activar", response_model=UsuarioOut)
 def activar_usuario(
     usuario_id: int,
-    _admin: Usuario = Depends(admin_required),
+    gestor: Usuario = Depends(gestion_required),
     db: Session = Depends(get_db),
 ):
-    return service.activar(db, usuario_id)
+    return service.activar(db, usuario_id, gestor)

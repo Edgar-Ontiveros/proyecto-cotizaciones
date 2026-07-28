@@ -40,7 +40,7 @@ def entorno(db, make_user, make_sucursal):
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
         comprador=comprador,
         otro_comprador=make_user(Rol.COMPRADOR),
-        gerente=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
+        gerente=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=sucursal.id),
         admin=make_user(Rol.ADMIN),
     )
 
@@ -65,11 +65,13 @@ def enviada(client, entorno, auth_headers):
 
 
 def _renglones_completos(
-    partida_ids, precios=("100.00", "200.00"), tiempo="1 semana", proveedor=None
+    partida_ids, precios=("100.00", "200.00"), tiempo="1 semana", proveedor=None, moneda="MXN"
 ):
+    # F8c: la moneda vive en el RENGLÓN.
     return [
         {
             "partida_id": pid,
+            "moneda": moneda,
             "precio_unitario": precio,
             "tiempo_entrega": tiempo,
             **({"proveedor": proveedor} if proveedor else {}),
@@ -80,9 +82,8 @@ def _renglones_completos(
 
 def _opcion_completa(partida_ids, moneda="MXN", proveedor=None, **kwargs):
     return {
-        "moneda": moneda,
         "vigencia": "2026-08-31",
-        "renglones": _renglones_completos(partida_ids, proveedor=proveedor),
+        "renglones": _renglones_completos(partida_ids, proveedor=proveedor, moneda=moneda),
         **kwargs,
     }
 
@@ -120,11 +121,12 @@ def test_put_sobre_enviada_ejecuta_auto_toma(client, entorno, enviada, auth_head
         headers,
         enviada.id,
         "A",
-        {"moneda": "MXN", "renglones": []},  # parcial: basta para auto-tomar
+        {"renglones": []},  # parcial: basta para auto-tomar
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["letra"] == "A" and body["completa"] is False and body["total"] == "0.00"
+    assert body["letra"] == "A" and body["completa"] is False
+    assert body["total_mxn"] == "0.00" and body["total_usd"] == "0.00"
     detalle = client.get(f"{BASE}/{enviada.id}", headers=headers).json()
     assert detalle["estado"] == "EN_PROCESO"
     transiciones = [(e["de"], e["a"]) for e in detalle["historial"]]
@@ -188,8 +190,8 @@ def test_guardado_parcial_en_proceso_ok(client, entorno, enviada, auth_headers):
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["moneda"] is None and body["vigencia"] is None
-    assert body["total"] == "0.00" and body["completa"] is False
+    assert body["vigencia"] is None
+    assert body["total_mxn"] == "0.00" and body["completa"] is False
     assert len(body["renglones"]) == 1
     assert body["renglones"][0]["precio_unitario"] is None
     assert body["renglones"][0]["tiempo_entrega"] == "2 semanas"
@@ -219,10 +221,13 @@ def test_totales_backend_con_redondeo(client, entorno, enviada, auth_headers):
         enviada.id,
         "A",
         {
-            "moneda": "MXN",
             "renglones": [
-                {"partida_id": enviada.partida_ids[0], "precio_unitario": "33.335"},
-                {"partida_id": enviada.partida_ids[1], "precio_unitario": "50.00"},
+                {
+                    "partida_id": enviada.partida_ids[0],
+                    "moneda": "MXN",
+                    "precio_unitario": "33.335",
+                },
+                {"partida_id": enviada.partida_ids[1], "moneda": "MXN", "precio_unitario": "50.00"},
             ],
         },
     )
@@ -231,7 +236,7 @@ def test_totales_backend_con_redondeo(client, entorno, enviada, auth_headers):
     importes = {r_["partida_id"]: r_["importe"] for r_ in body["renglones"]}
     assert importes[enviada.partida_ids[0]] == "100.01"  # 3 × 33.335
     assert importes[enviada.partida_ids[1]] == "100.00"  # 2 × 50.00
-    assert body["total"] == "200.01"
+    assert body["total_mxn"] == "200.01"
 
 
 def test_importe_y_total_del_body_se_ignoran(client, entorno, enviada, auth_headers):
@@ -242,11 +247,11 @@ def test_importe_y_total_del_body_se_ignoran(client, entorno, enviada, auth_head
         enviada.id,
         "A",
         {
-            "moneda": "MXN",
-            "total": "999999.99",  # ignorado
+            "total_mxn": "999999.99",  # ignorado
             "renglones": [
                 {
                     "partida_id": enviada.partida_ids[0],
+                    "moneda": "MXN",
                     "precio_unitario": "10.00",
                     "importe": "123456.78",  # ignorado
                 },
@@ -256,7 +261,7 @@ def test_importe_y_total_del_body_se_ignoran(client, entorno, enviada, auth_head
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["renglones"][0]["importe"] == "30.00"  # 3 × 10.00, recalculado
-    assert body["total"] == "30.00"
+    assert body["total_mxn"] == "30.00"
 
 
 # ------------------------------------------------------------------ cotizar
@@ -321,7 +326,7 @@ def test_correccion_en_cotizada_recalcula_y_deja_evento(client, entorno, cotizad
         },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["total"] == "730.00"  # 3×110 + 2×200, recalculado
+    assert r.json()["total_mxn"] == "730.00"  # 3×110 + 2×200, recalculado
     assert r.json()["completa"] is True
     detalle = client.get(f"{BASE}/{cotizada.id}", headers=headers).json()
     assert detalle["estado"] == "COTIZADA"  # sin cambio de estado
@@ -337,7 +342,7 @@ def test_correccion_no_puede_dejar_incompleta_422(client, entorno, cotizada, aut
         headers,
         cotizada.id,
         "B",
-        {"moneda": "MXN", "renglones": []},  # sin vigencia ni renglones
+        {"renglones": []},  # sin vigencia ni renglones
     )
     assert r.status_code == 422 and r.json()["code"] == "cotizacion_incompleta"
     # La opción B queda como estaba (el error aborta la transacción).
@@ -496,9 +501,10 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         sid,
         "B",
         {
-            "moneda": "USD",
             "vigencia": "2026-09-15",
-            "renglones": _renglones_completos(enviada.partida_ids, ("55.00", "80.00")),
+            "renglones": _renglones_completos(
+                enviada.partida_ids, ("55.00", "80.00"), moneda="USD"
+            ),
         },
     )
     assert r.status_code == 200
@@ -509,16 +515,26 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         sid,
         "B",
         {
-            "moneda": "USD",
             "vigencia": "2026-09-15",
-            "renglones": _renglones_completos(enviada.partida_ids, ("50.00", "80.00")),
+            "renglones": _renglones_completos(
+                enviada.partida_ids, ("50.00", "80.00"), moneda="USD"
+            ),
         },
     )
     assert r.status_code == 200  # corrección post-cotización
+    # F8c: la opción B es 100% USD → el TC es obligatorio al confirmar y el
+    # monto oficial queda CONSOLIDADO en MXN (310 USD × 18.5 = 5,735.00).
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "B"})
+    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_requerido"
+    r = client.post(
+        f"{BASE}/{sid}/seleccionar",
+        headers=headers_v,
+        json={"letra": "B", "tipo_cambio": "18.5"},
+    )
     assert r.status_code == 200
-    assert r.json()["monto_confirmado"] == "310.00"  # 3×50 + 2×80 corregido
-    assert r.json()["moneda_confirmada"] == "USD"
+    assert r.json()["monto_confirmado"] == "5735.00"  # (3×50 + 2×80) × 18.5
+    assert r.json()["moneda_confirmada"] == "MXN"
+    assert r.json()["tipo_cambio"] == "18.5000"
 
     detalle = client.get(f"{BASE}/{sid}", headers=headers_v).json()
     assert detalle["estado"] == "CONFIRMADA"
@@ -555,4 +571,4 @@ def test_patch_del_vendedor_descarta_captura_previa(client, entorno, enviada, au
     detalle = client.get(f"{BASE}/{enviada.id}", headers=headers_c).json()
     opcion_a = detalle["opciones"][0]
     assert opcion_a["renglones"] == []
-    assert opcion_a["total"] == "0.00" and opcion_a["completa"] is False
+    assert opcion_a["total_mxn"] == "0.00" and opcion_a["completa"] is False

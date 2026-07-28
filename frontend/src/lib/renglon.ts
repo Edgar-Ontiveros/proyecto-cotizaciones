@@ -1,7 +1,7 @@
 /** Lógica del renglón RICO del comprador (F8b), separada de la UI para
  * poder probarla: validación local espejo del backend y armado del body. */
 
-import type { Unidad } from "./types";
+import type { Moneda, Unidad } from "./types";
 
 export const UNIDADES: { value: Unidad; label: string }[] = [
   { value: "PZ", label: "PZ — piezas" },
@@ -14,6 +14,7 @@ export const UNIDADES: { value: Unidad; label: string }[] = [
 export interface RenglonForm {
   cantidad: string;
   unidad: Unidad;
+  moneda: Moneda;
   precio: string;
   tiempo: string;
   proveedor: string;
@@ -58,6 +59,7 @@ export function renglonABody(partidaId: number, r: RenglonForm) {
     partida_id: partidaId,
     cantidad: r.cantidad.trim() || null,
     unidad: r.unidad,
+    moneda: r.noEncontrada ? null : r.moneda,
     precio_unitario: r.precio.trim() || null,
     tiempo_entrega: r.tiempo.trim() || null,
     proveedor: r.proveedor.trim() || null,
@@ -75,4 +77,21 @@ export async function corregirYReenviar<T>(acciones: {
 }): Promise<T> {
   await acciones.editar();
   return acciones.enviar();
+}
+
+/** Consolidado MXN al confirmar (F8c): total_mxn + total_usd × TC, redondeo
+ * a 2 como el backend. null si falta el TC con USD presente. */
+export function consolidadoMXN(
+  totalMxn: string,
+  totalUsd: string,
+  tipoCambio: string,
+): number | null {
+  const usd = Number(totalUsd);
+  const mxn = Number(totalMxn);
+  if (usd > 0) {
+    const tc = Number(tipoCambio);
+    if (!tc || Number.isNaN(tc)) return null;
+    return Math.round((mxn + usd * tc) * 100) / 100;
+  }
+  return mxn;
 }

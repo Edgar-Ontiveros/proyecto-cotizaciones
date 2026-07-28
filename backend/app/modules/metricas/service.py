@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.horario_habil import Banda
 from app.core.permissions import scope_solicitudes_query
 from app.models.cliente import Cliente
-from app.models.cotizacion import CotizacionOpcion, Letra, Moneda
+from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
 from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
 from app.models.sucursal import Sucursal
@@ -42,6 +42,8 @@ from app.modules.metricas.schemas import (
     MaterialesOut,
     MaterialOut,
     MiPanelOut,
+    NoEncontradosGrupoOut,
+    NoEncontradosOut,
     OpcionFiltroOut,
     ResumenOut,
     RojaOut,
@@ -66,7 +68,7 @@ class Filtros:
 def con_scoping(user: Usuario, f: Filtros) -> Filtros:
     """Fuerza el alcance por rol SOBRE los filtros (los del usuario se
     sobreescriben si contradicen su alcance)."""
-    if user.rol == Rol.GERENTE:
+    if user.rol == Rol.GERENTE_SUCURSAL:
         # Fail-closed: gerente sin sucursal no ve nada (-1 no matchea).
         f.sucursal_id = user.sucursal_id if user.sucursal_id is not None else -1
     elif user.rol == Rol.COMPRADOR:
@@ -195,23 +197,52 @@ def _dinero_confirmado(db: Session, user: Usuario, f: Filtros, *extra_group: Any
     return _filtrar(stmt, user, f)
 
 
+def _series_por_moneda(
+    mxn: Decimal | None, usd: Decimal | None, filtro: Moneda | None
+) -> dict[str, Decimal]:
+    """{MXN: x, USD: y} desde subtotales (F8c) — solo claves con dinero; el
+    filtro de moneda restringe series, jamás las mezcla."""
+    series: dict[str, Decimal] = {}
+    if mxn:
+        series["MXN"] = mxn
+    if usd:
+        series["USD"] = usd
+    if filtro is not None:
+        series = {k: v for k, v in series.items() if k == filtro.value}
+    return series
+
+
 def _dinero_referencia(db: Session, user: Usuario, f: Filtros) -> dict[str, Decimal]:
     """Monto de referencia (§4.9): opción A de las solicitudes HOY en COTIZADA
-    con cotizado_en en el periodo."""
+    con cotizado_en en el periodo. Series por moneda SEPARADAS (aún sin TC)."""
     ini, fin = _limites(f)
     stmt = (
-        select(CotizacionOpcion.moneda, func.sum(CotizacionOpcion.total))
+        select(func.sum(CotizacionOpcion.total_mxn), func.sum(CotizacionOpcion.total_usd))
         .join(Solicitud, CotizacionOpcion.solicitud_id == Solicitud.id)
         .where(
             CotizacionOpcion.letra == Letra.A,
             Solicitud.estado == Estado.COTIZADA,
             *_en_periodo(Solicitud.cotizado_en, ini, fin),
         )
-        .group_by(CotizacionOpcion.moneda)
     )
-    if f.moneda is not None:
-        stmt = stmt.where(CotizacionOpcion.moneda == f.moneda)
-    return _dinero_por_moneda(db, _filtrar(stmt, user, f))
+    mxn, usd = db.execute(_filtrar(stmt, user, f)).one()
+    return _series_por_moneda(mxn, usd, f.moneda)
+
+
+def _dinero_confirmado_desglose(db: Session, user: Usuario, f: Filtros) -> dict[str, Decimal]:
+    """Desglose ORIGINAL por moneda del dinero confirmado (dato secundario,
+    F8c): subtotales de la opción ganadora, antes de consolidar con TC."""
+    ini, fin = _limites(f)
+    stmt = (
+        select(func.sum(CotizacionOpcion.total_mxn), func.sum(CotizacionOpcion.total_usd))
+        .join(Solicitud, Solicitud.opcion_seleccionada_id == CotizacionOpcion.id)
+        .where(
+            Solicitud.estado == Estado.CONFIRMADA,
+            *_en_periodo(Solicitud.confirmado_en, ini, fin),
+        )
+    )
+    mxn, usd = db.execute(_filtrar(stmt, user, f)).one()
+    return _series_por_moneda(mxn, usd, f.moneda)
 
 
 def _sub_desenlace_no_confirmada() -> Any:
@@ -290,7 +321,10 @@ def resumen(db: Session, user: Usuario, f: Filtros) -> ResumenOut:
         distribucion_bandas=distribucion,
         rojas_ahora=len(_rojas_ahora(db, user, f, ahora)),
         embudo=embudo,
+        # F8c: el confirmado es UNA serie consolidada en MXN (el TC se fijó al
+        # confirmar); el desglose original por moneda es dato secundario.
         dinero_confirmado=_dinero_por_moneda(db, _dinero_confirmado(db, user, f)),
+        dinero_confirmado_desglose=_dinero_confirmado_desglose(db, user, f),
         dinero_referencia=_dinero_referencia(db, user, f),
         conversion=_conversion(db, user, f, ahora),
     )
@@ -522,7 +556,9 @@ def filtros(db: Session, user: Usuario) -> FiltrosOut:
         for s in db.scalars(select(Sucursal).where(Sucursal.activa).order_by(Sucursal.nombre))
     ]
     compradores = vendedores = None
-    if user.rol in (Rol.ADMIN, Rol.GERENTE):
+    # v2 por ÁREA: compradores solo para quien ve métricas de compras;
+    # vendedores solo para el lado ventas gerencial (y admin todo).
+    if user.rol in (Rol.ADMIN, Rol.GERENTE_COMPRAS):
         compradores = [
             OpcionFiltroOut(id=u.id, nombre=u.nombre)
             for u in db.scalars(
@@ -531,8 +567,9 @@ def filtros(db: Session, user: Usuario) -> FiltrosOut:
                 .order_by(Usuario.nombre)
             )
         ]
+    if user.rol in (Rol.ADMIN, Rol.DIRECTOR_VENTAS, Rol.GERENTE_SUCURSAL):
         stmt = select(Usuario).where(Usuario.rol == Rol.VENDEDOR, Usuario.activo)
-        if user.rol == Rol.GERENTE:
+        if user.rol == Rol.GERENTE_SUCURSAL:
             sucursal = user.sucursal_id if user.sucursal_id is not None else -1
             stmt = stmt.where(Usuario.sucursal_id == sucursal)
         vendedores = [
@@ -540,3 +577,62 @@ def filtros(db: Session, user: Usuario) -> FiltrosOut:
             for u in db.scalars(stmt.order_by(Usuario.nombre))
         ]
     return FiltrosOut(sucursales=sucursales, compradores=compradores, vendedores=vendedores)
+
+
+def no_encontrados(db: Session, user: Usuario, f: Filtros, limite: int = 10) -> NoEncontradosOut:
+    """% de renglones NO ENCONTRADOS (F8c): global, por comprador y top de
+    materiales no conseguidos. Universo: renglones persistidos de solicitudes
+    en el periodo (creado_en). Visible solo para gerente_compras y admin (lo
+    exige el router)."""
+    f = con_scoping(user, f)
+    ini, fin = _limites(f)
+    base = (
+        select(
+            Solicitud.comprador_id,
+            func.count(OpcionPartida.id),
+            func.count(OpcionPartida.id).filter(OpcionPartida.no_encontrada),
+        )
+        .join(CotizacionOpcion, OpcionPartida.opcion_id == CotizacionOpcion.id)
+        .join(Solicitud, CotizacionOpcion.solicitud_id == Solicitud.id)
+        .where(*_en_periodo(Solicitud.creado_en, ini, fin))
+        .group_by(Solicitud.comprador_id)
+    )
+    filas = db.execute(_filtrar(base, user, f)).all()
+    nombres = _nombres_de(db, "comprador", {cid for cid, _, _ in filas if cid is not None})
+    total = sum(t for _, t, _ in filas)
+    no_enc = sum(n for _, _, n in filas)
+    por_comprador = [
+        NoEncontradosGrupoOut(
+            id=cid,
+            nombre=nombres.get(cid, f"#{cid}"),
+            total_renglones=t,
+            no_encontrados=n,
+            pct=round(n / t, 4) if t else None,
+        )
+        for cid, t, n in filas
+        if cid is not None
+    ]
+    por_comprador.sort(key=lambda g: (-(g.pct or 0), g.nombre))
+
+    top_stmt = (
+        select(func.upper(func.trim(SolicitudPartida.descripcion)), func.count())
+        .select_from(OpcionPartida)
+        .join(SolicitudPartida, OpcionPartida.partida_id == SolicitudPartida.id)
+        .join(CotizacionOpcion, OpcionPartida.opcion_id == CotizacionOpcion.id)
+        .join(Solicitud, CotizacionOpcion.solicitud_id == Solicitud.id)
+        .where(OpcionPartida.no_encontrada, *_en_periodo(Solicitud.creado_en, ini, fin))
+        .group_by(func.upper(func.trim(SolicitudPartida.descripcion)))
+        .order_by(func.count().desc())
+        .limit(limite)
+    )
+    top = [
+        MaterialOut(valor=valor, conteo=conteo)
+        for valor, conteo in db.execute(_filtrar(top_stmt, user, f)).all()
+    ]
+    return NoEncontradosOut(
+        total_renglones=total,
+        no_encontrados=no_enc,
+        pct=round(no_enc / total, 4) if total else None,
+        por_comprador=por_comprador,
+        top_materiales=top,
+    )

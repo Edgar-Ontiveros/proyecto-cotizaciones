@@ -22,9 +22,12 @@ def test_seed_idempotente_y_conteos_exactos(db):
 
     assert db.scalar(select(func.count()).select_from(Sucursal)) == 11
     assert _conteo_por_rol(db, Rol.COMPRADOR) == 6
-    assert _conteo_por_rol(db, Rol.GERENTE) == 9
+    assert _conteo_por_rol(db, Rol.GERENTE_SUCURSAL) == 9
     assert _conteo_por_rol(db, Rol.VENDEDOR) == 35
-    assert _conteo_por_rol(db, Rol.ADMIN) == 1
+    # F8c: Edgar + maestro2, más los placeholders de los roles nuevos.
+    assert _conteo_por_rol(db, Rol.ADMIN) == 2
+    assert _conteo_por_rol(db, Rol.GERENTE_COMPRAS) == 2
+    assert _conteo_por_rol(db, Rol.DIRECTOR_VENTAS) == 1
     assert db.scalar(select(func.count()).select_from(MotivoRechazo)) == 5
     assert db.scalar(select(func.count()).select_from(FolioCounter)) == 11
     assert db.scalar(select(func.count()).select_from(DiaFestivo)) == 14
@@ -70,7 +73,8 @@ def test_seed_idempotente_y_conteos_exactos(db):
         )
     ).scalar_one()
     assert confirmada.opcion_seleccionada_id == opcion_b.id
-    assert confirmada.monto_confirmado == Decimal("28325.00") == opcion_b.total
+    assert confirmada.monto_confirmado == Decimal("28325.00") == opcion_b.total_mxn
+    assert confirmada.tipo_cambio is None  # 100% MXN: sin TC
     assert confirmada.moneda_confirmada == Moneda.MXN
     assert confirmada.confirmado_en is not None
 
@@ -84,7 +88,7 @@ def test_seed_idempotente_y_conteos_exactos(db):
     assert len(no_encontrados) == 1 and no_encontrados[0].precio_unitario is None
     assert len(alternativas) == 1
     assert alternativas[0].alternativa_descripcion and alternativas[0].precio_unitario
-    assert alternativas[0].opcion.total == Decimal("11376.00")
+    assert alternativas[0].opcion.total_mxn == Decimal("11376.00")
     assert no_encontrados[0].opcion_id == alternativas[0].opcion_id
     assert {r.proveedor for r in renglones} >= {"Aceros y Metales del Norte", "Rolled Alloys"}
 
@@ -94,9 +98,10 @@ def test_seed_idempotente_y_conteos_exactos(db):
     ).scalar_one()
     assert no_confirmada.motivo_no_confirmada == "PRECIO"
 
-    # La COTIZADA en USD nunca mezcla monedas.
-    usd = db.scalars(select(CotizacionOpcion).where(CotizacionOpcion.moneda == Moneda.USD)).all()
-    assert len(usd) == 1 and usd[0].total == Decimal("351.00")
+    # La COTIZADA en USD nunca mezcla monedas (subtotales F8c).
+    usd = db.scalars(select(CotizacionOpcion).where(CotizacionOpcion.total_usd > 0)).all()
+    assert len(usd) == 1
+    assert usd[0].total_usd == Decimal("351.00") and usd[0].total_mxn == Decimal("0.00")
 
     # Territorios completos: los 6 compradores son titulares y cubren las 11
     # sucursales (una titularidad por sucursal).
@@ -107,7 +112,7 @@ def test_seed_idempotente_y_conteos_exactos(db):
 
     # Todos entran con la contraseña por defecto y deben cambiarla.
     usuarios = db.scalars(select(Usuario)).all()
-    assert len(usuarios) == 51
+    assert len(usuarios) == 55
     assert all(u.must_change_password for u in usuarios)
     admin = db.scalar(select(Usuario).where(Usuario.email == "edgar@herinox.demo"))
     assert admin is not None and admin.rol == Rol.ADMIN

@@ -12,16 +12,20 @@
 
 Plataforma interna donde ~35 vendedores solicitan cotizaciones de pedido especial a 6 compradores (≈250 por semana, 11 sucursales), con medición objetiva de tiempos de respuesta —hoy compras es "juez y parte" con un Excel manual— y análisis por dinero: cuánto se cotiza y cuánto se confirma, por sucursal, comprador, vendedor y cliente.
 
-## 2. Roles y vistas (3 interfaces, 4 roles — confirmado por Edgar)
+## 2. Roles y vistas — modelo v2 por ÁREA (F8c, decisión de Edgar; supersede el modelo de 4 roles)
 
-| Rol | Vista que usa | Alcance de datos | Puede |
+Dos ÁREAS (ventas y compras) por un eje; ALCANCE (propio / sucursal / global) por el otro. El campo `proveedor` y cualquier costo interno son EXCLUSIVOS del área compras (+ admin).
+
+| Rol | Área · alcance | Ve | Puede |
 |---|---|---|---|
-| **Vendedor** | Vista Vendedor | Solo SUS solicitudes | Crear, editar (§4.3), enviar, reenviar rechazadas, seleccionar opción, marcar no confirmada, cancelar |
-| **Comprador** | Vista Comprador | Solo las asignadas a él | Tomar, capturar opciones, marcar cotizada, rechazar con motivo, corregir cotizadas |
-| **Administrador** (Gerencia de Compras administra el día a día — resp. 51; también los directores) | Vista CRM/Admin | Todo | Todo: CUALQUIER transición o edición sobre cualquier solicitud + administración completa (§6) |
-| **Gerente** (siempre de SU sucursal — gerente de ventas, resp. 45–46; el alcance "global" desapareció en F5: los directores se dan de alta como admin) | Vista CRM/Admin acotada a su sucursal | Su sucursal, sin BORRADOR ajenos | Acciones de LADO VENTAS sobre solicitudes de su sucursal: reenviar, cancelar, editar (PATCH), seleccionar/confirmar, no-confirmar y comentar. NO toma/captura/cotiza/rechaza (compras) ni administra. No ve el campo proveedor |
+| **vendedor** | Ventas · propio | Solo SUS solicitudes | Crear, editar (§4.3), enviar, reenviar rechazadas, seleccionar opción (con TC si hay USD), marcar no confirmada, cancelar |
+| **comprador** | Compras · asignadas | Solo las asignadas (CON proveedor) | Tomar, capturar opciones (renglón rico), marcar cotizada, rechazar con motivo, corregir cotizadas |
+| **gerente_sucursal** | Ventas · SU sucursal | Su sucursal, sin BORRADOR ajenos, SIN proveedor | Acciones de lado ventas sobre su sucursal + ADMINISTRA los vendedores de su sucursal (crear, editar, reset, baja segura, reasignar entre ellos). Nada de compras ni métricas de compradores |
+| **gerente_compras** (2) | Compras · global | TODAS las solicitudes CON proveedor/costos; métricas de compras (compradores, materiales, % no encontrados); territorios | Administra COMPRADORES (CRUD, bajas seguras, titularidades, reasignaciones). NO captura/cotiza/rechaza (las métricas miden a compradores reales). NO ve métricas por vendedor ni personal de ventas |
+| **director_ventas** | Ventas · global | Todo ventas consolidado, SIN proveedor/costos ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas las sucursales) y gerentes_sucursal, con movimientos entre sucursales y bajas seguras |
+| **admin** (maestros) | Todo | Todo | Control absoluto. ÚNICO que crea/gestiona gerente_compras, director_ventas y otros admin |
 
-**Cuentas: SOLO el rol admin crea, edita, activa y desactiva usuarios de TODOS los niveles — vendedores, compradores, gerentes y otros administradores** (requerimiento de Edgar; alta rotación en ventas y compras). Sin registro público. Un admin no puede desactivarse a sí mismo.
+**Matriz de gestión de cuentas** (codificada como dato en `usuarios/service.MATRIZ_GESTION`): gerente_sucursal→vendedores de su sucursal · director_ventas→vendedores (todas) y gerentes_sucursal · gerente_compras→compradores · admin→todos. NADIE se cambia a sí mismo el rol ni se desactiva a sí mismo. Sin registro público.
 
 ## 3. Estados y ciclo de vida (definitivo)
 

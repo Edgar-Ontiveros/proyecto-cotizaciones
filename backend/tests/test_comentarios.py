@@ -28,8 +28,8 @@ def entorno(client, db, make_user, make_sucursal, auth_headers):
         vendedor=vendedor,
         comprador=comprador,
         otro_vendedor=make_user(Rol.VENDEDOR, sucursal_id=sucursal.id),
-        gerente_suc=make_user(Rol.GERENTE, sucursal_id=sucursal.id),
-        gerente_otra=make_user(Rol.GERENTE, sucursal_id=make_sucursal().id),
+        gerente_suc=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=sucursal.id),
+        gerente_otra=make_user(Rol.GERENTE_SUCURSAL, sucursal_id=make_sucursal().id),
         admin=make_user(Rol.ADMIN),
     )
 

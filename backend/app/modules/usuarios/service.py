@@ -16,12 +16,42 @@ from app.modules.reasignaciones.service import (
 from app.modules.sucursales.service import titularidades_de, transferir_titularidades
 from app.modules.usuarios.schemas import DesactivarIn, UsuarioCreate, UsuarioUpdate
 
+# Matriz de GESTIÓN v2 (F8c), codificada como DATO: quién crea/edita/resetea/
+# activa-desactiva a quién. gerente_sucursal además está acotado a SU sucursal
+# (se valida aparte). Solo admin gestiona gerente_compras, director_ventas y
+# otros admin.
+MATRIZ_GESTION: dict[Rol, frozenset[Rol]] = {
+    Rol.ADMIN: frozenset(Rol),
+    Rol.DIRECTOR_VENTAS: frozenset({Rol.VENDEDOR, Rol.GERENTE_SUCURSAL}),
+    Rol.GERENTE_SUCURSAL: frozenset({Rol.VENDEDOR}),
+    Rol.GERENTE_COMPRAS: frozenset({Rol.COMPRADOR}),
+}
+
+
+def autorizar_gestion(gestor: Usuario, rol_objetivo: Rol, sucursal_objetivo: int | None) -> None:
+    """403 exacto si el gestor no puede tocar cuentas de ese rol/alcance."""
+    permitidos = MATRIZ_GESTION.get(gestor.rol, frozenset())
+    if rol_objetivo not in permitidos:
+        raise AppError(
+            403,
+            f"Tu rol no gestiona cuentas de {rol_objetivo.value}",
+            "gestion_no_permitida",
+        )
+    if gestor.rol == Rol.GERENTE_SUCURSAL and (
+        gestor.sucursal_id is None or sucursal_objetivo != gestor.sucursal_id
+    ):
+        raise AppError(
+            403,
+            "Un gerente de sucursal solo gestiona vendedores de SU sucursal",
+            "gestion_no_permitida",
+        )
+
 
 def _validar_rol_sucursal(db: Session, rol: Rol, sucursal_id: int | None) -> int | None:
     """Reglas de consistencia rol ↔ sucursal. Vendedor y gerente EXIGEN
     sucursal (el gerente es siempre de sucursal desde F5); comprador y admin
     no llevan (los territorios del comprador viven en comprador_sucursal)."""
-    if rol in (Rol.VENDEDOR, Rol.GERENTE):
+    if rol in (Rol.VENDEDOR, Rol.GERENTE_SUCURSAL):
         if sucursal_id is None:
             raise AppError(422, f"Un {rol.value} requiere sucursal_id", "sucursal_requerida")
     else:
@@ -48,6 +78,7 @@ def _check_email_libre(db: Session, email: str, excluir_id: int | None = None) -
 
 def listar(
     db: Session,
+    gestor: Usuario,
     rol: Rol | None,
     sucursal_id: int | None,
     activo: bool | None,
@@ -56,6 +87,13 @@ def listar(
     offset: int,
 ) -> tuple[list[Usuario], int]:
     stmt = select(Usuario)
+    # Alcance de la matriz EN el query (CLAUDE.md #7): cada gestor lista solo
+    # los roles que puede gestionar; el gerente de sucursal, solo su sucursal.
+    if gestor.rol != Rol.ADMIN:
+        stmt = stmt.where(Usuario.rol.in_(MATRIZ_GESTION.get(gestor.rol, frozenset())))
+    if gestor.rol == Rol.GERENTE_SUCURSAL:
+        propia = gestor.sucursal_id if gestor.sucursal_id is not None else -1
+        stmt = stmt.where(Usuario.sucursal_id == propia)
     if rol is not None:
         stmt = stmt.where(Usuario.rol == rol)
     if sucursal_id is not None:
@@ -69,10 +107,11 @@ def listar(
     return items, total
 
 
-def crear(db: Session, data: UsuarioCreate) -> tuple[Usuario, str | None]:
+def crear(db: Session, data: UsuarioCreate, gestor: Usuario) -> tuple[Usuario, str | None]:
     email = data.email.strip().lower()
     _check_email_libre(db, email)
     sucursal_id = _validar_rol_sucursal(db, data.rol, data.sucursal_id)
+    autorizar_gestion(gestor, data.rol, sucursal_id)
     password_temporal = None
     password = data.password
     if password is None:
@@ -90,20 +129,21 @@ def crear(db: Session, data: UsuarioCreate) -> tuple[Usuario, str | None]:
     return user, password_temporal
 
 
-def actualizar(db: Session, usuario_id: int, data: UsuarioUpdate, admin: Usuario) -> Usuario:
+def actualizar(db: Session, usuario_id: int, data: UsuarioUpdate, gestor: Usuario) -> Usuario:
     user = _get_usuario(db, usuario_id)
     cambios = data.model_dump(exclude_unset=True)
     rol = cambios.get("rol", user.rol)
-    if usuario_id == admin.id and rol != Rol.ADMIN:
-        # Complemento de no_auto_desactivacion: sin esto, el último admin
-        # podría dejarse fuera de la administración para siempre.
-        raise AppError(
-            422, "Un admin no puede quitarse a sí mismo el rol admin", "no_auto_degradacion"
-        )
+    if usuario_id == gestor.id and rol != gestor.rol:
+        # Regla generalizada (F8c): NADIE se cambia a sí mismo el rol — sin
+        # esto el último admin podría dejarse fuera para siempre.
+        raise AppError(422, "No puedes cambiarte a ti mismo el rol", "no_auto_degradacion")
+    # La matriz aplica sobre lo que el usuario ES y sobre lo que QUEDARÍA.
+    autorizar_gestion(gestor, user.rol, user.sucursal_id)
     if "email" in cambios:
         cambios["email"] = cambios["email"].strip().lower()
         _check_email_libre(db, cambios["email"], excluir_id=user.id)
     sucursal_id = _validar_rol_sucursal(db, rol, cambios.get("sucursal_id", user.sucursal_id))
+    autorizar_gestion(gestor, rol, sucursal_id)
     for campo in ("nombre", "email"):
         if campo in cambios:
             setattr(user, campo, cambios[campo])
@@ -113,8 +153,9 @@ def actualizar(db: Session, usuario_id: int, data: UsuarioUpdate, admin: Usuario
     return user
 
 
-def reset_password(db: Session, usuario_id: int) -> str:
+def reset_password(db: Session, usuario_id: int, gestor: Usuario) -> str:
     user = _get_usuario(db, usuario_id)
+    autorizar_gestion(gestor, user.rol, user.sucursal_id)
     temporal = generate_temp_password()
     user.password_hash = hash_password(temporal)
     user.must_change_password = True
@@ -180,8 +221,10 @@ def desactivar(
     destinos, transfiere titularidades y reasigna abiertas (con eventos) y
     desactiva — todo en un acto (una sola transacción)."""
     if usuario_id == admin.id:
-        raise AppError(400, "Un admin no puede desactivarse a sí mismo", "no_auto_desactivacion")
+        # Regla generalizada (F8c): NADIE se desactiva a sí mismo.
+        raise AppError(400, "No puedes desactivarte a ti mismo", "no_auto_desactivacion")
     user = _get_usuario(db, usuario_id)
+    autorizar_gestion(admin, user.rol, user.sucursal_id)
     data = data or DesactivarIn()
     if usuario_id in (data.titularidades_a, data.solicitudes_a):
         raise AppError(
@@ -199,8 +242,9 @@ def desactivar(
     return user
 
 
-def activar(db: Session, usuario_id: int) -> Usuario:
+def activar(db: Session, usuario_id: int, gestor: Usuario) -> Usuario:
     user = _get_usuario(db, usuario_id)
+    autorizar_gestion(gestor, user.rol, user.sucursal_id)
     user.activo = True
     db.commit()
     return user

@@ -45,7 +45,7 @@ export function App() {
         </Route>
       </Route>
 
-      <Route element={<RequireRol roles={["admin", "gerente"]} />}>
+      <Route element={<RequireRol roles={["admin", "gerente_sucursal", "gerente_compras", "director_ventas"]} />}>
         <Route element={<Layout />}>
           <Route path="/admin" element={<PlaceholderAdmin />} />
         </Route>

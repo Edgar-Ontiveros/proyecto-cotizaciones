@@ -56,7 +56,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 4. **Transiciones de estado**: SIEMPRE en transacción con `SELECT ... FOR UPDATE` de la solicitud, validando estado actual contra la matriz; escriben estado + evento en `historial_estados` atómicamente. Conflicto → HTTP 409 con el estado real.
 5. **Folios**: `{PREFIJO_SUCURSAL}-{CONSECUTIVO}` **sin año** (convención real: `CCN-3036`), consecutivo corrido por sucursal vía `folio_counters(sucursal_id, ultimo)` con `FOR UPDATE` en la misma transacción del envío. Prefijo y contador inicial editables por admin.
 6. **API**: prefijo `/api/v1`, errores `{"detail": str, "code": str}`, paginación `limit/offset` (máx 100), routers delgados / lógica en services.
-7. **Permisos en el query**: cada lectura filtra por rol/propiedad en SQL (vendedor: las suyas; comprador: las asignadas; gerente: su sucursal — fail-closed sin sucursal; admin: todo). El frontend solo esconde botones.
+7. **Permisos en el query**: cada lectura filtra por rol/propiedad en SQL (vendedor: las suyas; comprador: las asignadas; gerente_sucursal: su sucursal — fail-closed sin sucursal; director_ventas y gerente_compras: global sin borradores; admin: todo). El frontend solo esconde botones.
 8. **Logs**: structlog JSON a stdout; cada request loguea método, ruta, usuario, status, duración.
 9. **Pool**: `pool_size=5, max_overflow=5, pool_pre_ping=True`.
 10. **Tests contra PostgreSQL 17 real**, nunca SQLite. mypy `strict` en `core/`.
@@ -76,31 +76,31 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 | COTIZADA → NO_CONFIRMADA | Vendedor, con motivo (admin puede revertir a COTIZADA) |
 | BORRADOR/ENVIADA/EN_PROCESO/RECHAZADA → CANCELADA | Vendedor. Terminal |
 
-Reglas clave: el vendedor edita la solicitud solo en ENVIADA/EN_PROCESO (notifica al comprador, queda en historial); una COTIZADA no se reabre — correcciones las hace el comprador sobre las opciones; 1–5 opciones (letras A–E), cada una con moneda única (MXN|USD) y vigencia; **precio y tiempo de entrega se capturan POR PARTIDA dentro de cada opción** (así viene el formato real).
+Reglas clave: el vendedor edita la solicitud solo en ENVIADA/EN_PROCESO (notifica al comprador, queda en historial); una COTIZADA no se reabre — correcciones las hace el comprador sobre las opciones; 1–5 opciones (letras A–E), cada una con vigencia; **moneda (MXN|USD), precio y tiempo de entrega se capturan POR RENGLÓN dentro de cada opción** (F8c) y los totales son subtotales por moneda.
 
 ## Solicitud — campos exactos (del formato real, especificación §4.1)
 
 Encabezado automático: folio, fecha, vendedor, sucursal + cliente (autocomplete con alta al vuelo), prioridad (NORMAL|URGENTE), notas.
 Partidas: `num_partida` (auto), `codigo_sap` (opcional; "SERVICIO" cuando no hay), `cantidad`*, `unidad`*, `tipo_acero` (opcional), `descripcion`*, `medidas` (opcional). (* = obligatorio.) **No existe campo "acabado".**
 
-## Roles y permisos
+## Roles y permisos — modelo v2 por ÁREA (F8c)
 
-| Rol | Ve | Hace |
-|---|---|---|
-| `vendedor` | Solo SUS solicitudes | Crear/editar/enviar/reenviar/cancelar, seleccionar opción, marcar no confirmada |
-| `comprador` | Solo las asignadas a él | Tomar, capturar opciones, completar, rechazar con motivo, corregir cotizadas |
-| `gerente` | Su sucursal (siempre de sucursal; sin BORRADOR ajenos; sin `proveedor`) | Acciones de LADO VENTAS sobre solicitudes de su sucursal: reenviar, cancelar, editar, seleccionar/confirmar, no-confirmar, comentar + dashboards/export. NUNCA acciones de compras ni administración |
-| `admin` | Todo | Todo: cualquier transición/edición de cualquier solicitud + administración |
+| Rol | Área · alcance | Ve | Hace |
+|---|---|---|---|
+| `vendedor` | Ventas · propio | Solo SUS solicitudes | Crear/editar/enviar/reenviar/cancelar, seleccionar opción (TC si hay USD), marcar no confirmada |
+| `comprador` | Compras · asignadas | Las asignadas, CON proveedor | Tomar, capturar renglón rico, completar, rechazar con motivo, corregir cotizadas |
+| `gerente_sucursal` | Ventas · su sucursal (exige `sucursal_id`; sin BORRADOR ajenos; sin proveedor) | Su sucursal | Acciones de LADO VENTAS en su sucursal + administra VENDEDORES de su sucursal (crear/editar/reset/baja segura/reasignar). Nada de compras ni métricas de compradores |
+| `gerente_compras` | Compras · global | Todo CON proveedor/costos, métricas de compras (% no encontrados incluido), territorios | Administra COMPRADORES (CRUD, bajas, titularidades, reasignaciones). NO cotiza/captura/rechaza; no ve métricas por vendedor |
+| `director_ventas` | Ventas · global | Todo ventas SIN proveedor ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas) y gerentes_sucursal |
+| `admin` | Todo | Todo | Control absoluto; ÚNICO que gestiona gerente_compras, director_ventas y admins |
 
-El alcance "global" del gerente NO existe (F5): los directores se dan de alta como `admin`; el rol `gerente` exige `sucursal_id`.
-
-- **SOLO `admin` crea, edita, activa/desactiva cuentas — de TODOS los niveles: vendedores, compradores, gerentes y otros administradores.** Sin registro público. Un admin no puede desactivarse a sí mismo. La alta/baja/reasignación de vendedores, compradores y gerentes entre sucursales es funcionalidad de primera clase (alta rotación).
-- El campo `proveedor` de las opciones y cualquier costo interno: visibles SOLO para `comprador` y `admin`. Se excluyen en los schemas de respuesta para vendedor y gerente — no se ocultan en el frontend.
+- **Matriz de gestión como dato** (`usuarios/service.MATRIZ_GESTION`); NADIE se cambia a sí mismo rol ni activo. Sin registro público.
+- El campo `proveedor` (POR RENGLÓN desde F8b) y cualquier costo interno: visibles SOLO para el área compras (`comprador`, `gerente_compras`) y `admin`. Se excluyen en los schemas de respuesta del lado ventas — no se ocultan en el frontend.
 - Reset de contraseñas v1: admin genera temporal de un solo uso → `must_change_password=true`.
 
 ## Dinero y medición (resumen — especificación §4.7–4.9)
 
-- **Monto confirmado** = total de la opción seleccionada. **Monto de referencia** de una COTIZADA sin confirmar = total de la opción A.
+- **Monto confirmado** (F8c) = CONSOLIDADO EN MXN de la opción seleccionada: total_mxn + total_usd × tipo_cambio (obligatorio si hay USD; prohibido si es 100% MXN). **Referencia** de una COTIZADA = subtotales MXN/USD de la opción A, por moneda separada.
 - Bandas por ciclo (ENVIADA/reenvío → COTIZADA|RECHAZADA) en horas hábiles de la **zona horaria de la sucursal**: esperada ≤1 día hábil, normal ≤2, lenta >2 (alerta a administración al iniciar el 3er día).
 - Horario hábil: L–V 08:00–18:00, sábado 08:00–13:00, menos `dias_festivos`. Toda esta aritmética vive ÚNICAMENTE en `core/horario_habil.py`.
 
