@@ -9,11 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.core.errors import AppError
-from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, Solicitud
 from app.models.usuario import Rol, Usuario
 from app.modules.notificaciones import service as notificaciones
 from app.modules.solicitudes.service import obtener_scoped
+from app.modules.solicitudes.state_machine import registrar_evento
 
 ESTADOS_ABIERTOS = (Estado.ENVIADA, Estado.EN_PROCESO)
 ESTADOS_TERMINALES = (Estado.CONFIRMADA, Estado.NO_CONFIRMADA, Estado.CANCELADA)
@@ -24,18 +24,6 @@ def validar_destino(db: Session, usuario_id: int, rol: Rol, code: str) -> Usuari
     if destino is None or destino.rol != rol or not destino.activo:
         raise AppError(422, f"El destino debe ser un {rol.value} activo", code)
     return destino
-
-
-def _evento(db: Session, solicitud: Solicitud, admin: Usuario, texto: str) -> None:
-    db.add(
-        HistorialEstado(
-            solicitud_id=solicitud.id,
-            de=solicitud.estado,
-            a=solicitud.estado,
-            usuario_id=admin.id,
-            comentario=texto,
-        )
-    )
 
 
 def _nombre_de(db: Session, usuario_id: int | None) -> str:
@@ -51,7 +39,7 @@ def _aplicar_comprador(db: Session, solicitud: Solicitud, destino: Usuario, admi
         f"al comprador {destino.nombre}"
     )
     solicitud.comprador_id = destino.id
-    _evento(db, solicitud, admin, texto)
+    registrar_evento(db, solicitud, admin, texto)
     notificaciones.notificar_reasignacion(db, solicitud, destino)
 
 
@@ -61,7 +49,7 @@ def _aplicar_vendedor(db: Session, solicitud: Solicitud, destino: Usuario, admin
         f"al vendedor {destino.nombre}"
     )
     solicitud.vendedor_id = destino.id
-    _evento(db, solicitud, admin, texto)
+    registrar_evento(db, solicitud, admin, texto)
     notificaciones.notificar_reasignacion(db, solicitud, destino)
 
 

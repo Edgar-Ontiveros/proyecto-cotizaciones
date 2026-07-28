@@ -179,11 +179,7 @@ function EditorOpcion({
           notifications.show({ message: `Opción ${letra} guardada`, color: "green" });
           onGuardado();
         },
-        onError: (e) =>
-          notifications.show({
-            message: e instanceof ApiError ? e.detail : "No se pudo guardar",
-            color: "red",
-          }),
+        // El error lo muestra el handler global (main.tsx).
       },
     );
   };
@@ -556,11 +552,7 @@ function ModalRechazo({ solicitudId, onListo }: { solicitudId: number; onListo: 
                 notifications.show({ message: "Solicitud rechazada", color: "red" });
                 onListo();
               },
-              onError: (e) =>
-                notifications.show({
-                  message: e instanceof ApiError ? e.detail : "No se pudo rechazar",
-                  color: "red",
-                }),
+              // El error lo muestra el handler global (main.tsx).
             },
           );
         }}
@@ -637,12 +629,8 @@ export function CapturaCotizacion() {
         void eliminarOpcion
           .mutateAsync(letra)
           .then(() => setLetraActiva("A"))
-          .catch((e: unknown) =>
-            notifications.show({
-              message: e instanceof ApiError ? e.detail : "No se pudo eliminar",
-              color: "red",
-            }),
-          ),
+          // El error lo muestra el handler global (main.tsx).
+          .catch(() => undefined),
     });
 
   return (

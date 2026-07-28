@@ -51,6 +51,12 @@ class NoConfirmarIn(BaseModel):
     comentario: str | None = None
 
 
+class TipoCambioIn(BaseModel):
+    """Corrección administrativa del TC de una CONFIRMADA con USD (F8d)."""
+
+    tipo_cambio: Decimal = Field(gt=0, max_digits=10, decimal_places=4)
+
+
 class RenglonOut(BaseModel):
     """Vista de vendedor y gerente: SIN proveedor — la clave no debe existir
     en su JSON (especificación §4.8). La exclusión vive aquí, en el schema."""

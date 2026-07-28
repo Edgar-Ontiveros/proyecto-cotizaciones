@@ -1,17 +1,13 @@
-import { Autocomplete, Button, Group, Select, TextInput, Title } from "@mantine/core";
-import { DatePickerInput } from "@mantine/dates";
-import { useDebouncedValue } from "@mantine/hooks";
-import dayjs from "dayjs";
+import { Autocomplete, Button, Group, Select, Title } from "@mantine/core";
 import { DataTable } from "mantine-datatable";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useClientes, useSolicitudes } from "../../api/hooks";
 import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../../components/compartidos";
+import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../../components/filtrosListado";
 import { fecha } from "../../lib/format";
 import type { SolicitudOut } from "../../lib/types";
-
-const PAGE = 25;
 
 const ESTADOS = [
   "BORRADOR",
@@ -26,23 +22,19 @@ const ESTADOS = [
 
 export function ListadoVendedor() {
   const navigate = useNavigate();
-  const [pagina, setPagina] = useState(1);
+  const listado = useFiltrosListado();
+  const { pagina, setPagina } = listado;
   const [estado, setEstado] = useState<string | null>(null);
   const [clienteTexto, setClienteTexto] = useState("");
   const [clienteId, setClienteId] = useState<number | undefined>();
-  const [rango, setRango] = useState<[string | null, string | null]>([null, null]);
-  const [buscar, setBuscar] = useState("");
-  const [buscarDebounced] = useDebouncedValue(buscar, 300);
 
   const { data: clientes } = useClientes(clienteTexto);
   const { data, isFetching } = useSolicitudes({
     estado: estado ?? undefined,
     cliente_id: clienteId,
-    desde: rango[0] ? dayjs(rango[0]).format("YYYY-MM-DD") : undefined,
-    hasta: rango[1] ? dayjs(rango[1]).format("YYYY-MM-DD") : undefined,
-    buscar: buscarDebounced || undefined,
+    ...listado.filtros,
     limit: PAGE,
-    offset: (pagina - 1) * PAGE,
+    offset: listado.offset,
   });
 
   const opcionesCliente = useMemo(
@@ -82,27 +74,8 @@ export function ListadoVendedor() {
           }}
           w={220}
         />
-        <DatePickerInput
-          type="range"
-          placeholder="Rango de fechas"
-          value={rango}
-          onChange={(v) => {
-            setRango(v);
-            setPagina(1);
-          }}
-          clearable
-          w={240}
-        />
-        <TextInput
-          placeholder="Buscar folio o cliente"
-          value={buscar}
-          onChange={(e) => {
-            setBuscar(e.currentTarget.value);
-            setPagina(1);
-          }}
-          w={220}
-        />
       </Group>
+      <FiltrosRangoBusqueda estado={listado} />
       <DataTable<SolicitudOut>
         withTableBorder
         highlightOnHover

@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
-from app.models.historial import HistorialEstado
 from app.models.solicitud import Estado, MotivoNoConfirmada, Solicitud, SolicitudPartida
 from app.models.usuario import Usuario
 from app.modules.cotizaciones.schemas import (
@@ -31,7 +30,9 @@ from app.modules.solicitudes.service import obtener_scoped
 from app.modules.solicitudes.state_machine import (
     autoriza_compras,
     autoriza_ventas,
+    conflicto_estado,
     ejecutar_transicion,
+    registrar_evento,
 )
 
 _CENTAVOS = Decimal("0.01")
@@ -248,13 +249,11 @@ def guardar_opcion(
     if not autoriza_compras(user, solicitud):
         raise AppError(403, "Solo el lado compras captura opciones", "forbidden")
     if solicitud.estado == Estado.ENVIADA:
-        solicitud = ejecutar_transicion(db, solicitud.id, Estado.EN_PROCESO, user)
+        # Auto-toma SIN commit (F8d): la captura completa es UNA transacción y
+        # el FOR UPDATE no se suelta a la mitad.
+        solicitud = ejecutar_transicion(db, solicitud.id, Estado.EN_PROCESO, user, commit=False)
     if solicitud.estado not in (Estado.EN_PROCESO, Estado.COTIZADA):
-        raise AppError(
-            409,
-            f"No se puede capturar: la solicitud está en estado {solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("capturar", solicitud)
     correccion = solicitud.estado == Estado.COTIZADA
 
     partidas = _partidas_de(db, solicitud.id)
@@ -340,15 +339,7 @@ def guardar_opcion(
     if correccion:
         opcion.completa = True
         notificaciones.notificar_correccion(db, solicitud)
-        db.add(
-            HistorialEstado(
-                solicitud_id=solicitud.id,
-                de=Estado.COTIZADA,
-                a=Estado.COTIZADA,
-                usuario_id=user.id,
-                comentario=COMENTARIO_CORRECCION,
-            )
-        )
+        registrar_evento(db, solicitud, user, COMENTARIO_CORRECCION)
     else:
         opcion.completa = False
     db.commit()
@@ -362,11 +353,7 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario)
     if not autoriza_compras(user, solicitud):
         raise AppError(403, "Solo el lado compras captura opciones", "forbidden")
     if solicitud.estado not in (Estado.EN_PROCESO, Estado.COTIZADA):
-        raise AppError(
-            409,
-            f"No se puede eliminar la opción: la solicitud está en estado {solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("eliminar la opción", solicitud)
     opcion = _opcion_o_none(db, solicitud.id, letra)
     if opcion is None:
         raise AppError(404, f"La opción {letra.value} no existe", "opcion_no_encontrada")
@@ -381,15 +368,7 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario)
                 422, "Una solicitud cotizada debe conservar al menos una opción", "opcion_unica"
             )
         notificaciones.notificar_correccion(db, solicitud)
-        db.add(
-            HistorialEstado(
-                solicitud_id=solicitud.id,
-                de=Estado.COTIZADA,
-                a=Estado.COTIZADA,
-                usuario_id=user.id,
-                comentario=COMENTARIO_CORRECCION,
-            )
-        )
+        registrar_evento(db, solicitud, user, COMENTARIO_CORRECCION)
     db.execute(delete(OpcionPartida).where(OpcionPartida.opcion_id == opcion.id))
     db.delete(opcion)
     db.commit()
@@ -403,11 +382,7 @@ def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
     if not autoriza_compras(user, solicitud):
         raise AppError(403, "Solo el lado compras cotiza", "forbidden")
     if solicitud.estado != Estado.EN_PROCESO:
-        raise AppError(
-            409,
-            f"No se puede cotizar: la solicitud está en estado {solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("cotizar", solicitud)
     opciones = _opciones(db, solicitud.id)
     if not opciones:
         raise AppError(422, "No se puede cotizar sin opciones capturadas", "sin_opciones")
@@ -445,11 +420,7 @@ def seleccionar(
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo el lado ventas selecciona la opción", "forbidden")
     if solicitud.estado != Estado.COTIZADA:
-        raise AppError(
-            409,
-            f"No se puede seleccionar: la solicitud está en estado {solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("seleccionar", solicitud)
     opcion = _opcion_o_none(db, solicitud.id, letra)
     if opcion is None:
         raise AppError(
@@ -493,12 +464,7 @@ def no_confirmar(
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo el lado ventas marca no confirmada", "forbidden")
     if solicitud.estado != Estado.COTIZADA:
-        raise AppError(
-            409,
-            f"No se puede marcar no confirmada: la solicitud está en estado "
-            f"{solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("marcar no confirmada", solicitud)
     solicitud.motivo_no_confirmada = motivo.value
     return ejecutar_transicion(db, solicitud.id, Estado.NO_CONFIRMADA, user, comentario=comentario)
 
@@ -507,10 +473,36 @@ def revertir_no_confirmada(db: Session, solicitud_id: int, admin: Usuario) -> So
     """NO_CONFIRMADA→COTIZADA (solo admin): limpia el motivo."""
     solicitud = obtener_scoped(db, solicitud_id, admin, for_update=True)
     if solicitud.estado != Estado.NO_CONFIRMADA:
-        raise AppError(
-            409,
-            f"No se puede revertir: la solicitud está en estado {solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("revertir", solicitud)
     solicitud.motivo_no_confirmada = None
     return ejecutar_transicion(db, solicitud.id, Estado.COTIZADA, admin)
+
+
+def corregir_tipo_cambio(
+    db: Session, solicitud_id: int, tipo_cambio: Decimal, admin: Usuario
+) -> Solicitud:
+    """Corrección administrativa del TC (F8d, solo admin — el router lo exige):
+    SOLO sobre CONFIRMADA con USD; recalcula el consolidado oficial y deja
+    evento en el historial."""
+    solicitud = obtener_scoped(db, solicitud_id, admin, for_update=True)
+    if solicitud.estado != Estado.CONFIRMADA:
+        raise conflicto_estado("corregir el tipo de cambio", solicitud)
+    opcion = (
+        db.get(CotizacionOpcion, solicitud.opcion_seleccionada_id)
+        if solicitud.opcion_seleccionada_id is not None
+        else None
+    )
+    if opcion is None or opcion.total_usd == 0:
+        raise AppError(
+            422,
+            "La confirmación es 100 % MXN: no hay tipo de cambio que corregir",
+            "tipo_cambio_invalido",
+        )
+    anterior = solicitud.tipo_cambio
+    solicitud.tipo_cambio = tipo_cambio
+    solicitud.monto_confirmado = (opcion.total_mxn + opcion.total_usd * tipo_cambio).quantize(
+        _CENTAVOS, rounding=ROUND_HALF_UP
+    )
+    registrar_evento(db, solicitud, admin, f"TC corregido de {anterior} a {tipo_cambio}")
+    db.commit()
+    return solicitud

@@ -11,6 +11,7 @@ from app.modules.cotizaciones.schemas import (
     OpcionCompradorOut,
     OpcionIn,
     SeleccionIn,
+    TipoCambioIn,
 )
 from app.modules.solicitudes import service as solicitudes_service
 from app.modules.solicitudes.schemas import SolicitudOut
@@ -83,3 +84,15 @@ def revertir_no_confirmada(
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(db, service.revertir_no_confirmada(db, solicitud_id, user))
+
+
+@router.patch("/tipo-cambio", response_model=SolicitudOut)
+def corregir_tipo_cambio(
+    solicitud_id: int,
+    body: TipoCambioIn,
+    user: Usuario = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    return solicitudes_service.a_out(
+        db, service.corregir_tipo_cambio(db, solicitud_id, body.tipo_cambio, user)
+    )

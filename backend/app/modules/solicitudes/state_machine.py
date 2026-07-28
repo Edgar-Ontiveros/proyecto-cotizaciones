@@ -82,6 +82,33 @@ def autoriza_compras(usuario: Usuario, solicitud: Solicitud) -> bool:
     return usuario.rol == Rol.COMPRADOR and solicitud.comprador_id == usuario.id
 
 
+def conflicto_estado(accion: str, solicitud: Solicitud) -> AppError:
+    """409 uniforme para acciones que no aplican en el estado actual (F8d):
+    un solo lugar para el mensaje y el code `estado_conflicto`."""
+    return AppError(
+        409,
+        f"No se puede {accion}: la solicitud está en estado {solicitud.estado.value}",
+        "estado_conflicto",
+    )
+
+
+def registrar_evento(
+    db: Session, solicitud: Solicitud, usuario: Usuario, comentario: str | None = None
+) -> None:
+    """Evento de==a (edición, corrección, reasignación): queda en el historial
+    con el ejecutor real SIN cambiar estado; ciclos.py los ignora. NO hace
+    commit — viaja en la transacción del que lo llama."""
+    db.add(
+        HistorialEstado(
+            solicitud_id=solicitud.id,
+            de=solicitud.estado,
+            a=solicitud.estado,
+            usuario_id=usuario.id,
+            comentario=comentario,
+        )
+    )
+
+
 def _autorizado(lado: Lado, solicitud: Solicitud, usuario: Usuario) -> bool:
     if lado == Lado.VENTAS:
         return autoriza_ventas(usuario, solicitud)
@@ -110,7 +137,8 @@ def _efecto_enviar(db: Session, solicitud: Solicitud) -> None:
     solicitud.comprador_id = titular_id
     if solicitud.folio is None:
         sucursal = db.get(Sucursal, solicitud.sucursal_id)
-        assert sucursal is not None  # FK garantiza que existe
+        if sucursal is None:  # FK lo garantiza; explícito para sobrevivir -O
+            raise AppError(500, "La sucursal de la solicitud no existe", "internal_error")
         solicitud.folio = siguiente_folio(db, sucursal)
     if solicitud.enviado_en is None:
         solicitud.enviado_en = datetime.now(UTC)
@@ -131,9 +159,13 @@ def ejecutar_transicion(
     usuario: Usuario,
     motivo_id: int | None = None,
     comentario: str | None = None,
+    commit: bool = True,
 ) -> Solicitud:
     """Ejecuta (de_actual → a) validando matriz + actor, aplica efectos y
     escribe el evento en historial — todo en una transacción, con commit.
+    Con commit=False solo hace flush: la transición se compone dentro de la
+    transacción del llamador SIN soltar el FOR UPDATE (patrón reasignaciones;
+    lo usa la auto-toma de guardar_opcion, F8d).
 
     Errores: 404 solicitud inexistente · 409 estado_conflicto (con el estado
     real en detail) · 403 transicion_no_permitida · 409 sucursal_sin_titular ·
@@ -171,7 +203,8 @@ def ejecutar_transicion(
     # aquí en adelante falla, el rollback se lleva también la notificación.
     notificaciones.notificar_transicion(db, solicitud, de, a)
     if a == Estado.RECHAZADA:
-        assert motivo_id is not None  # _validar_motivo ya lo garantizó
+        if motivo_id is None:  # _validar_motivo ya lo garantizó; sin assert (-O)
+            raise AppError(422, "El rechazo requiere un motivo del catálogo", "motivo_requerido")
         notificaciones.notificar_rechazo(db, solicitud, motivo_id)
 
     ahora = datetime.now(UTC)
@@ -191,5 +224,8 @@ def ejecutar_transicion(
             comentario=comentario,
         )
     )
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return solicitud

@@ -32,7 +32,12 @@ function Campana() {
   const abrir = (n: NotificacionOut) => {
     if (!n.leida) marcarLeida.mutate(n.id);
     if (n.solicitud_id !== null && usuario) {
-      const base = usuario.rol === "comprador" ? "/comprador" : "/vendedor";
+      const base =
+        usuario.rol === "comprador"
+          ? "/comprador"
+          : usuario.rol === "vendedor"
+            ? "/vendedor"
+            : "/crm"; // roles CRM (F8d): su detalle vive bajo /crm
       navigate(`${base}/solicitudes/${n.solicitud_id}`);
     }
   };
@@ -94,35 +99,41 @@ function Campana() {
   );
 }
 
-export function Layout() {
+/** Contenido del header compartido entre Layout y CrmLayout (F8d). */
+export function HeaderContenido() {
   const { usuario, logout } = useAuth();
   const navigate = useNavigate();
+  return (
+    <Group h="100%" px="md" justify="space-between">
+      <UnstyledButton onClick={() => navigate(usuario ? rutaPorRol(usuario.rol) : "/")}>
+        <Title order={4} c="white">
+          Cotizaciones Herinox
+        </Title>
+      </UnstyledButton>
+      <Group gap="sm">
+        <Campana />
+        <Text c="white" size="sm">
+          {usuario?.nombre}
+        </Text>
+        <Button
+          variant="white"
+          size="compact-sm"
+          onClick={() => {
+            void logout().then(() => navigate("/login"));
+          }}
+        >
+          Salir
+        </Button>
+      </Group>
+    </Group>
+  );
+}
 
+export function Layout() {
   return (
     <AppShell header={{ height: 56 }} padding="md">
       <AppShell.Header bg="herinox.6">
-        <Group h="100%" px="md" justify="space-between">
-          <UnstyledButton onClick={() => navigate(usuario ? rutaPorRol(usuario.rol) : "/")}>
-            <Title order={4} c="white">
-              Cotizaciones Herinox
-            </Title>
-          </UnstyledButton>
-          <Group gap="sm">
-            <Campana />
-            <Text c="white" size="sm">
-              {usuario?.nombre}
-            </Text>
-            <Button
-              variant="white"
-              size="compact-sm"
-              onClick={() => {
-                void logout().then(() => navigate("/login"));
-              }}
-            >
-              Salir
-            </Button>
-          </Group>
-        </Group>
+        <HeaderContenido />
       </AppShell.Header>
       <AppShell.Main bg="gray.0">
         <Container size="xl">

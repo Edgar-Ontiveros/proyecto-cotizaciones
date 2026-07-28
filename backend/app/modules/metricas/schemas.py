@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -68,6 +68,22 @@ class GrupoOut(BaseModel):
     no_confirmadas: int | None = None
     sin_desenlace: int | None = None
     ratio_confirmacion: float | None = None
+
+
+class SemanaOut(BaseModel):
+    """Punto de la serie semanal (F8d): `semana` es su LUNES (semana UTC,
+    mismo criterio que los límites del periodo)."""
+
+    semana: date
+    creadas: int
+    confirmadas: int
+    dinero_confirmado_mxn: Decimal
+
+
+class SerieOut(BaseModel):
+    """Semanas CONTINUAS del periodo filtrado, con ceros donde no hubo nada."""
+
+    semanas: list[SemanaOut]
 
 
 class MaterialOut(BaseModel):

@@ -23,7 +23,7 @@ import { useForm } from "@mantine/form";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 
 import {
   useAccionSolicitud,
@@ -35,6 +35,7 @@ import {
 import { useAuth } from "../../auth/AuthContext";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
+import { baseSolicitudes } from "../../lib/crm";
 import { fecha } from "../../lib/format";
 import { UNIDADES, corregirYReenviar } from "../../lib/renglon";
 import {
@@ -70,6 +71,8 @@ function aBody(values: SolicitudForm) {
 }
 
 export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
+  // Reusada bajo /crm (F8d): al guardar regresa al detalle de SU base.
+  const base = baseSolicitudes(useLocation().pathname);
   const { id } = useParams();
   const solicitudId = modo === "editar" ? Number(id) : 0;
   const navigate = useNavigate();
@@ -141,7 +144,7 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
           notifications.show({ message: "Solicitud guardada", color: "green" });
         }
       }
-      navigate(`/vendedor/solicitudes/${guardadaId}`);
+      navigate(`${base}/solicitudes/${guardadaId}`);
     } catch (e) {
       if (e instanceof ApiError && e.code === "solicitud_incompleta") {
         // 422 de completitud del envío: campo por campo.

@@ -22,12 +22,12 @@ import {
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 
 import { useNoConfirmar, useSeleccionar, useSolicitud } from "../../api/hooks";
 import { consolidadoMXN } from "../../lib/renglon";
 import { VolverBoton } from "../../components/Volver";
-import { ApiError } from "../../lib/api";
+import { baseSolicitudes } from "../../lib/crm";
 import { dinero, fecha } from "../../lib/format";
 import type { MotivoNoConfirmada, OpcionOut, SolicitudDetailOut } from "../../lib/types";
 
@@ -231,6 +231,8 @@ export function Comparador() {
   const { id } = useParams();
   const solicitudId = Number(id);
   const navigate = useNavigate();
+  // La vista se reusa bajo /crm (F8d): las navegaciones se quedan en su base.
+  const base = baseSolicitudes(useLocation().pathname);
   const { data: solicitud } = useSolicitud(solicitudId);
   const seleccionar = useSeleccionar(solicitudId);
   const noConfirmar = useNoConfirmar(solicitudId);
@@ -248,14 +250,10 @@ export function Comparador() {
       .mutateAsync({ letra: opcion.letra, tipo_cambio: tipoCambio })
       .then(() => {
         notifications.show({ message: "Pedido confirmado", color: "green" });
-        navigate(`/vendedor/solicitudes/${solicitudId}`);
+        navigate(`${base}/solicitudes/${solicitudId}`);
       })
-      .catch((e: unknown) =>
-        notifications.show({
-          message: e instanceof ApiError ? e.detail : "No se pudo confirmar",
-          color: "red",
-        }),
-      );
+      // El error lo muestra el handler global (main.tsx).
+      .catch(() => undefined);
   };
 
   const confirmar = (opcion: OpcionOut) => {
@@ -294,14 +292,10 @@ export function Comparador() {
               .mutateAsync({ motivo, comentario: comentario.trim() || null })
               .then(() => {
                 notifications.show({ message: "Marcada como no confirmada", color: "orange" });
-                navigate(`/vendedor/solicitudes/${solicitudId}`);
+                navigate(`${base}/solicitudes/${solicitudId}`);
               })
-              .catch((e: unknown) =>
-                notifications.show({
-                  message: e instanceof ApiError ? e.detail : "No se pudo marcar",
-                  color: "red",
-                }),
-              );
+              // El error lo muestra el handler global (main.tsx).
+              .catch(() => undefined);
           }}
         />
       ),
@@ -323,7 +317,7 @@ export function Comparador() {
               No se concretó
             </Button>
           )}
-          <Button variant="default" onClick={() => navigate(`/vendedor/solicitudes/${solicitudId}`)}>
+          <Button variant="default" onClick={() => navigate(`${base}/solicitudes/${solicitudId}`)}>
             Volver
           </Button>
         </Group>

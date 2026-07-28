@@ -193,6 +193,8 @@ export function useEliminarOpcion(id: number) {
 export function useCotizar(id: number) {
   const invalidar = useInvalidarSolicitudes();
   return useMutation({
+    // La vista mapea los faltantes al formulario: sin toast global (F8d).
+    meta: { errorManejado: true },
     mutationFn: () => api<SolicitudOut>(`/solicitudes/${id}/cotizar`, { method: "POST" }),
     onSuccess: () => invalidar(id),
   });

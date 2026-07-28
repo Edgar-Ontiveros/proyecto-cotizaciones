@@ -100,9 +100,9 @@ export function useAuth(): AuthState {
   return ctx;
 }
 
-/** Ruta "home" de cada rol (admin y gerente → placeholder F8b). */
+/** Ruta "home" de cada rol (los 4 roles gerenciales aterrizan en /crm, F8d). */
 export function rutaPorRol(rol: UsuarioMe["rol"]): string {
   if (rol === "vendedor") return "/vendedor";
   if (rol === "comprador") return "/comprador";
-  return "/admin";
+  return "/crm";
 }

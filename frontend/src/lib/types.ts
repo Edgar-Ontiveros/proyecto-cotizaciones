@@ -206,3 +206,165 @@ export interface NotificacionListOut {
   limit: number;
   offset: number;
 }
+
+// ------------------------------------------------------------- CRM (F8d)
+
+export interface UsuarioOut {
+  id: number;
+  nombre: string;
+  email: string;
+  rol: Rol;
+  sucursal_id: number | null;
+  activo: boolean;
+  must_change_password: boolean;
+}
+
+export interface UsuarioCreadoOut extends UsuarioOut {
+  // SOLO en la respuesta de creación cuando el sistema generó la temporal.
+  password_temporal: string | null;
+}
+
+export interface UsuarioListOut {
+  items: UsuarioOut[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ResetPasswordOut {
+  password_temporal: string;
+}
+
+export interface SucursalOut {
+  id: number;
+  nombre: string;
+  prefijo_folio: string;
+  timezone: string;
+  activa: boolean;
+}
+
+export interface FolioCounterOut {
+  sucursal_id: number;
+  ultimo: number;
+}
+
+export interface TerritorioSucursal {
+  sucursal_id: number;
+  sucursal_nombre: string;
+  titular: boolean;
+}
+
+export interface TerritorioComprador {
+  comprador_id: number;
+  comprador_nombre: string;
+  comprador_activo: boolean;
+  sucursales: TerritorioSucursal[];
+}
+
+export interface TerritoriosOut {
+  items: TerritorioComprador[];
+}
+
+export interface ReasignacionMasivaOut {
+  reasignadas: number;
+}
+
+export interface FestivoOut {
+  id: number;
+  fecha: string;
+  descripcion: string | null;
+}
+
+// Métricas (los Decimal viajan como string).
+
+export interface SinDesenlaceOut {
+  total: number;
+  antiguedad_promedio_dias: number | null;
+  antiguedad_maxima_dias: number | null;
+}
+
+export interface ConversionOut {
+  confirmadas: number;
+  no_confirmadas: number;
+  tasa: number | null;
+  sin_desenlace: SinDesenlaceOut;
+}
+
+export interface ResumenOut {
+  solicitudes_periodo: number;
+  ciclos_cerrados: number;
+  mediana_horas_habiles: number | null;
+  pct_banda_esperada: number | null;
+  distribucion_bandas: Record<string, number>;
+  rojas_ahora: number;
+  embudo: Record<string, number>;
+  dinero_confirmado: Record<string, string>;
+  dinero_confirmado_desglose: Record<string, string>;
+  dinero_referencia: Record<string, string>;
+  conversion: ConversionOut;
+}
+
+export interface GrupoOut {
+  id: number;
+  nombre: string;
+  volumen: number;
+  ciclos_cerrados: number;
+  mediana_horas_habiles: number | null;
+  pct_banda_esperada: number | null;
+  distribucion_bandas: Record<string, number>;
+  dinero_confirmado: Record<string, string>;
+  carga_abierta: number | null;
+  cotizadas: number | null;
+  confirmadas: number | null;
+  no_confirmadas: number | null;
+  sin_desenlace: number | null;
+  ratio_confirmacion: number | null;
+}
+
+export interface SemanaOut {
+  semana: string; // lunes de la semana (YYYY-MM-DD)
+  creadas: number;
+  confirmadas: number;
+  dinero_confirmado_mxn: string;
+}
+
+export interface SerieOut {
+  semanas: SemanaOut[];
+}
+
+export interface MaterialOut {
+  valor: string;
+  conteo: number;
+}
+
+export interface MaterialesOut {
+  por_descripcion: MaterialOut[];
+  por_codigo_sap: MaterialOut[];
+}
+
+export interface NoEncontradosGrupoOut {
+  id: number;
+  nombre: string;
+  total_renglones: number;
+  no_encontrados: number;
+  pct: number | null;
+}
+
+export interface NoEncontradosOut {
+  total_renglones: number;
+  no_encontrados: number;
+  pct: number | null;
+  por_comprador: NoEncontradosGrupoOut[];
+  top_materiales: MaterialOut[];
+}
+
+export interface OpcionFiltroOut {
+  id: number;
+  nombre: string;
+}
+
+export interface FiltrosCatalogoOut {
+  sucursales: OpcionFiltroOut[];
+  compradores: OpcionFiltroOut[] | null;
+  vendedores: OpcionFiltroOut[] | null;
+}

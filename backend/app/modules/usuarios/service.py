@@ -185,11 +185,10 @@ def _baja_segura_comprador(db: Session, user: Usuario, data: DesactivarIn, admin
             "No se puede desactivar al comprador sin reasignar: " + "; ".join(pendientes),
             "baja_requiere_reasignacion",
         )
-    if titularidades:
-        assert data.titularidades_a is not None
+    # El 409 de arriba garantiza los destinos; sin assert (desaparecería con -O).
+    if titularidades and data.titularidades_a is not None:
         transferir_titularidades(db, user.id, data.titularidades_a, commit=False)
-    if abiertas:
-        assert data.solicitudes_a is not None
+    if abiertas and data.solicitudes_a is not None:
         reasignar_comprador_masivo(db, user.id, data.solicitudes_a, admin, commit=False)
 
 

@@ -47,6 +47,8 @@ from app.modules.metricas.schemas import (
     OpcionFiltroOut,
     ResumenOut,
     RojaOut,
+    SemanaOut,
+    SerieOut,
     SinDesenlaceOut,
 )
 
@@ -517,6 +519,70 @@ def materiales(db: Session, user: Usuario, f: Filtros, limite: int) -> Materiale
         por_descripcion=_top(func.upper(func.trim(SolicitudPartida.descripcion))),
         por_codigo_sap=_top(SolicitudPartida.codigo_sap, SolicitudPartida.codigo_sap.is_not(None)),
     )
+
+
+def _lunes(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def serie_semanal(db: Session, user: Usuario, f: Filtros) -> SerieOut:
+    """Serie por semana (F8d): creadas por `creado_en`; confirmadas y dinero
+    consolidado MXN por `confirmado_en`. La semana se trunca EXPLÍCITAMENTE en
+    UTC (timezone('UTC', col)) para no depender del TimeZone del servidor;
+    devuelve semanas continuas del periodo, rellenas con ceros."""
+    f = con_scoping(user, f)
+    ini, fin = _limites(f)
+
+    semana_creada = func.date_trunc("week", func.timezone("UTC", Solicitud.creado_en))
+    stmt_creadas = (
+        select(semana_creada, func.count())
+        .where(*_en_periodo(Solicitud.creado_en, ini, fin))
+        .group_by(semana_creada)
+    )
+    creadas: dict[datetime, int] = dict(
+        db.execute(_filtrar(stmt_creadas, user, f)).all()  # type: ignore[arg-type]
+    )
+
+    semana_conf = func.date_trunc("week", func.timezone("UTC", Solicitud.confirmado_en))
+    stmt_conf = (
+        select(
+            semana_conf,
+            func.count(),
+            func.coalesce(func.sum(Solicitud.monto_confirmado), 0),
+        )
+        .where(
+            Solicitud.confirmado_en.is_not(None),
+            Solicitud.estado == Estado.CONFIRMADA,
+            *_en_periodo(Solicitud.confirmado_en, ini, fin),
+        )
+        .group_by(semana_conf)
+    )
+    confirmadas: dict[datetime, tuple[int, Decimal]] = {
+        semana: (conteo, dinero)
+        for semana, conteo, dinero in db.execute(_filtrar(stmt_conf, user, f)).all()
+    }
+
+    observadas = sorted(dt.date() for dt in {*creadas, *confirmadas})
+    inicio = _lunes(f.desde) if f.desde else (observadas[0] if observadas else None)
+    final = _lunes(f.hasta) if f.hasta else (observadas[-1] if observadas else None)
+    if inicio is None or final is None or inicio > final:
+        return SerieOut(semanas=[])
+
+    puntos = []
+    semana = inicio
+    while semana <= final:
+        clave = datetime(semana.year, semana.month, semana.day)  # naive: como date_trunc
+        conf, dinero = confirmadas.get(clave, (0, Decimal("0")))
+        puntos.append(
+            SemanaOut(
+                semana=semana,
+                creadas=creadas.get(clave, 0),
+                confirmadas=conf,
+                dinero_confirmado_mxn=dinero,
+            )
+        )
+        semana += timedelta(days=7)
+    return SerieOut(semanas=puntos)
 
 
 def mi_panel(db: Session, comprador: Usuario) -> MiPanelOut:

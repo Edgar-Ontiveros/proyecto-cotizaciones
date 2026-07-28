@@ -16,12 +16,14 @@ import {
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 
 import { useAccionSolicitud, useComentar, useSolicitud } from "../../api/hooks";
+import { useAuth } from "../../auth/AuthContext";
 import { BadgeEstado, Dinero, SemaforoBanda } from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
+import { baseSolicitudes } from "../../lib/crm";
 import { fecha, fechaHora, folioCliente } from "../../lib/format";
 import type { SolicitudDetailOut } from "../../lib/types";
 
@@ -130,17 +132,25 @@ export function DetalleSolicitud() {
   const { id } = useParams();
   const solicitudId = Number(id);
   const navigate = useNavigate();
+  // La vista se reusa bajo /crm (F8d): navegaciones en su base y acciones de
+  // LADO VENTAS solo para quien las puede ejecutar (el backend es la
+  // autoridad; aquí solo se esconden botones).
+  const base = baseSolicitudes(useLocation().pathname);
+  const { usuario } = useAuth();
   const { data: solicitud, error } = useSolicitud(solicitudId);
   const cancelar = useAccionSolicitud("cancelar");
 
   if (error instanceof ApiError) return <Alert color="red">{error.detail}</Alert>;
   if (!solicitud) return null;
 
+  const ladoVentas =
+    usuario !== null &&
+    ["vendedor", "gerente_sucursal", "director_ventas", "admin"].includes(usuario.rol);
   const motivoRechazo = solicitud.historial.filter((h) => h.a === "RECHAZADA").at(-1);
-  const puedeEditar = ["BORRADOR", "ENVIADA", "EN_PROCESO"].includes(solicitud.estado);
-  const puedeCancelar = ["BORRADOR", "ENVIADA", "EN_PROCESO", "RECHAZADA"].includes(
-    solicitud.estado,
-  );
+  const puedeEditar =
+    ladoVentas && ["BORRADOR", "ENVIADA", "EN_PROCESO"].includes(solicitud.estado);
+  const puedeCancelar =
+    ladoVentas && ["BORRADOR", "ENVIADA", "EN_PROCESO", "RECHAZADA"].includes(solicitud.estado);
 
   const confirmarCancelar = () =>
     modals.openConfirmModal({
@@ -152,12 +162,8 @@ export function DetalleSolicitud() {
         void cancelar
           .mutateAsync(solicitud.id)
           .then(() => notifications.show({ message: "Solicitud cancelada", color: "gray" }))
-          .catch((e: unknown) =>
-            notifications.show({
-              message: e instanceof ApiError ? e.detail : "No se pudo cancelar",
-              color: "red",
-            }),
-          ),
+          // El error lo muestra el handler global (main.tsx).
+          .catch(() => undefined),
     });
 
   return (
@@ -180,17 +186,17 @@ export function DetalleSolicitud() {
         </Group>
         <Group>
           {puedeEditar && (
-            <Button variant="light" onClick={() => navigate(`/vendedor/solicitudes/${solicitud.id}/editar`)}>
+            <Button variant="light" onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/editar`)}>
               Editar
             </Button>
           )}
-          {solicitud.estado === "RECHAZADA" && (
-            <Button color="acento.6" onClick={() => navigate(`/vendedor/solicitudes/${solicitud.id}/editar`)}>
+          {ladoVentas && solicitud.estado === "RECHAZADA" && (
+            <Button color="acento.6" onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/editar`)}>
               Corregir y reenviar
             </Button>
           )}
-          {(solicitud.estado === "COTIZADA" || solicitud.estado === "CONFIRMADA") && (
-            <Button onClick={() => navigate(`/vendedor/solicitudes/${solicitud.id}/comparador`)}>
+          {ladoVentas && (solicitud.estado === "COTIZADA" || solicitud.estado === "CONFIRMADA") && (
+            <Button onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/comparador`)}>
               {solicitud.estado === "COTIZADA" ? "Comparar opciones" : "Ver opciones"}
             </Button>
           )}

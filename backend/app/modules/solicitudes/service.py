@@ -105,17 +105,17 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
     """Reemplaza generales y partidas completas. Lado ventas (vendedor dueño,
     gerente de la sucursal o admin), en BORRADOR/ENVIADA/EN_PROCESO; en
     ENVIADA/EN_PROCESO deja evento de==a."""
-    from app.modules.solicitudes.state_machine import autoriza_ventas
+    from app.modules.solicitudes.state_machine import (
+        autoriza_ventas,
+        conflicto_estado,
+        registrar_evento,
+    )
 
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo el lado ventas puede editar la solicitud", "forbidden")
     if solicitud.estado not in ESTADOS_EDITABLES:
-        raise AppError(
-            409,
-            f"No se puede editar: la solicitud está en estado {solicitud.estado.value}",
-            "estado_conflicto",
-        )
+        raise conflicto_estado("editar", solicitud)
     if solicitud.estado != Estado.BORRADOR:
         # Fuera de BORRADOR la solicitud ya está en manos del comprador: la
         # edición exige la misma completitud que el envío.
@@ -152,27 +152,11 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
             if user.rol == Rol.VENDEDOR
             else f"Solicitud editada por {user.rol.value}"
         )
-        db.add(
-            HistorialEstado(
-                solicitud_id=solicitud.id,
-                de=solicitud.estado,
-                a=solicitud.estado,
-                usuario_id=user.id,
-                comentario=comentario,
-            )
-        )
+        registrar_evento(db, solicitud, user, comentario)
     elif solicitud.estado == Estado.RECHAZADA:
         # Corrección previa al reenvío (F8b): evento sí, notificación NO — la
         # notificación útil para el comprador es la del reenvío.
-        db.add(
-            HistorialEstado(
-                solicitud_id=solicitud.id,
-                de=solicitud.estado,
-                a=solicitud.estado,
-                usuario_id=user.id,
-                comentario="Corregida (rechazada)",
-            )
-        )
+        registrar_evento(db, solicitud, user, "Corregida (rechazada)")
     db.commit()
     return solicitud
 

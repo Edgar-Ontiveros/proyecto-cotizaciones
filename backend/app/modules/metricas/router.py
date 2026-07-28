@@ -17,6 +17,7 @@ from app.modules.metricas.schemas import (
     MiPanelOut,
     NoEncontradosOut,
     ResumenOut,
+    SerieOut,
 )
 from app.modules.metricas.service import Dimension, Filtros
 
@@ -77,6 +78,17 @@ router.get("/por-vendedor", response_model=list[GrupoOut])(
     _tabla("vendedor", ventas_gerencial_required)
 )
 router.get("/por-cliente", response_model=list[GrupoOut])(_tabla("cliente"))
+
+
+@router.get("/serie", response_model=SerieOut)
+def serie(
+    f: Filtros = Depends(filtros_query),
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tendencia semanal para el dashboard (F8d): mismos filtros y scoping
+    que /resumen."""
+    return service.serie_semanal(db, user, f)
 
 
 @router.get("/no-encontrados", response_model=NoEncontradosOut)
