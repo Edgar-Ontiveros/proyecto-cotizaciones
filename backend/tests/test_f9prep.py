@@ -1,16 +1,16 @@
 """F9-prep: filtro del historial de TC para el lado ventas y seed de
 producción."""
 
+import inspect
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
 
 from app.cli.seed import PASSWORD_DEFAULT
-from app.cli.seed_produccion import USUARIOS_REALES
+from app.cli.seed_produccion import _plantilla_completa, generar_emails
 from app.cli.seed_produccion import run as seed_produccion
 from app.core.security import verify_password
-from app.models.catalogos import DiaFestivo, MotivoRechazo
 from app.models.solicitud import Solicitud
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import Rol, Usuario
@@ -114,122 +114,120 @@ def test_historial_eventos_normales_sin_redactar(client, entorno, auth_headers):
 # ------------------------------------------- seed de producción (punto 4)
 
 
-def test_seed_produccion_conteos_y_cero_demos(db):
+def test_seed_produccion_plantilla_completa(db):
+    """Mini-fase v2: 4 directivos + 9 gerentes + 35 vendedores + 6
+    compradores = 54, con titularidades reales y CERO cuentas demo."""
     conteos = seed_produccion(db)
     assert conteos == {
         "sucursales": 11,
         "motivos_rechazo": 5,
         "dias_festivos": 14,
-        "usuarios_reales": 4,
-        "usuarios_creados": 4,
+        "directivos": 4,
+        "gerentes_sucursal": 9,
+        "vendedores": 35,
+        "compradores": 6,
+        "usuarios_creados": 54,
+        "titularidades_creadas": 11,
     }
 
     # Contadores de folio EN CERO en las 11 sucursales.
-    assert db.scalar(select(func.count()).select_from(Sucursal)) == 11
     contadores = list(db.scalars(select(FolioCounter.ultimo)))
     assert len(contadores) == 11 and all(u == 0 for u in contadores)
 
-    # SOLO los 4 usuarios reales, con su rol, la temporal FIJA (mini-fase
-    # demo) y cambio forzado; cero demos.
+    # 54 usuarios exactos; todos con la temporal FIJA y cambio forzado.
     usuarios = list(db.scalars(select(Usuario)))
-    assert len(usuarios) == 4
-    assert {u.email for u in usuarios} == {email for _, email, _ in USUARIOS_REALES}
+    assert len(usuarios) == 54
     assert all(u.must_change_password and u.activo for u in usuarios)
     assert all(verify_password(PASSWORD_DEFAULT, u.password_hash) for u in usuarios)
-    roles = {u.email: u.rol for u in usuarios}
-    assert roles["eontiveros@herinox.com.mx"] == Rol.ADMIN
-    assert roles["fmunoz@herinox.com.mx"] == Rol.ADMIN
-    assert roles["fperez@herinox.com.mx"] == Rol.DIRECTOR_VENTAS
-    assert roles["ljimenez@herinox.com.mx"] == Rol.GERENTE_COMPRAS
+    por_rol = {rol: sum(1 for u in usuarios if u.rol == rol) for rol in Rol}
+    assert por_rol[Rol.ADMIN] == 2
+    assert por_rol[Rol.DIRECTOR_VENTAS] == 1
+    assert por_rol[Rol.GERENTE_COMPRAS] == 1
+    assert por_rol[Rol.GERENTE_SUCURSAL] == 9
+    assert por_rol[Rol.VENDEDOR] == 35
+    assert por_rol[Rol.COMPRADOR] == 6
+    # Gerentes y vendedores con SU sucursal; ningún correo demo.
+    assert all(
+        u.sucursal_id is not None for u in usuarios if u.rol in (Rol.GERENTE_SUCURSAL, Rol.VENDEDOR)
+    )
+    assert all(u.email.endswith("@herinox.com.mx") for u in usuarios)
+    assert not any("demo" in u.email for u in usuarios)
 
-    # Cero solicitudes y cero titularidades/territorios.
+    # Titularidades reales por comprador (titular en TODO su territorio).
+    esperadas = {
+        "nvictor@herinox.com.mx": {"Cd. Juárez", "Hermosillo"},
+        "olopez@herinox.com.mx": {"León"},
+        "mmonarrez@herinox.com.mx": {"Matriz", "Manufactura"},
+        "hruelas@herinox.com.mx": {"Mexicali", "Culiacán", "Obregón"},
+        "imata@herinox.com.mx": {"TIK", "Norte"},
+        "fflores@herinox.com.mx": {"Monterrey"},
+    }
+    sucursales = {s.id: s.nombre for s in db.scalars(select(Sucursal))}
+    compradores = {u.id: u.email for u in usuarios if u.rol == Rol.COMPRADOR}
+    reales: dict[str, set[str]] = {}
+    for cs in db.scalars(select(CompradorSucursal).where(CompradorSucursal.titular)):
+        reales.setdefault(compradores[cs.comprador_id], set()).add(sucursales[cs.sucursal_id])
+    assert reales == esperadas
+
+    # Cero solicitudes.
     assert db.scalar(select(func.count()).select_from(Solicitud)) == 0
-    assert db.scalar(select(func.count()).select_from(CompradorSucursal)) == 0
-    assert db.scalar(select(func.count()).select_from(MotivoRechazo)) == 5
-    assert db.scalar(select(func.count()).select_from(DiaFestivo)) == 14
 
 
-def test_seed_produccion_con_demo(db):
-    """--con-demo (mini-fase): agrega las DOS cuentas demo con contraseña
-    fija y cambio forzado, y al comprador demo como titular de Matriz."""
-    conteos = seed_produccion(db, con_demo=True)
-    assert conteos["usuarios_creados"] == 4  # los reales, intactos
-    assert conteos["usuarios_demo_creados"] == 2
+def test_regla_de_correos_acentos_enie_y_colision():
+    emails = generar_emails(_plantilla_completa())
+    # Ejemplo canónico de la regla.
+    assert emails["Maribel Rocha"] == "mrocha@herinox.com.mx"
+    # Acentos fuera: Fabián → f…, López → lopez.
+    assert emails["Fabián Flores"] == "fflores@herinox.com.mx"
+    assert emails["Oscar López"] == "olopez@herinox.com.mx"
+    # ñ→n: Alonso Muñoz → amunoz.
+    assert emails["Alonso Muñoz"] == "amunoz@herinox.com.mx"
+    # PRIMER apellido en nombres largos (dato explícito, no posición).
+    assert emails["Abraham Arturo Prado Hernandez"] == "aprado@herinox.com.mx"
+    assert emails["Gloria de la Luz Murillo"] == "gmurillo@herinox.com.mx"
+    # En la plantilla real NO hay colisiones: 50 correos únicos (9+6+35).
+    assert len(set(emails.values())) == len(emails) == 50
 
-    assert db.scalar(select(func.count()).select_from(Usuario)) == 6
-    vendedor = db.scalar(select(Usuario).where(Usuario.email == "vendedor.demo@herinox.demo"))
-    comprador = db.scalar(select(Usuario).where(Usuario.email == "comprador.demo@herinox.demo"))
-    assert vendedor is not None and comprador is not None
-    matriz = db.scalar(select(Sucursal).where(Sucursal.nombre == "Matriz"))
-    assert matriz is not None
-    assert vendedor.rol == Rol.VENDEDOR and vendedor.sucursal_id == matriz.id
-    assert comprador.rol == Rol.COMPRADOR
-    # Contraseña FIJA con cambio forzado al primer uso.
-    for usuario in (vendedor, comprador):
-        assert verify_password(PASSWORD_DEFAULT, usuario.password_hash)
-        assert usuario.must_change_password and usuario.activo
-    # Titularidad de Matriz para el comprador demo (enviar ya no daría 409).
-    titular = db.scalar(
-        select(CompradorSucursal).where(
-            CompradorSucursal.sucursal_id == matriz.id, CompradorSucursal.titular
-        )
-    )
-    assert titular is not None and titular.comprador_id == comprador.id
-
-    # Segunda corrida CON flag: no duplica ni pisa la contraseña cambiada.
-    comprador.password_hash = "hash-cambiado"
-    db.commit()
-    conteos2 = seed_produccion(db, con_demo=True)
-    assert conteos2["usuarios_demo_creados"] == 0 and conteos2["usuarios_creados"] == 0
-    assert db.scalar(select(func.count()).select_from(Usuario)) == 6
-    assert (
-        db.scalar(
-            select(func.count())
-            .select_from(CompradorSucursal)
-            .where(CompradorSucursal.sucursal_id == matriz.id)
-        )
-        == 1
-    )
-    db.refresh(comprador)
-    assert comprador.password_hash == "hash-cambiado"
+    # Colisión SINTÉTICA: el segundo usa las DOS primeras letras del nombre.
+    sinteticos = generar_emails(["Ana Prueba", "Alberto Prueba"])
+    assert sinteticos["Ana Prueba"] == "aprueba@herinox.com.mx"
+    assert sinteticos["Alberto Prueba"] == "alprueba@herinox.com.mx"
+    # Doble colisión: se reporta, no se inventa.
+    with pytest.raises(RuntimeError, match="Colisión doble"):
+        generar_emails(["Ana Prueba", "Alba Prueba", "Alma Prueba"])
+    # Nombre largo sin regla de apellido: igual — se pregunta.
+    with pytest.raises(RuntimeError, match="ambiguo"):
+        generar_emails(["Juan Carlos Perez Gomez Extra"])
 
 
-def test_seed_produccion_con_demo_respeta_titular_existente(db, make_user):
-    """Si Matriz YA tiene titular, el comprador demo NO lo desplaza."""
-    seed_produccion(db)  # siembra sucursales
-    matriz = db.scalar(select(Sucursal).where(Sucursal.nombre == "Matriz"))
-    assert matriz is not None
-    titular_real = make_user(Rol.COMPRADOR)
-    db.add(CompradorSucursal(comprador_id=titular_real.id, sucursal_id=matriz.id, titular=True))
-    db.commit()
+def test_seed_produccion_sin_flag_ni_cuentas_demo(db):
+    """El flag --con-demo NO existe y ninguna corrida crea cuentas demo."""
+    import app.cli.seed_produccion as modulo
 
-    seed_produccion(db, con_demo=True)
-    titulares = list(
-        db.scalars(
-            select(CompradorSucursal).where(
-                CompradorSucursal.sucursal_id == matriz.id, CompradorSucursal.titular
-            )
-        )
-    )
-    assert len(titulares) == 1 and titulares[0].comprador_id == titular_real.id
+    assert "con_demo" not in inspect.signature(seed_produccion).parameters
+    assert not hasattr(modulo, "USUARIOS_DEMO")
+    with pytest.raises(TypeError):
+        seed_produccion(db, con_demo=True)  # type: ignore[call-arg]
+    seed_produccion(db)
+    demos = list(db.scalars(select(Usuario).where(Usuario.email.ilike("%demo%"))))
+    assert demos == []
 
 
 def test_seed_produccion_idempotente_sin_pisar_passwords(db):
     primera = seed_produccion(db)
-    assert primera["usuarios_creados"] == 4
-    # Simula que Edgar ya cambió su contraseña.
-    edgar = db.scalar(select(Usuario).where(Usuario.email == "eontiveros@herinox.com.mx"))
-    assert edgar is not None
-    edgar.password_hash = "hash-cambiado-por-el-usuario"
-    edgar.must_change_password = False
+    assert primera["usuarios_creados"] == 54
+    # Simula que una vendedora ya cambió su contraseña.
+    maribel = db.scalar(select(Usuario).where(Usuario.email == "mrocha@herinox.com.mx"))
+    assert maribel is not None
+    maribel.password_hash = "hash-cambiado-por-la-usuaria"
+    maribel.must_change_password = False
     db.commit()
 
     conteos = seed_produccion(db)
     # Segunda corrida: nada nuevo y la contraseña cambiada queda INTACTA.
-    assert conteos["usuarios_creados"] == 0
-    assert db.scalar(select(func.count()).select_from(Usuario)) == 4
-    assert db.scalar(select(func.count()).select_from(Sucursal)) == 11
-    assert db.scalar(select(func.count()).select_from(DiaFestivo)) == 14
-    db.refresh(edgar)
-    assert edgar.password_hash == "hash-cambiado-por-el-usuario"
-    assert edgar.must_change_password is False
+    assert conteos["usuarios_creados"] == 0 and conteos["titularidades_creadas"] == 0
+    assert db.scalar(select(func.count()).select_from(Usuario)) == 54
+    assert db.scalar(select(func.count()).select_from(CompradorSucursal)) == 11
+    db.refresh(maribel)
+    assert maribel.password_hash == "hash-cambiado-por-la-usuaria"
+    assert maribel.must_change_password is False

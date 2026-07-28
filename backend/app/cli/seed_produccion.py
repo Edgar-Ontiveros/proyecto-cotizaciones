@@ -1,24 +1,35 @@
-"""Seed de PRODUCCIÓN (F9-prep) — separado del seed demo, que no se toca.
+"""Seed de PRODUCCIÓN (mini-fase v2) — separado del seed demo, que no se toca.
 
-Puebla SOLO el arranque real: las 11 sucursales (prefijos editables desde el
-CRM) con contadores de folio EN CERO, festivos de ley 2026–27, catálogo de
-motivos de rechazo y los 4 usuarios reales con la contraseña temporal FIJA
-Herinox2026! y cambio forzado al primer uso (decisión de Edgar, mini-fase
-demo: sin autogeneración ni impresión de contraseñas).
+Puebla el arranque real COMPLETO: las 11 sucursales (prefijos editables desde
+el CRM) con contadores de folio EN CERO, festivos de ley 2026–27, catálogo de
+motivos de rechazo y la PLANTILLA REAL: los 4 directivos + 9 gerentes de
+sucursal + 35 vendedores + 6 compradores con sus titularidades reales
+(fuente: el roster del seed demo, que es la plantilla real). CERO cuentas
+demo bajo ninguna condición y CERO solicitudes.
 
-CERO usuarios demo, CERO solicitudes, CERO titularidades: compradores,
-vendedores y gerentes reales se dan de alta desde el CRM, donde el maestro
-asigna titulares por sucursal. Hasta entonces, enviar en una sucursal sin
-titular responde el 409 esperado — comportamiento correcto, no bug.
+Correos por regla, dominio @herinox.com.mx: primera letra del nombre +
+PRIMER apellido, minúsculas, sin acentos y ñ→n (Maribel Rocha →
+mrocha@herinox.com.mx). En colisión, el segundo usa las DOS primeras letras
+del nombre; una doble colisión detiene el seed (se reporta, no se inventa).
 
-Idempotente por email: correrlo dos veces no duplica ni pisa contraseñas ya
-cambiadas (un usuario existente se deja INTACTO).
+Contraseña temporal FIJA Herinox2026! con cambio forzado al primer uso.
+Idempotente por email: NUNCA pisa una contraseña ya cambiada. Los gerentes
+corrigen altas/bajas/cambios de su gente desde el CRM.
 """
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.cli.seed import DIAS_FESTIVOS, MOTIVOS_RECHAZO, PASSWORD_DEFAULT, SUCURSALES
+from app.cli.seed import (
+    COMPRADORES,
+    DIAS_FESTIVOS,
+    GERENTES,
+    MOTIVOS_RECHAZO,
+    PASSWORD_DEFAULT,
+    SUCURSALES,
+    VENDEDORES,
+    _sin_acentos,
+)
 from app.core.security import hash_password
 from app.models.catalogos import DiaFestivo, MotivoRechazo
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
@@ -31,58 +42,110 @@ USUARIOS_REALES = [
     ("Luis Jimenez", "ljimenez@herinox.com.mx", Rol.GERENTE_COMPRAS),
 ]
 
-# --con-demo (mini-fase): cuentas de SIMULACIÓN con contraseña fija conocida
-# (Herinox2026!, cambio forzado al primer uso), marcadas como demo.
-USUARIOS_DEMO = [
-    ("Vendedor Demo", "vendedor.demo@herinox.demo", Rol.VENDEDOR),
-    ("Comprador Demo", "comprador.demo@herinox.demo", Rol.COMPRADOR),
-]
-SUCURSAL_DEMO = "Matriz"
+# Nombres con más de dos palabras: el PRIMER apellido no se puede deducir por
+# posición (¿segundo nombre o primer apellido?). Se fija aquí como dato; un
+# nombre largo SIN entrada truena el seed (se pregunta, no se inventa).
+PRIMER_APELLIDO = {
+    "Angelica Balderrama Cruz": "Balderrama",
+    "Abraham Arturo Prado Hernandez": "Prado",
+    "Juan Manuel Arvayo": "Arvayo",
+    "Enrique Macias Vazquez": "Macias",
+    "Joaquin Alonso Rivera Quintero": "Rivera",
+    "Jaime Rodriguez Quevedo": "Rodriguez",
+    "Luis Enrique Victor Garcia": "Victor",
+    "Brenda Elizabeth Polanco Garcia": "Polanco",
+    "Edgar Torres Baylon": "Torres",
+    "Luz Maria Molina Gonzalez": "Molina",
+    "Karina Angelica Carlos Lara": "Carlos",
+    "Gloria de la Luz Murillo": "Murillo",
+    "Arlette Paloma Resendiz": "Resendiz",
+    "Octavio Pecina Valdez": "Pecina",
+}
 
 
-def _agregar_demo(db: Session) -> int:
-    """Cuentas demo + titularidad de Matriz para el comprador demo (solo si
-    Matriz no tiene ya titular). Idempotente. Devuelve usuarios creados."""
-    matriz = db.scalar(select(Sucursal).where(Sucursal.nombre == SUCURSAL_DEMO))
-    if matriz is None:  # las sucursales se sembraron justo antes
-        raise RuntimeError(f"Sucursal {SUCURSAL_DEMO} inexistente en el seed")
-    password_hash = hash_password(PASSWORD_DEFAULT)
-    creados = 0
-    demo_por_email: dict[str, Usuario] = {}
-    for nombre, email, rol in USUARIOS_DEMO:
-        usuario = db.scalar(select(Usuario).where(func.lower(Usuario.email) == email))
-        if usuario is None:
-            usuario = Usuario(
-                nombre=nombre,
-                email=email,
-                password_hash=password_hash,
-                rol=rol,
-                activo=True,
-                must_change_password=True,
-                sucursal_id=matriz.id if rol == Rol.VENDEDOR else None,
-            )
-            db.add(usuario)
-            db.flush()
-            creados += 1
-        demo_por_email[email] = usuario
+def _normalizar(texto: str) -> str:
+    """Minúsculas, sin acentos y ñ→n (NFD quita la virgulilla)."""
+    return _sin_acentos(texto).lower()
 
-    comprador_demo = demo_por_email["comprador.demo@herinox.demo"]
-    titular = db.scalar(
-        select(CompradorSucursal).where(
-            CompradorSucursal.sucursal_id == matriz.id, CompradorSucursal.titular
+
+def _partes_de(nombre_completo: str) -> tuple[str, str]:
+    """(primer nombre, primer apellido). Dos palabras = nombre + apellido;
+    más palabras exigen entrada en PRIMER_APELLIDO."""
+    tokens = nombre_completo.split()
+    if len(tokens) == 2:
+        return tokens[0], tokens[1]
+    primer_apellido = PRIMER_APELLIDO.get(nombre_completo)
+    if primer_apellido is None:
+        raise RuntimeError(
+            f"Nombre ambiguo sin regla de apellido: {nombre_completo!r} — "
+            "agregarlo a PRIMER_APELLIDO (no se inventa)"
         )
+    return tokens[0], primer_apellido
+
+
+def generar_emails(nombres: list[str]) -> dict[str, str]:
+    """nombre_completo → email real, en orden determinista. Colisión: el
+    SEGUNDO usa las dos primeras letras del nombre; doble colisión truena."""
+    usados = {email for _, email, _ in USUARIOS_REALES}
+    emails: dict[str, str] = {}
+    for nombre_completo in nombres:
+        nombre, apellido = _partes_de(nombre_completo)
+        base = f"{_normalizar(nombre)[0]}{_normalizar(apellido)}@herinox.com.mx"
+        if base not in usados:
+            email = base
+        else:
+            email = f"{_normalizar(nombre)[:2]}{_normalizar(apellido)}@herinox.com.mx"
+            if email in usados:
+                raise RuntimeError(
+                    f"Colisión doble de email para {nombre_completo!r} ({base}, {email}) — "
+                    "reportar a Edgar (no se inventa)"
+                )
+        usados.add(email)
+        emails[nombre_completo] = email
+    return emails
+
+
+def _plantilla_completa() -> list[str]:
+    """Orden determinista para la asignación de emails: gerentes →
+    compradores → vendedores por sucursal en el orden del roster."""
+    return (
+        [nombre for nombre, _ in GERENTES]
+        + [nombre for nombre, _ in COMPRADORES]
+        + [nombre for lista in VENDEDORES.values() for nombre in lista]
     )
-    if titular is None:
-        # Sin esto, enviar en Matriz daría el 409 de sucursal sin titular.
-        db.add(
-            CompradorSucursal(comprador_id=comprador_demo.id, sucursal_id=matriz.id, titular=True)
-        )
-    return creados
 
 
-def run(db: Session, con_demo: bool = False) -> dict[str, int]:
-    """Devuelve los conteos. TODOS los usuarios que crea (reales y demo)
-    entran con la temporal fija Herinox2026! y cambio forzado."""
+def _get_or_create_usuario(
+    db: Session,
+    nombre: str,
+    email: str,
+    rol: Rol,
+    password_hash: str,
+    sucursal_id: int | None = None,
+) -> tuple[Usuario, bool]:
+    """Idempotente por email; un usuario existente queda INTACTO (jamás se
+    pisa una contraseña ya cambiada)."""
+    usuario = db.scalar(select(Usuario).where(func.lower(Usuario.email) == email.lower()))
+    if usuario is not None:
+        return usuario, False
+    usuario = Usuario(
+        nombre=nombre,
+        email=email,
+        password_hash=password_hash,
+        rol=rol,
+        activo=True,
+        must_change_password=True,
+        sucursal_id=sucursal_id,
+    )
+    db.add(usuario)
+    db.flush()
+    return usuario, True
+
+
+def run(db: Session) -> dict[str, int]:
+    """Devuelve los conteos. TODOS los usuarios entran con la temporal fija
+    Herinox2026! y cambio forzado."""
+    sucursales: dict[str, Sucursal] = {}
     for nombre, prefijo, tz in SUCURSALES:
         sucursal = db.scalar(select(Sucursal).where(Sucursal.nombre == nombre))
         if sucursal is None:
@@ -92,6 +155,7 @@ def run(db: Session, con_demo: bool = False) -> dict[str, int]:
         if db.get(FolioCounter, sucursal.id) is None:
             # Decisión de Edgar (F9-prep): la numeración arranca LIMPIA.
             db.add(FolioCounter(sucursal_id=sucursal.id, ultimo=0))
+        sucursales[nombre] = sucursal
 
     for familia, texto in MOTIVOS_RECHAZO:
         motivo = db.scalar(
@@ -108,32 +172,66 @@ def run(db: Session, con_demo: bool = False) -> dict[str, int]:
             db.add(DiaFestivo(fecha=fecha, descripcion=descripcion))
 
     password_hash = hash_password(PASSWORD_DEFAULT)
+    emails = generar_emails(_plantilla_completa())
     creados = 0
-    for nombre, email, rol in USUARIOS_REALES:
-        existente = db.scalar(select(Usuario).where(func.lower(Usuario.email) == email.lower()))
-        if existente is not None:
-            continue  # idempotencia: jamás se pisa una contraseña ya cambiada
-        db.add(
-            Usuario(
-                nombre=nombre,
-                email=email,
-                password_hash=password_hash,
-                rol=rol,
-                activo=True,
-                must_change_password=True,
-            )
-        )
-        creados += 1
 
-    conteos = {
+    for nombre, email, rol in USUARIOS_REALES:
+        _, creado = _get_or_create_usuario(db, nombre, email, rol, password_hash)
+        creados += creado
+
+    for nombre, nombre_sucursal in GERENTES:
+        _, creado = _get_or_create_usuario(
+            db,
+            nombre,
+            emails[nombre],
+            Rol.GERENTE_SUCURSAL,
+            password_hash,
+            sucursal_id=sucursales[nombre_sucursal].id,
+        )
+        creados += creado
+
+    for nombre_sucursal, lista in VENDEDORES.items():
+        for nombre in lista:
+            _, creado = _get_or_create_usuario(
+                db,
+                nombre,
+                emails[nombre],
+                Rol.VENDEDOR,
+                password_hash,
+                sucursal_id=sucursales[nombre_sucursal].id,
+            )
+            creados += creado
+
+    titularidades = 0
+    for nombre, territorio in COMPRADORES:
+        comprador, creado = _get_or_create_usuario(
+            db, nombre, emails[nombre], Rol.COMPRADOR, password_hash
+        )
+        creados += creado
+        for nombre_sucursal in territorio:
+            sucursal = sucursales[nombre_sucursal]
+            titular = db.scalar(
+                select(CompradorSucursal).where(
+                    CompradorSucursal.sucursal_id == sucursal.id, CompradorSucursal.titular
+                )
+            )
+            if titular is None:
+                db.add(
+                    CompradorSucursal(
+                        comprador_id=comprador.id, sucursal_id=sucursal.id, titular=True
+                    )
+                )
+                titularidades += 1
+
+    db.commit()
+    return {
         "sucursales": len(SUCURSALES),
         "motivos_rechazo": len(MOTIVOS_RECHAZO),
         "dias_festivos": len(DIAS_FESTIVOS),
-        "usuarios_reales": len(USUARIOS_REALES),
+        "directivos": len(USUARIOS_REALES),
+        "gerentes_sucursal": len(GERENTES),
+        "vendedores": sum(len(v) for v in VENDEDORES.values()),
+        "compradores": len(COMPRADORES),
         "usuarios_creados": creados,
+        "titularidades_creadas": titularidades,
     }
-    if con_demo:
-        # Sin el flag, el comando queda EXACTAMENTE igual (ni la clave existe).
-        conteos["usuarios_demo_creados"] = _agregar_demo(db)
-    db.commit()
-    return conteos

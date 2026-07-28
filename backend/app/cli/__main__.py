@@ -10,14 +10,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="comando", required=True)
     sub.add_parser("seed", help="Carga los datos DEMO de arranque (idempotente)")
-    produccion = sub.add_parser(
+    sub.add_parser(
         "seed-produccion",
-        help="Arranque de PRODUCCIÓN: sucursales, catálogos y los 4 usuarios reales",
-    )
-    produccion.add_argument(
-        "--con-demo",
-        action="store_true",
-        help="Agrega Vendedor/Comprador Demo (password Herinox2026!) con titular en Matriz",
+        help="Arranque de PRODUCCIÓN: sucursales, catálogos y la plantilla real completa",
     )
     args = parser.parse_args()
 
@@ -33,9 +28,9 @@ def main() -> None:
         from app.cli.seed_produccion import run as run_produccion
 
         with SessionLocal() as db:
-            conteos = run_produccion(db, con_demo=args.con_demo)
-        # Temporal FIJA (mini-fase demo): Herinox2026! con cambio forzado —
-        # nada de contraseñas en la salida.
+            conteos = run_produccion(db)
+        # Temporal FIJA Herinox2026! con cambio forzado — nada de contraseñas
+        # en la salida.
         logger.info("seed_produccion_completado", **conteos)
 
 
