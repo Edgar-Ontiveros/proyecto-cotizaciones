@@ -164,7 +164,7 @@ def detalle_solicitud(
         **base.model_dump(),
         ciclos=ciclos,
         partidas=service.partidas_de(db, solicitud.id),
-        historial=service.historial_de(db, solicitud.id),
+        historial=service.historial_de(db, solicitud.id, user),
         comentarios=service.comentarios_de(db, solicitud.id),
     )
     if ve_proveedor(user.rol):

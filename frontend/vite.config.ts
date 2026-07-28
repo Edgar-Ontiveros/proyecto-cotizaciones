@@ -11,6 +11,26 @@ const proxyTarget =
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Code-splitting (F9-prep): recharts SOLO lo usa el dashboard del CRM
+        // (que ya es lazy) y mantine se separa para cachear entre deploys.
+        manualChunks: {
+          recharts: ["recharts"],
+          mantine: [
+            "@mantine/core",
+            "@mantine/dates",
+            "@mantine/form",
+            "@mantine/hooks",
+            "@mantine/modals",
+            "@mantine/notifications",
+            "mantine-datatable",
+          ],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

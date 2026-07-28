@@ -563,6 +563,10 @@ def corregir_tipo_cambio(
         raise conflicto_estado("corregir el tipo de cambio", solicitud)
     anterior = solicitud.tipo_cambio
     solicitud.tipo_cambio = tipo_cambio
-    registrar_evento(db, solicitud, user, f"TC corregido de {anterior} a {tipo_cambio}")
+    # ajuste_admin (F9-prep): el comentario expone los valores del TC — para
+    # el lado ventas se redacta a "Ajuste administrativo" al serializar.
+    registrar_evento(
+        db, solicitud, user, f"TC corregido de {anterior} a {tipo_cambio}", ajuste_admin=True
+    )
     db.commit()
     return solicitud

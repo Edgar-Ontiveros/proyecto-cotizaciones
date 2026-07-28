@@ -83,6 +83,28 @@ export function etiquetaRol(rol: string): string {
   return ETIQUETA_ROL[rol] ?? rol;
 }
 
+/** Mapa de ACCIONES del detalle CRM por rol (F9-prep, testeado): qué botones
+ * ve cada perfil. El gating por ESTADO vive en la vista; la autoridad real
+ * de permisos es el backend. */
+export interface AccionesDetalleCrm {
+  capturar: boolean;
+  reasignarComprador: boolean;
+  reasignarVendedor: boolean;
+  corregirTC: boolean; // en CONFIRMADA (el comprador corrige el suyo en COTIZADA)
+}
+
+export function accionesDetalleCrm(rol: string): AccionesDetalleCrm {
+  const esAdmin = rol === "admin";
+  return {
+    capturar: esAdmin || rol === "gerente_compras",
+    reasignarComprador: esAdmin || rol === "gerente_compras",
+    // F9-prep: el director TAMBIÉN reasigna vendedor individual (el backend
+    // lo permite desde F5); el gerente, solo dentro de su sucursal.
+    reasignarVendedor: esAdmin || rol === "gerente_sucursal" || rol === "director_ventas",
+    corregirTC: esAdmin,
+  };
+}
+
 /** Base de rutas de solicitudes según dónde está montada la vista: las vistas
  * de vendedor se REUSAN bajo /crm (F8d) y sus navegaciones internas deben
  * quedarse en su mundo. */

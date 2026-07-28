@@ -17,6 +17,7 @@ import {
   useUsuarios,
 } from "../api/crmHooks";
 import { useAuth } from "../auth/AuthContext";
+import { accionesDetalleCrm } from "../lib/crm";
 import { dinero } from "../lib/format";
 import type { SolicitudDetailOut } from "../lib/types";
 import { DetalleSolicitud } from "../views/vendedor/DetalleSolicitud";
@@ -139,17 +140,12 @@ function AccionesCrm() {
   const { data: solicitud } = useSolicitud(solicitudId);
   if (!usuario || !solicitud) return null;
 
-  const esAdmin = usuario.rol === "admin";
-  const esCompras = esAdmin || usuario.rol === "gerente_compras";
-  // v3 (F8e): reasignación INDIVIDUAL — de comprador también para
-  // gerente_compras; de vendedor también para gerente_sucursal (el backend
-  // acota a su sucursal).
-  const reasignaComprador = esCompras;
-  const reasignaVendedor = esAdmin || usuario.rol === "gerente_sucursal";
+  // Mapa de acciones por rol (F9-prep): dato puro testeado en crm.test.
+  const acciones = accionesDetalleCrm(usuario.rol);
   const capturable = ["ENVIADA", "EN_PROCESO", "COTIZADA"].includes(solicitud.estado);
   const ganadora = solicitud.opciones.find((o) => o.id === solicitud.opcion_seleccionada_id);
   const corregibleTC =
-    esAdmin && solicitud.estado === "CONFIRMADA" && ganadora !== undefined
+    acciones.corregirTC && solicitud.estado === "CONFIRMADA" && ganadora !== undefined
       ? Number(ganadora.total_usd) > 0
       : false;
   const reasignable = !["CONFIRMADA", "NO_CONFIRMADA", "CANCELADA"].includes(solicitud.estado);
@@ -163,7 +159,7 @@ function AccionesCrm() {
     });
 
   const botones = [
-    esCompras && capturable && (
+    acciones.capturar && capturable && (
       <Button
         key="capturar"
         color="acento.6"
@@ -172,12 +168,12 @@ function AccionesCrm() {
         Capturar cotización
       </Button>
     ),
-    reasignaComprador && reasignable && solicitud.comprador_id !== null && (
+    acciones.reasignarComprador && reasignable && solicitud.comprador_id !== null && (
       <Button key="rc" variant="light" onClick={() => abrirReasignar("comprador")}>
         Reasignar comprador
       </Button>
     ),
-    reasignaVendedor && reasignable && (
+    acciones.reasignarVendedor && reasignable && (
       <Button key="rv" variant="light" onClick={() => abrirReasignar("vendedor")}>
         Reasignar vendedor
       </Button>

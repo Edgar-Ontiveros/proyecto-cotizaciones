@@ -15,6 +15,7 @@ import {
 } from "../crm/menu";
 import {
   ROLES_GESTIONABLES,
+  accionesDetalleCrm,
   baseSolicitudes,
   parseBajaSegura,
   queryFiltrosDashboard,
@@ -54,6 +55,35 @@ describe("mapa del menú por rol", () => {
     expect(ROLES_GESTIONABLES["gerente_sucursal"]).toEqual(["vendedor"]);
     expect(ROLES_GESTIONABLES["director_ventas"]).toEqual(["vendedor", "gerente_sucursal"]);
     expect(ROLES_GESTIONABLES["admin"]).toContain("admin");
+  });
+});
+
+describe("mapa de acciones del detalle CRM", () => {
+  it("cada rol ve exactamente sus botones (F9-prep: director reasigna vendedor)", () => {
+    expect(accionesDetalleCrm("admin")).toEqual({
+      capturar: true,
+      reasignarComprador: true,
+      reasignarVendedor: true,
+      corregirTC: true,
+    });
+    expect(accionesDetalleCrm("gerente_compras")).toEqual({
+      capturar: true,
+      reasignarComprador: true,
+      reasignarVendedor: false,
+      corregirTC: false,
+    });
+    expect(accionesDetalleCrm("gerente_sucursal")).toEqual({
+      capturar: false,
+      reasignarComprador: false,
+      reasignarVendedor: true,
+      corregirTC: false,
+    });
+    expect(accionesDetalleCrm("director_ventas")).toEqual({
+      capturar: false,
+      reasignarComprador: false,
+      reasignarVendedor: true, // F9-prep: nuevo — el backend lo permite desde F5
+      corregirTC: false,
+    });
   });
 });
 

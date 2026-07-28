@@ -93,11 +93,17 @@ def conflicto_estado(accion: str, solicitud: Solicitud) -> AppError:
 
 
 def registrar_evento(
-    db: Session, solicitud: Solicitud, usuario: Usuario, comentario: str | None = None
+    db: Session,
+    solicitud: Solicitud,
+    usuario: Usuario,
+    comentario: str | None = None,
+    ajuste_admin: bool = False,
 ) -> None:
     """Evento de==a (edición, corrección, reasignación): queda en el historial
     con el ejecutor real SIN cambiar estado; ciclos.py los ignora. NO hace
-    commit — viaja en la transacción del que lo llama."""
+    commit — viaja en la transacción del que lo llama. Con ajuste_admin=True
+    (corrección de TC, F9-prep) el comentario se redacta para el lado ventas
+    al serializar."""
     db.add(
         HistorialEstado(
             solicitud_id=solicitud.id,
@@ -105,6 +111,7 @@ def registrar_evento(
             a=solicitud.estado,
             usuario_id=usuario.id,
             comentario=comentario,
+            ajuste_admin=ajuste_admin,
         )
     )
 

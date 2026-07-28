@@ -310,7 +310,12 @@ def cliente_nombre_de(db: Session, solicitud: Solicitud) -> str | None:
     return db.scalar(select(Cliente.nombre_normalizado).where(Cliente.id == solicitud.cliente_id))
 
 
-def historial_de(db: Session, solicitud_id: int) -> list[HistorialOut]:
+# Roles del lado VENTAS a los que se les redacta el comentario de los
+# eventos ajuste_admin (F9-prep): el EVENTO siempre es visible, el texto no.
+_LADO_VENTAS_HISTORIAL = {Rol.VENDEDOR, Rol.GERENTE_SUCURSAL, Rol.DIRECTOR_VENTAS}
+
+
+def historial_de(db: Session, solicitud_id: int, user: Usuario) -> list[HistorialOut]:
     filas = db.execute(
         select(HistorialEstado, Usuario.nombre, MotivoRechazo.texto)
         .join(Usuario, HistorialEstado.usuario_id == Usuario.id)
@@ -318,6 +323,7 @@ def historial_de(db: Session, solicitud_id: int) -> list[HistorialOut]:
         .where(HistorialEstado.solicitud_id == solicitud_id)
         .order_by(HistorialEstado.timestamp, HistorialEstado.id)
     ).all()
+    redactar = user.rol in _LADO_VENTAS_HISTORIAL
     return [
         HistorialOut(
             id=evento.id,
@@ -327,7 +333,9 @@ def historial_de(db: Session, solicitud_id: int) -> list[HistorialOut]:
             usuario_nombre=usuario_nombre,
             motivo_id=evento.motivo_id,
             motivo_texto=motivo_texto,
-            comentario=evento.comentario,
+            comentario=(
+                "Ajuste administrativo" if evento.ajuste_admin and redactar else evento.comentario
+            ),
             timestamp=evento.timestamp,
         )
         for evento, usuario_nombre, motivo_texto in filas

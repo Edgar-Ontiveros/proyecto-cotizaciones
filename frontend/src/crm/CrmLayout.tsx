@@ -1,7 +1,8 @@
 /** Layout del CRM (F8d): header compartido + menú lateral armado DESDE el
  * mapa rol→secciones (crm/menu.ts). */
 
-import { AppShell, NavLink, Text } from "@mantine/core";
+import { AppShell, Center, Loader, NavLink, Text } from "@mantine/core";
+import { Suspense } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { useAuth } from "../auth/AuthContext";
@@ -44,7 +45,16 @@ export function CrmLayout() {
         ))}
       </AppShell.Navbar>
       <AppShell.Main bg="gray.0">
-        <Outlet />
+        {/* Las secciones del CRM son lazy (F9-prep): loader mientras cargan. */}
+        <Suspense
+          fallback={
+            <Center mt={120}>
+              <Loader />
+            </Center>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </AppShell.Main>
     </AppShell>
   );
