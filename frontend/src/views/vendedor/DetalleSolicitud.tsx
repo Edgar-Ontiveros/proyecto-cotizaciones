@@ -24,7 +24,7 @@ import { BadgeEstado, Dinero, SemaforoBanda } from "../../components/compartidos
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { baseSolicitudes } from "../../lib/crm";
-import { fecha, fechaHora, folioCliente } from "../../lib/format";
+import { dinero, fecha, fechaHora, folioCliente } from "../../lib/format";
 import type { SolicitudDetailOut } from "../../lib/types";
 
 function TablaPartidas({ solicitud }: { solicitud: SolicitudDetailOut }) {
@@ -216,15 +216,34 @@ export function DetalleSolicitud() {
       )}
       {solicitud.estado === "CONFIRMADA" && (
         <Alert color="green" title="Pedido confirmado">
-          <Group gap="xs">
-            <Text size="sm">Monto oficial (consolidado MXN):</Text>
-            <Dinero monto={solicitud.monto_confirmado} moneda={solicitud.moneda_confirmada} />
-            {solicitud.tipo_cambio && (
-              <Text size="sm" c="dimmed">
-                (tipo de cambio {solicitud.tipo_cambio})
-              </Text>
-            )}
-          </Group>
+          {solicitud.monto_confirmado != null ? (
+            <Group gap="xs">
+              <Text size="sm">Monto oficial (consolidado MXN):</Text>
+              <Dinero
+                monto={solicitud.monto_confirmado}
+                moneda={solicitud.moneda_confirmada ?? null}
+              />
+              {solicitud.tipo_cambio && (
+                <Text size="sm" c="dimmed">
+                  (tipo de cambio {solicitud.tipo_cambio})
+                </Text>
+              )}
+            </Group>
+          ) : (
+            // Rol vendedor (F8e): subtotales de la GANADORA por moneda
+            // original — la conversión no existe en su vista.
+            <Text size="sm">
+              Ganadora por{" "}
+              <b>
+                {[
+                  solicitud.referencia_mxn ? dinero(solicitud.referencia_mxn, "MXN") : null,
+                  solicitud.referencia_usd ? dinero(solicitud.referencia_usd, "USD") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" + ") || "—"}
+              </b>
+            </Text>
+          )}
         </Alert>
       )}
       {solicitud.estado === "NO_CONFIRMADA" && (

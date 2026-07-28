@@ -87,10 +87,13 @@ def cotizada_mixta(client, entorno, auth_headers):
         },
     )
     assert r.status_code == 200, r.text
-    assert (
-        client.post(f"{BASE}/{sid}/cotizar", headers=auth_headers(entorno.comprador)).status_code
-        == 200
+    # v3 (F8e): hay USD → el COMPRADOR captura el TC al cotizar.
+    r = client.post(
+        f"{BASE}/{sid}/cotizar",
+        headers=auth_headers(entorno.comprador),
+        json={"tipo_cambio": "18.5"},
     )
+    assert r.status_code == 200, r.text
     return sid
 
 
@@ -109,22 +112,19 @@ def test_subtotales_mixtos_y_referencia_dual(client, entorno, cotizada_mixta, au
     assert fila["referencia_mxn"] == "12000.00" and fila["referencia_usd"] == "500.00"
 
 
-def test_confirmar_mixta_exige_tc_y_consolida(client, db, entorno, cotizada_mixta, auth_headers):
+def test_confirmar_usa_tc_del_comprador_y_consolida(client, entorno, cotizada_mixta, auth_headers):
+    """v3 (F8e): la selección del vendedor es SIMPLE — usa el TC que el
+    comprador guardó al cotizar (18.5) y el vendedor NO ve el consolidado."""
     headers_v = auth_headers(entorno.vendedor)
-    # Sin TC → 422 exacto.
     r = client.post(f"{BASE}/{cotizada_mixta}/seleccionar", headers=headers_v, json={"letra": "A"})
-    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_requerido"
-    # Con TC → consolidado EXACTO: 12,000 + 500 × 18.5000 = 21,250.00 MXN.
-    r = client.post(
-        f"{BASE}/{cotizada_mixta}/seleccionar",
-        headers=headers_v,
-        json={"letra": "A", "tipo_cambio": "18.5"},
-    )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["monto_confirmado"] == "21250.00"
-    assert body["moneda_confirmada"] == "MXN"
-    assert body["tipo_cambio"] == "18.5000"
+    assert "monto_confirmado" not in body and "tipo_cambio" not in body
+    # Consolidado EXACTO para roles autorizados: 12,000 + 500 × 18.5 = 21,250.
+    oficial = client.get(f"{BASE}/{cotizada_mixta}", headers=auth_headers(entorno.admin)).json()
+    assert oficial["monto_confirmado"] == "21250.00"
+    assert oficial["moneda_confirmada"] == "MXN"
+    assert oficial["tipo_cambio"] == "18.5000"
 
 
 def test_tc_en_opcion_cien_por_ciento_mxn_422(client, entorno, auth_headers):
@@ -149,26 +149,28 @@ def test_tc_en_opcion_cien_por_ciento_mxn_422(client, entorno, auth_headers):
         },
     )
     assert r.status_code == 200
+    # v3 (F8e): TC en un cotizar 100 % MXN → 422 (cero datos basura).
+    r = client.post(
+        f"{BASE}/{sid}/cotizar",
+        headers=auth_headers(entorno.comprador),
+        json={"tipo_cambio": "18.5"},
+    )
+    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_invalido"
     assert (
         client.post(f"{BASE}/{sid}/cotizar", headers=auth_headers(entorno.comprador)).status_code
         == 200
     )
-    r = client.post(
-        f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "A", "tipo_cambio": "18.5"}
-    )
-    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_invalido"
-    # Sin TC → confirma sin datos basura.
+    # Selección simple; el TC queda vacío para los roles que sí lo ven.
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "A"})
-    assert r.status_code == 200 and r.json()["tipo_cambio"] is None
+    assert r.status_code == 200 and "tipo_cambio" not in r.json()
+    oficial = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert oficial["tipo_cambio"] is None
 
 
 def test_kpi_confirmado_consolidado_y_export_con_tc(client, entorno, cotizada_mixta, auth_headers):
     headers_v = auth_headers(entorno.vendedor)
-    r = client.post(
-        f"{BASE}/{cotizada_mixta}/seleccionar",
-        headers=headers_v,
-        json={"letra": "A", "tipo_cambio": "18.5"},
-    )
+    # v3 (F8e): selección simple — el TC (18.5) viene de la cotización.
+    r = client.post(f"{BASE}/{cotizada_mixta}/seleccionar", headers=headers_v, json={"letra": "A"})
     assert r.status_code == 200
     # KPI: confirmado = UNA serie MXN consolidada; desglose original aparte.
     body = client.get("/api/v1/metricas/resumen", headers=auth_headers(entorno.admin)).json()
@@ -196,7 +198,7 @@ def test_comprador_ve_proveedor_en_confirmada(client, entorno, cotizada_mixta, a
     r = client.post(
         f"{BASE}/{cotizada_mixta}/seleccionar",
         headers=auth_headers(entorno.vendedor),
-        json={"letra": "A", "tipo_cambio": "18.5"},
+        json={"letra": "A"},
     )
     assert r.status_code == 200
     # El comprador CONSERVA el proveedor tras la confirmación (lo necesita
@@ -327,11 +329,7 @@ def test_director_ventas_global_sin_proveedor_y_confirma(
     for renglon in detalle["opciones"][0]["renglones"]:
         assert "proveedor" not in renglon
     # Confirma CUALQUIER solicitud y el historial LO registra a él.
-    r = client.post(
-        f"{BASE}/{cotizada_mixta}/seleccionar",
-        headers=headers,
-        json={"letra": "A", "tipo_cambio": "18.5"},
-    )
+    r = client.post(f"{BASE}/{cotizada_mixta}/seleccionar", headers=headers, json={"letra": "A"})
     assert r.status_code == 200, r.text
     detalle = client.get(f"{BASE}/{cotizada_mixta}", headers=headers).json()
     confirmacion = next(h for h in detalle["historial"] if h["a"] == "CONFIRMADA")

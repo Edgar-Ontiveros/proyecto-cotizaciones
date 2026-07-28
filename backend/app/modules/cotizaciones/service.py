@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
 from app.models.solicitud import Estado, MotivoNoConfirmada, Solicitud, SolicitudPartida
-from app.models.usuario import Usuario
+from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones.schemas import (
     OpcionCompradorOut,
+    OpcionConsolidadoOut,
     OpcionIn,
     OpcionOut,
     RenglonCompradorOut,
@@ -208,19 +209,61 @@ def _datos_opcion(db: Session, opcion: CotizacionOpcion, con_proveedor: bool) ->
     }
 
 
+def consolidado_de(opcion: CotizacionOpcion, tipo_cambio: Decimal | None) -> Decimal | None:
+    """Consolidado MXN de la opción (F8e): total_mxn + total_usd × TC,
+    HALF_UP a centavos. Sin USD el consolidado ES el total MXN; con USD y sin
+    TC (datos viejos) no hay consolidado."""
+    if opcion.total_usd == 0:
+        return opcion.total_mxn
+    if tipo_cambio is None:
+        return None
+    return (opcion.total_mxn + opcion.total_usd * tipo_cambio).quantize(
+        _CENTAVOS, rounding=ROUND_HALF_UP
+    )
+
+
 def opciones_de(db: Session, solicitud_id: int) -> list[OpcionOut]:
-    """Vista SIN proveedor (vendedor y gerente)."""
+    """Vista del VENDEDOR: sin proveedor y SIN consolidado (F8e)."""
     return [
         OpcionOut(**_datos_opcion(db, o, con_proveedor=False)) for o in _opciones(db, solicitud_id)
     ]
 
 
-def opciones_comprador_de(db: Session, solicitud_id: int) -> list[OpcionCompradorOut]:
-    """Vista CON proveedor por renglón (comprador y admin)."""
+def opciones_ventas_de(db: Session, solicitud: Solicitud) -> list[OpcionConsolidadoOut]:
+    """Gerentes de ventas: sin proveedor, CON consolidado por opción."""
     return [
-        OpcionCompradorOut(**_datos_opcion(db, o, con_proveedor=True))
-        for o in _opciones(db, solicitud_id)
+        OpcionConsolidadoOut(
+            **_datos_opcion(db, o, con_proveedor=False),
+            consolidado_mxn=consolidado_de(o, solicitud.tipo_cambio),
+        )
+        for o in _opciones(db, solicitud.id)
     ]
+
+
+def opciones_comprador_de(db: Session, solicitud: Solicitud) -> list[OpcionCompradorOut]:
+    """Comprador, gerente_compras y admin: proveedor + consolidado."""
+    return [
+        OpcionCompradorOut(
+            **_datos_opcion(db, o, con_proveedor=True),
+            consolidado_mxn=consolidado_de(o, solicitud.tipo_cambio),
+        )
+        for o in _opciones(db, solicitud.id)
+    ]
+
+
+def referencias_por_opcion(
+    db: Session, opcion_ids: list[int]
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """(total_mxn, total_usd) por id de opción — para que el VENDEDOR vea los
+    subtotales de la GANADORA en una CONFIRMADA (F8e), en un solo query."""
+    if not opcion_ids:
+        return {}
+    filas = db.execute(
+        select(CotizacionOpcion.id, CotizacionOpcion.total_mxn, CotizacionOpcion.total_usd).where(
+            CotizacionOpcion.id.in_(opcion_ids)
+        )
+    ).all()
+    return {oid: (mxn, usd) for oid, mxn, usd in filas}
 
 
 def referencias_opcion_a(
@@ -374,10 +417,14 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario)
     db.commit()
 
 
-def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
+def cotizar(
+    db: Session, solicitud_id: int, user: Usuario, tipo_cambio: Decimal | None = None
+) -> Solicitud:
     """Marca la captura completa (lado compras): valida TODA opción capturada
     contra TODAS las partidas y ejecuta EN_PROCESO→COTIZADA (una sola
-    transacción)."""
+    transacción). v3 (F8e): el COMPRADOR captura aquí el tipo de cambio —
+    obligatorio si alguna opción tiene renglones USD, prohibido si todo es
+    MXN; queda en solicitudes.tipo_cambio desde la cotización."""
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
     if not autoriza_compras(user, solicitud):
         raise AppError(403, "Solo el lado compras cotiza", "forbidden")
@@ -399,23 +446,31 @@ def cotizar(db: Session, solicitud_id: int, user: Usuario) -> Solicitud:
         raise AppError(
             422, "Cotización incompleta: " + "; ".join(faltantes), "cotizacion_incompleta"
         )
+    hay_usd = any(opcion.total_usd > 0 for opcion in opciones)
+    if hay_usd and tipo_cambio is None:
+        raise AppError(
+            422,
+            "Hay renglones en USD: se requiere tipo_cambio al cotizar",
+            "tipo_cambio_requerido",
+        )
+    if not hay_usd and tipo_cambio is not None:
+        raise AppError(
+            422,
+            "La cotización es 100 % MXN: no envíes tipo_cambio",
+            "tipo_cambio_invalido",
+        )
+    solicitud.tipo_cambio = tipo_cambio
     for opcion in opciones:
         opcion.completa = True
     # La notificación al vendedor la genera la transición (state_machine, F7).
     return ejecutar_transicion(db, solicitud.id, Estado.COTIZADA, user)
 
 
-def seleccionar(
-    db: Session,
-    solicitud_id: int,
-    letra: Letra,
-    user: Usuario,
-    tipo_cambio: Decimal | None = None,
-) -> Solicitud:
+def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> Solicitud:
     """COTIZADA→CONFIRMADA (lado ventas): fija opción ganadora y el monto
-    oficial CONSOLIDADO EN MXN (F8c) = total_mxn + total_usd × tipo_cambio.
-    El TC es OBLIGATORIO si hay renglones USD y PROHIBIDO si la opción es
-    100 % MXN (cero datos basura)."""
+    oficial CONSOLIDADO EN MXN. v3 (F8e): el TC ya NO viene del vendedor —
+    se usa el que el COMPRADOR guardó al cotizar; si por datos viejos hay USD
+    sin TC, 422 claro (el lado compras debe corregirlo primero)."""
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo el lado ventas selecciona la opción", "forbidden")
@@ -428,27 +483,17 @@ def seleccionar(
         )
     if not opcion.completa:
         raise AppError(422, f"La opción {letra.value} está incompleta", "opcion_invalida")
-    if opcion.total_usd > 0 and tipo_cambio is None:
+    consolidado = consolidado_de(opcion, solicitud.tipo_cambio)
+    if consolidado is None:
         raise AppError(
             422,
-            f"La opción {letra.value} tiene renglones en USD: se requiere tipo_cambio",
+            f"La opción {letra.value} tiene renglones en USD y la cotización no trae tipo de "
+            "cambio: el lado compras debe corregirlo (PATCH tipo-cambio) antes de confirmar",
             "tipo_cambio_requerido",
         )
-    if opcion.total_usd == 0 and tipo_cambio is not None:
-        raise AppError(
-            422,
-            f"La opción {letra.value} es 100 % MXN: no envíes tipo_cambio",
-            "tipo_cambio_invalido",
-        )
     solicitud.opcion_seleccionada_id = opcion.id
-    consolidado = opcion.total_mxn
-    if tipo_cambio is not None:
-        consolidado = (opcion.total_mxn + opcion.total_usd * tipo_cambio).quantize(
-            _CENTAVOS, rounding=ROUND_HALF_UP
-        )
     solicitud.monto_confirmado = consolidado
     solicitud.moneda_confirmada = Moneda.MXN
-    solicitud.tipo_cambio = tipo_cambio
     return ejecutar_transicion(db, solicitud.id, Estado.CONFIRMADA, user)
 
 
@@ -479,30 +524,45 @@ def revertir_no_confirmada(db: Session, solicitud_id: int, admin: Usuario) -> So
 
 
 def corregir_tipo_cambio(
-    db: Session, solicitud_id: int, tipo_cambio: Decimal, admin: Usuario
+    db: Session, solicitud_id: int, tipo_cambio: Decimal, user: Usuario
 ) -> Solicitud:
-    """Corrección administrativa del TC (F8d, solo admin — el router lo exige):
-    SOLO sobre CONFIRMADA con USD; recalcula el consolidado oficial y deja
-    evento en el historial."""
-    solicitud = obtener_scoped(db, solicitud_id, admin, for_update=True)
-    if solicitud.estado != Estado.CONFIRMADA:
-        raise conflicto_estado("corregir el tipo de cambio", solicitud)
-    opcion = (
-        db.get(CotizacionOpcion, solicitud.opcion_seleccionada_id)
-        if solicitud.opcion_seleccionada_id is not None
-        else None
-    )
-    if opcion is None or opcion.total_usd == 0:
-        raise AppError(
-            422,
-            "La confirmación es 100 % MXN: no hay tipo de cambio que corregir",
-            "tipo_cambio_invalido",
+    """Corrección del TC v3 (F8e):
+    - COTIZADA: comprador ASIGNADO, gerente_compras o admin — actualiza el TC
+      (los consolidados por opción se derivan de él) y deja evento de==a.
+    - CONFIRMADA: SOLO admin — además recalcula monto_confirmado de la
+      ganadora (comportamiento F8d).
+    Lado ventas: 403 siempre."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if solicitud.estado == Estado.COTIZADA:
+        if not autoriza_compras(user, solicitud):
+            raise AppError(403, "Solo el lado compras corrige el TC en COTIZADA", "forbidden")
+        if not any(o.total_usd > 0 for o in _opciones(db, solicitud.id)):
+            raise AppError(
+                422,
+                "La cotización es 100 % MXN: no hay tipo de cambio que corregir",
+                "tipo_cambio_invalido",
+            )
+    elif solicitud.estado == Estado.CONFIRMADA:
+        if user.rol != Rol.ADMIN:
+            raise AppError(403, "Solo el admin corrige el TC de una CONFIRMADA", "forbidden")
+        opcion = (
+            db.get(CotizacionOpcion, solicitud.opcion_seleccionada_id)
+            if solicitud.opcion_seleccionada_id is not None
+            else None
         )
+        if opcion is None or opcion.total_usd == 0:
+            raise AppError(
+                422,
+                "La confirmación es 100 % MXN: no hay tipo de cambio que corregir",
+                "tipo_cambio_invalido",
+            )
+        solicitud.monto_confirmado = (opcion.total_mxn + opcion.total_usd * tipo_cambio).quantize(
+            _CENTAVOS, rounding=ROUND_HALF_UP
+        )
+    else:
+        raise conflicto_estado("corregir el tipo de cambio", solicitud)
     anterior = solicitud.tipo_cambio
     solicitud.tipo_cambio = tipo_cambio
-    solicitud.monto_confirmado = (opcion.total_mxn + opcion.total_usd * tipo_cambio).quantize(
-        _CENTAVOS, rounding=ROUND_HALF_UP
-    )
-    registrar_evento(db, solicitud, admin, f"TC corregido de {anterior} a {tipo_cambio}")
+    registrar_evento(db, solicitud, user, f"TC corregido de {anterior} a {tipo_cambio}")
     db.commit()
     return solicitud

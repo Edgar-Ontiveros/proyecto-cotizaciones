@@ -159,14 +159,14 @@ def _confirmada(client, entorno, auth_headers, partidas, renglones_de, tipo_camb
         json={"vigencia": "2026-08-31", "renglones": renglones_de(pids)},
     )
     assert r.status_code == 200, r.text
-    assert (
-        client.post(f"{BASE}/{sid}/cotizar", headers=auth_headers(entorno.comprador)).status_code
-        == 200
+    # v3 (F8e): el COMPRADOR captura el TC al cotizar; la selección es simple.
+    r = client.post(
+        f"{BASE}/{sid}/cotizar",
+        headers=auth_headers(entorno.comprador),
+        json={"tipo_cambio": tipo_cambio} if tipo_cambio is not None else None,
     )
-    body = {"letra": "A"}
-    if tipo_cambio is not None:
-        body["tipo_cambio"] = tipo_cambio
-    r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json=body)
+    assert r.status_code == 200, r.text
+    r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "A"})
     assert r.status_code == 200, r.text
     return sid
 

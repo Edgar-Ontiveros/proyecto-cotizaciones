@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
 from app.models.solicitud import Estado, Prioridad, UnidadCatalogo
-from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionOut
+from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionConsolidadoOut, OpcionOut
 from app.modules.metricas.schemas import CicloOut
 
 
@@ -49,6 +49,11 @@ class PartidaOut(BaseModel):
 
 
 class SolicitudOut(BaseModel):
+    """Vista BASE = la del VENDEDOR (F8e, patrón proveedor): tipo_cambio,
+    monto_confirmado y cualquier consolidado NO EXISTEN en su JSON — ve la
+    ganadora por opcion_seleccionada_id y sus subtotales por moneda original
+    en referencia_mxn/usd."""
+
     id: int
     folio: str | None
     estado: Estado
@@ -59,12 +64,8 @@ class SolicitudOut(BaseModel):
     comprador_id: int | None
     sucursal_id: int
     notas: str | None
-    # Confirmación (F4): opción ganadora y monto oficial.
+    # Confirmación (F4): opción ganadora.
     opcion_seleccionada_id: int | None
-    # Confirmación (F8c): monto CONSOLIDADO en MXN; el TC usado se expone.
-    monto_confirmado: Decimal | None
-    moneda_confirmada: Moneda | None
-    tipo_cambio: Decimal | None
     motivo_no_confirmada: str | None
     creado_en: datetime
     enviado_en: datetime | None
@@ -75,10 +76,19 @@ class SolicitudOut(BaseModel):
     banda: Banda | None = None
     dias_transcurridos: int | None = None
     horas_habiles: float | None = None
-    # Referencia (F8b/F8c, §4.9): SUBTOTALES por moneda de la opción A, SOLO
-    # cuando el estado es COTIZADA; null en el resto (cero → null).
+    # Referencia (§4.9): SUBTOTALES por moneda — de la opción A en COTIZADA;
+    # para el VENDEDOR también de la GANADORA en CONFIRMADA (F8e).
     referencia_mxn: Decimal | None = None
     referencia_usd: Decimal | None = None
+
+
+class SolicitudConsolidadoOut(SolicitudOut):
+    """Todos los roles MENOS vendedor: agrega el dinero consolidado (F8e) —
+    monto oficial MXN y el TC que capturó el comprador al cotizar."""
+
+    monto_confirmado: Decimal | None
+    moneda_confirmada: Moneda | None
+    tipo_cambio: Decimal | None
 
 
 class HistorialOut(BaseModel):
@@ -102,7 +112,7 @@ class ComentarioOut(BaseModel):
 
 
 class SolicitudDetailOut(SolicitudOut):
-    """Detalle para vendedor y gerente: opciones SIN proveedor (§4.8)."""
+    """Detalle del VENDEDOR: sin proveedor y sin consolidado (F8e)."""
 
     partidas: list[PartidaOut]
     opciones: list[OpcionOut]
@@ -111,13 +121,33 @@ class SolicitudDetailOut(SolicitudOut):
     ciclos: list[CicloOut] = []  # desglose completo (F6)
 
 
-class SolicitudDetailCompradorOut(SolicitudDetailOut):
-    """Detalle para comprador y admin: opciones CON proveedor."""
+class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
+    """Detalle de los gerentes de VENTAS (gerente_sucursal, director):
+    consolidado sí, proveedor no (§4.8)."""
+
+    partidas: list[PartidaOut]
+    opciones: list[OpcionConsolidadoOut]
+    historial: list[HistorialOut]
+    comentarios: list[ComentarioOut]
+    ciclos: list[CicloOut] = []
+
+
+class SolicitudDetailCompradorOut(SolicitudDetailVentasOut):
+    """Detalle del área COMPRAS y admin: consolidado + proveedor."""
 
     opciones: list[OpcionCompradorOut]  # type: ignore[assignment]
 
 
 class SolicitudListOut(BaseModel):
+    """Listado para todos MENOS vendedor (items con consolidado)."""
+
+    items: list[SolicitudConsolidadoOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class SolicitudListVendedorOut(BaseModel):
     items: list[SolicitudOut]
     total: int
     limit: int

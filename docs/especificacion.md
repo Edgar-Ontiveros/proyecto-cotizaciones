@@ -18,12 +18,14 @@ Dos ÁREAS (ventas y compras) por un eje; ALCANCE (propio / sucursal / global) p
 
 | Rol | Área · alcance | Ve | Puede |
 |---|---|---|---|
-| **vendedor** | Ventas · propio | Solo SUS solicitudes | Crear, editar (§4.3), enviar, reenviar rechazadas, seleccionar opción (con TC si hay USD), marcar no confirmada, cancelar |
-| **comprador** | Compras · asignadas | Solo las asignadas (CON proveedor) | Tomar, capturar opciones (renglón rico), marcar cotizada, rechazar con motivo, corregir cotizadas |
-| **gerente_sucursal** | Ventas · SU sucursal | Su sucursal, sin BORRADOR ajenos, SIN proveedor | Acciones de lado ventas sobre su sucursal + ADMINISTRA los vendedores de su sucursal (crear, editar, reset, baja segura, reasignar entre ellos). Nada de compras ni métricas de compradores |
-| **gerente_compras** (2) | Compras · global | TODAS las solicitudes CON proveedor/costos; métricas de compras (compradores, materiales, % no encontrados); territorios | Ejecuta el lado COMPRAS sobre CUALQUIER solicitud (F8c.1: tomar, capturar, marcar cotizada, corregir, rechazar — cubre al equipo; el ciclo se sigue atribuyendo al comprador ASIGNADO y el historial registra al ejecutor real) + administra COMPRADORES (CRUD, bajas seguras, titularidades, reasignaciones). NO ve métricas por vendedor ni personal de ventas |
-| **director_ventas** | Ventas · global | Todo ventas consolidado, SIN proveedor/costos ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas las sucursales) y gerentes_sucursal, con movimientos entre sucursales y bajas seguras |
+| **vendedor** | Ventas · propio | Solo SUS solicitudes — SIN tipo de cambio, consolidados ni monto confirmado (F8e: las claves no existen en su JSON; ve la ganadora en subtotales por moneda original) | Crear, editar (§4.3), enviar, reenviar rechazadas, seleccionar opción (selección SIMPLE — el TC ya viene de la cotización), marcar no confirmada, cancelar |
+| **comprador** | Compras · asignadas | Solo las asignadas (CON proveedor y consolidados) | Tomar, capturar opciones (renglón rico), marcar cotizada CAPTURANDO el tipo de cambio si hay USD (F8e), corregir el TC en COTIZADA, rechazar con motivo, corregir cotizadas |
+| **gerente_sucursal** | Ventas · SU sucursal | Su sucursal, sin BORRADOR ajenos, SIN proveedor | Acciones de lado ventas sobre su sucursal + CREA Y ENVÍA solicitudes (v3, F8e: nacen con ÉL como vendedor; ve sus propios borradores) + reasignación individual y masiva entre SUS vendedores + ADMINISTRA los vendedores de su sucursal (crear, editar, reset, baja segura). Nada de compras ni métricas de compradores |
+| **gerente_compras** (2) | Compras · global | TODAS las solicitudes CON proveedor/costos; métricas de compras (compradores, materiales, % no encontrados); territorios | Ejecuta el lado COMPRAS sobre CUALQUIER solicitud (F8c.1: tomar, capturar, marcar cotizada — con TC si hay USD —, corregir el TC en COTIZADA, corregir, rechazar; el ciclo se atribuye al comprador ASIGNADO y el historial registra al ejecutor real) + reasignación individual y masiva de compradores + administra COMPRADORES (CRUD, bajas seguras, titularidades). NO ve métricas por vendedor ni personal de ventas |
+| **director_ventas** (etiqueta de UI: “Director Comercial”; el enum NO cambia) | Ventas · global | Todo ventas consolidado, SIN proveedor/costos ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas las sucursales) y gerentes_sucursal, con movimientos entre sucursales y bajas seguras |
 | **admin** (maestros) | Todo | Todo | Control absoluto. ÚNICO que crea/gestiona gerente_compras, director_ventas y otros admin |
+
+**Salvaguardas del admin maestro (F8e):** el admin no tiene restricciones funcionales; las ÚNICAS excepciones vivas son anti-bloqueo — (1) nadie se cambia a sí mismo el rol (`no_auto_degradacion`) y (2) nadie se desactiva a sí mismo (`no_auto_desactivacion`). Crear solicitudes queda fuera de su rol por semántica (nacen en la sucursal del creador y el admin no tiene una), no como salvaguarda.
 
 **Matriz de gestión de cuentas** (codificada como dato en `usuarios/service.MATRIZ_GESTION`): gerente_sucursal→vendedores de su sucursal · director_ventas→vendedores (todas) y gerentes_sucursal · gerente_compras→compradores · admin→todos. NADIE se cambia a sí mismo el rol ni se desactiva a sí mismo. Sin registro público.
 
@@ -111,11 +113,13 @@ Sin tiempos máximos (resp. 28) pero con evaluación (resp. 49) y alerta al 3er 
 - **Por partida dentro de cada opción** (columnas del formato real): `precio_unitario` y `tiempo_entrega` → `importe = cantidad × precio_unitario` → `total` de la opción.
 - Obligatorios al completar: por opción moneda y vigencia; por partida precio y tiempo de entrega (resp. 34 + formato).
 - **Respuesta parcial** (resp. 20): guardar avances deja EN_PROCESO; "marcar cotización completa" exige toda opción capturada con sus obligatorios en todas las partidas → COTIZADA.
-- **Selección:** el vendedor compara A–E lado a lado y elige UNA al confirmar el pedido → CONFIRMADA; la elegida "se queda", las demás en historial.
+- **Tipo de cambio v3 (F8e):** lo captura el COMPRADOR al marcar la cotización completa — obligatorio si alguna opción tiene renglones USD (422 `tipo_cambio_requerido`), prohibido si todo es MXN (422 `tipo_cambio_invalido`); queda en `solicitudes.tipo_cambio` desde COTIZADA. El consolidado POR OPCIÓN (total_mxn + total_usd × TC, HALF_UP a 2) existe desde COTIZADA para los roles autorizados. El comprador asignado y gerente_compras corrigen el TC en COTIZADA (PATCH tipo-cambio, evento de==a); el admin además en CONFIRMADA (recalcula el monto oficial).
+- **Selección:** el vendedor compara A–E lado a lado y elige UNA al confirmar el pedido → CONFIRMADA (selección SIMPLE, sin TC: usa el guardado; si por datos viejos hay USD sin TC → 422 claro); la elegida "se queda", las demás en historial.
 
 ### 4.9 Dinero (requisito prioritario)
-- **Monto confirmado** = total de la opción seleccionada (dato duro, resp. 36). **Monto de referencia** de una COTIZADA sin confirmar = total de la **opción A** (decisión derivada §11).
-- Agregados **separados por moneda** (MXN y USD) en v1; conversión con TC configurable en v2.
+- **Monto confirmado** = consolidado MXN de la opción seleccionada usando el TC capturado por el COMPRADOR al cotizar (F8e). **Monto de referencia** de una COTIZADA sin confirmar = subtotales por moneda de la **opción A**; para el VENDEDOR en CONFIRMADA, subtotales de la GANADORA.
+- **Visibilidad (regla dura, patrón proveedor):** tipo_cambio, monto_confirmado y cualquier consolidado se EXCLUYEN de los schemas del rol vendedor — la clave NO existe en su JSON en ninguna vista. Comprador, gerentes, director y admin sí los ven.
+- Agregados **separados por moneda** (MXN y USD); el confirmado se agrega como serie consolidada MXN.
 - Todo dashboard de dinero filtra por sucursal, comprador, vendedor, cliente, fecha, estado y moneda. Dinero en `Numeric(14,2)`, nunca float.
 
 ### 4.10 Comentarios, notificaciones, retención

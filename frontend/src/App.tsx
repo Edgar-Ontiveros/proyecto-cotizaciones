@@ -61,6 +61,7 @@ export function App() {
           <Route path="/crm" element={<Dashboard />} />
           <Route path="/crm/comparativas" element={<Comparativas />} />
           <Route path="/crm/solicitudes" element={<SolicitudesCrm />} />
+          <Route path="/crm/nueva" element={<CapturaSolicitud modo="nueva" />} />
           <Route path="/crm/solicitudes/:id" element={<DetalleCrm />} />
           <Route path="/crm/solicitudes/:id/editar" element={<CapturaSolicitud modo="editar" />} />
           <Route path="/crm/solicitudes/:id/comparador" element={<Comparador />} />

@@ -54,6 +54,7 @@ import {
 import type { Letra, Moneda, OpcionOut, SolicitudDetailOut, Unidad } from "../../lib/types";
 import { parsearFaltantesCotizacion, type FaltanteCotizacion } from "../../lib/validacion";
 import { HistorialComentarios } from "../vendedor/DetalleSolicitud";
+import { ModalCorregirTCComprador, ModalCotizarConTC } from "./ModalesTC";
 
 const LETRAS: Letra[] = ["A", "B", "C", "D", "E"];
 
@@ -588,12 +589,18 @@ export function CapturaCotizacion() {
     ]),
   ].sort();
 
-  const marcarCompleta = () => {
+  const hayUsd = solicitud.opciones.some((o) => Number(o.total_usd) > 0);
+
+  const ejecutarCotizar = (tipoCambio?: string) => {
     setErrores([]);
     setErrorGeneral(null);
-    cotizar.mutate(undefined, {
-      onSuccess: (s) => notifications.show({ message: `${s.folio} cotizada`, color: "green" }),
+    cotizar.mutate(tipoCambio, {
+      onSuccess: (s) => {
+        modals.closeAll();
+        notifications.show({ message: `${s.folio} cotizada`, color: "green" });
+      },
       onError: (e) => {
+        modals.closeAll();
         if (e instanceof ApiError && e.code === "cotizacion_incompleta") {
           const faltantes = parsearFaltantesCotizacion(e.detail);
           setErrores(faltantes);
@@ -612,6 +619,38 @@ export function CapturaCotizacion() {
       },
     });
   };
+
+  const marcarCompleta = () => {
+    // v3 (F8e): con renglones USD el TC es obligatorio — modal con el
+    // consolidado por opción EN VIVO antes de aceptar.
+    if (hayUsd) {
+      modals.open({
+        title: "Marcar cotización completa — tipo de cambio",
+        children: (
+          <ModalCotizarConTC
+            opciones={solicitud.opciones}
+            onAceptar={(tc) => ejecutarCotizar(tc)}
+            cargando={cotizar.isPending}
+          />
+        ),
+      });
+      return;
+    }
+    ejecutarCotizar();
+  };
+
+  const abrirCorregirTC = () =>
+    modals.open({
+      title: "Corregir tipo de cambio",
+      children: (
+        <ModalCorregirTCComprador
+          solicitudId={solicitud.id}
+          tcActual={solicitud.tipo_cambio ?? null}
+          opciones={solicitud.opciones}
+          onListo={() => modals.closeAll()}
+        />
+      ),
+    });
 
   const abrirRechazo = () =>
     modals.open({
@@ -672,7 +711,14 @@ export function CapturaCotizacion() {
 
       {correccion && (
         <Alert color="orange" title="Estás corrigiendo una cotización ya publicada">
-          Cada cambio guardado notifica al vendedor.
+          <Group justify="space-between">
+            <Text size="sm">Cada cambio guardado notifica al vendedor.</Text>
+            {hayUsd && (
+              <Button size="compact-sm" variant="light" color="orange" onClick={abrirCorregirTC}>
+                Corregir TC (actual: {solicitud.tipo_cambio ?? "—"})
+              </Button>
+            )}
+          </Group>
         </Alert>
       )}
       {errorGeneral && <Alert color="red">{errorGeneral}</Alert>}

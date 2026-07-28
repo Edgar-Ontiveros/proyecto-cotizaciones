@@ -344,12 +344,13 @@ def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
     detalle = client.get(f"{BASE}/{enviada.id}", headers=headers_v).json()
     assert detalle["referencia_mxn"] == "14000.00"
 
-    # CONFIRMADA: la referencia vuelve a null; manda el monto confirmado.
+    # CONFIRMADA (F8e): el vendedor ve los subtotales de la GANADORA (B:
+    # 90×20 + 90×120 = 12,600.00) como referencia; el consolidado NO existe
+    # en su JSON.
     r = client.post(f"{BASE}/{enviada.id}/seleccionar", headers=headers_v, json={"letra": "B"})
     assert r.status_code == 200, r.text
     fila = next(
         i for i in client.get(BASE, headers=headers_v).json()["items"] if i["id"] == enviada.id
     )
-    assert fila["referencia_mxn"] is None
-    assert fila["monto_confirmado"] == "12600.00"  # 90×20 + 90×120 (100% MXN, sin TC)
-    assert fila["tipo_cambio"] is None
+    assert fila["referencia_mxn"] == "12600.00" and fila["referencia_usd"] is None
+    assert "monto_confirmado" not in fila and "tipo_cambio" not in fila

@@ -390,12 +390,16 @@ def test_seleccionar_fija_monto_oficial(client, entorno, cotizada, auth_headers)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["estado"] == "CONFIRMADA"
-    assert body["monto_confirmado"] == "700.00"  # total de B: 3×100 + 2×200
-    assert body["moneda_confirmada"] == "MXN"
+    # F8e: el vendedor NO ve el consolidado — la clave no existe en su JSON.
+    assert "monto_confirmado" not in body and "moneda_confirmada" not in body
     assert body["confirmado_en"] is not None
     detalle = client.get(f"{BASE}/{cotizada.id}", headers=headers).json()
     opcion_b = next(o for o in detalle["opciones"] if o["letra"] == "B")
     assert detalle["opcion_seleccionada_id"] == opcion_b["id"]
+    # El monto oficial (total de B: 3×100 + 2×200) para roles autorizados.
+    oficial = client.get(f"{BASE}/{cotizada.id}", headers=auth_headers(entorno.admin)).json()
+    assert oficial["monto_confirmado"] == "700.00"
+    assert oficial["moneda_confirmada"] == "MXN"
 
 
 def test_seleccionar_letra_inexistente_o_incompleta_422(client, entorno, cotizada, auth_headers):
@@ -508,7 +512,9 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         },
     )
     assert r.status_code == 200
-    assert client.post(f"{BASE}/{sid}/cotizar", headers=headers_c).status_code == 200
+    # v3 (F8e): hay USD (opción B) → el comprador captura el TC al cotizar.
+    r = client.post(f"{BASE}/{sid}/cotizar", headers=headers_c, json={"tipo_cambio": "18.5"})
+    assert r.status_code == 200, r.text
     r = _put(
         client,
         headers_c,
@@ -522,19 +528,17 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         },
     )
     assert r.status_code == 200  # corrección post-cotización
-    # F8c: la opción B es 100% USD → el TC es obligatorio al confirmar y el
-    # monto oficial queda CONSOLIDADO en MXN (310 USD × 18.5 = 5,735.00).
+    # v3 (F8e): el TC lo capturó el COMPRADOR al cotizar; la selección del
+    # vendedor es SIMPLE y su JSON no trae consolidado (patrón proveedor).
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "B"})
-    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_requerido"
-    r = client.post(
-        f"{BASE}/{sid}/seleccionar",
-        headers=headers_v,
-        json={"letra": "B", "tipo_cambio": "18.5"},
-    )
-    assert r.status_code == 200
-    assert r.json()["monto_confirmado"] == "5735.00"  # (3×50 + 2×80) × 18.5
-    assert r.json()["moneda_confirmada"] == "MXN"
-    assert r.json()["tipo_cambio"] == "18.5000"
+    assert r.status_code == 200, r.text
+    assert "monto_confirmado" not in r.json() and "tipo_cambio" not in r.json()
+    # El monto oficial consolidado ((3×50 + 2×80) × 18.5 = 5,735.00) lo ven
+    # los roles autorizados.
+    oficial = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert oficial["monto_confirmado"] == "5735.00"
+    assert oficial["moneda_confirmada"] == "MXN"
+    assert oficial["tipo_cambio"] == "18.5000"
 
     detalle = client.get(f"{BASE}/{sid}", headers=headers_v).json()
     assert detalle["estado"] == "CONFIRMADA"

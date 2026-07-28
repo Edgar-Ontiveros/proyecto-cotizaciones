@@ -7,6 +7,7 @@ from app.models.cotizacion import Letra
 from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones import service
 from app.modules.cotizaciones.schemas import (
+    CotizarIn,
     NoConfirmarIn,
     OpcionCompradorOut,
     OpcionIn,
@@ -14,7 +15,6 @@ from app.modules.cotizaciones.schemas import (
     TipoCambioIn,
 )
 from app.modules.solicitudes import service as solicitudes_service
-from app.modules.solicitudes.schemas import SolicitudOut
 
 router = APIRouter(prefix="/solicitudes/{solicitud_id}", tags=["cotizaciones"])
 
@@ -44,16 +44,20 @@ def eliminar_opcion(
     service.eliminar_opcion(db, solicitud_id, letra, user)
 
 
-@router.post("/cotizar", response_model=SolicitudOut)
+@router.post("/cotizar", response_model=None)
 def cotizar(
     solicitud_id: int,
+    body: CotizarIn | None = None,
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return solicitudes_service.a_out(db, service.cotizar(db, solicitud_id, user))
+    """v3 (F8e): el comprador captura aquí el TC cuando hay USD. response_model
+    =None: el schema de salida depende del rol (patrón del detalle)."""
+    tipo_cambio = body.tipo_cambio if body is not None else None
+    return solicitudes_service.a_out(db, service.cotizar(db, solicitud_id, user, tipo_cambio), user)
 
 
-@router.post("/seleccionar", response_model=SolicitudOut)
+@router.post("/seleccionar", response_model=None)
 def seleccionar_opcion(
     solicitud_id: int,
     body: SeleccionIn,
@@ -61,11 +65,11 @@ def seleccionar_opcion(
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(
-        db, service.seleccionar(db, solicitud_id, body.letra, user, body.tipo_cambio)
+        db, service.seleccionar(db, solicitud_id, body.letra, user), user
     )
 
 
-@router.post("/no-confirmar", response_model=SolicitudOut)
+@router.post("/no-confirmar", response_model=None)
 def no_confirmar(
     solicitud_id: int,
     body: NoConfirmarIn,
@@ -73,26 +77,30 @@ def no_confirmar(
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(
-        db, service.no_confirmar(db, solicitud_id, body.motivo, body.comentario, user)
+        db, service.no_confirmar(db, solicitud_id, body.motivo, body.comentario, user), user
     )
 
 
-@router.post("/revertir-no-confirmada", response_model=SolicitudOut)
+@router.post("/revertir-no-confirmada", response_model=None)
 def revertir_no_confirmada(
     solicitud_id: int,
     user: Usuario = Depends(admin_required),
     db: Session = Depends(get_db),
 ):
-    return solicitudes_service.a_out(db, service.revertir_no_confirmada(db, solicitud_id, user))
+    return solicitudes_service.a_out(
+        db, service.revertir_no_confirmada(db, solicitud_id, user), user
+    )
 
 
-@router.patch("/tipo-cambio", response_model=SolicitudOut)
+@router.patch("/tipo-cambio", response_model=None)
 def corregir_tipo_cambio(
     solicitud_id: int,
     body: TipoCambioIn,
-    user: Usuario = Depends(admin_required),
+    user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """v3 (F8e): comprador asignado/gerente_compras en COTIZADA; admin además
+    en CONFIRMADA — los roles los valida el service."""
     return solicitudes_service.a_out(
-        db, service.corregir_tipo_cambio(db, solicitud_id, body.tipo_cambio, user)
+        db, service.corregir_tipo_cambio(db, solicitud_id, body.tipo_cambio, user), user
     )

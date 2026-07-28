@@ -88,7 +88,7 @@ def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
         borrador es privado del vendedor hasta que lo envía)
       - admin: sin filtro
     """
-    from sqlalchemy import false
+    from sqlalchemy import false, or_
 
     from app.models.solicitud import Estado, Solicitud
 
@@ -100,9 +100,11 @@ def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:
         return stmt.where(Solicitud.comprador_id == user.id)
     if user.rol in (Rol.DIRECTOR_VENTAS, Rol.GERENTE_COMPRAS):
         return stmt.where(Solicitud.estado != Estado.BORRADOR)
-    # gerente_sucursal
+    # gerente_sucursal: su sucursal sin BORRADOR *ajenos* — los borradores
+    # PROPIOS sí (v3, F8e: el gerente crea y envía sus solicitudes).
     if user.sucursal_id is None:
         return stmt.where(false())
     return stmt.where(
-        Solicitud.estado != Estado.BORRADOR, Solicitud.sucursal_id == user.sucursal_id
+        Solicitud.sucursal_id == user.sucursal_id,
+        or_(Solicitud.estado != Estado.BORRADOR, Solicitud.vendedor_id == user.id),
     )

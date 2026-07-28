@@ -95,8 +95,20 @@ def test_partidas_numeradas_por_backend(client, entorno, auth_headers):
     assert nums == [1, 2, 3]
 
 
-def test_crear_no_vendedor_403(client, entorno, auth_headers):
-    for usuario in (entorno.comp_a, entorno.ger_suc_a, entorno.admin):
+def test_crear_roles_v3(client, entorno, auth_headers):
+    # v3 (F8e): el gerente_sucursal SÍ crea — la solicitud nace con
+    # vendedor_id = ÉL MISMO (figura como vendedor, sin elegir a otro).
+    r = client.post(
+        BASE,
+        headers=auth_headers(entorno.ger_suc_a),
+        json={"cliente": "X", "partidas": [PARTIDA]},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["vendedor_id"] == entorno.ger_suc_a.id
+    assert r.json()["sucursal_id"] == entorno.ger_suc_a.sucursal_id
+    # Comprador y admin siguen sin crear (la solicitud nace en la sucursal
+    # del creador; el admin no tiene una).
+    for usuario in (entorno.comp_a, entorno.admin):
         r = client.post(
             BASE, headers=auth_headers(usuario), json={"cliente": "X", "partidas": [PARTIDA]}
         )

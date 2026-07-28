@@ -96,7 +96,7 @@ function ModalCorregirTC({
       <Text size="sm">
         TC actual: <b>{solicitud.tipo_cambio ?? "—"}</b> · Monto oficial:{" "}
         <b>
-          {solicitud.monto_confirmado !== null ? dinero(solicitud.monto_confirmado, "MXN") : "—"}
+          {solicitud.monto_confirmado != null ? dinero(solicitud.monto_confirmado, "MXN") : "—"}
         </b>
       </Text>
       <NumberInput
@@ -141,6 +141,11 @@ function AccionesCrm() {
 
   const esAdmin = usuario.rol === "admin";
   const esCompras = esAdmin || usuario.rol === "gerente_compras";
+  // v3 (F8e): reasignación INDIVIDUAL — de comprador también para
+  // gerente_compras; de vendedor también para gerente_sucursal (el backend
+  // acota a su sucursal).
+  const reasignaComprador = esCompras;
+  const reasignaVendedor = esAdmin || usuario.rol === "gerente_sucursal";
   const capturable = ["ENVIADA", "EN_PROCESO", "COTIZADA"].includes(solicitud.estado);
   const ganadora = solicitud.opciones.find((o) => o.id === solicitud.opcion_seleccionada_id);
   const corregibleTC =
@@ -167,12 +172,12 @@ function AccionesCrm() {
         Capturar cotización
       </Button>
     ),
-    esAdmin && reasignable && solicitud.comprador_id !== null && (
+    reasignaComprador && reasignable && solicitud.comprador_id !== null && (
       <Button key="rc" variant="light" onClick={() => abrirReasignar("comprador")}>
         Reasignar comprador
       </Button>
     ),
-    esAdmin && reasignable && (
+    reasignaVendedor && reasignable && (
       <Button key="rv" variant="light" onClick={() => abrirReasignar("vendedor")}>
         Reasignar vendedor
       </Button>

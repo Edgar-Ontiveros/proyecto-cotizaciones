@@ -78,6 +78,12 @@ def test_seed_idempotente_y_conteos_exactos(db):
     assert confirmada.moneda_confirmada == Moneda.MXN
     assert confirmada.confirmado_en is not None
 
+    # v3 (F8e): la cotizada con USD trae el TC que el comprador capturó al
+    # cotizar (18.50); las 100% MXN quedan sin TC.
+    cotizadas = list(db.scalars(select(Solicitud).where(Solicitud.estado == Estado.COTIZADA)))
+    tcs = sorted((s.tipo_cambio for s in cotizadas), key=lambda t: t is not None)
+    assert tcs[0] is None and tcs[1] == Decimal("18.5000")
+
     # Renglón rico (F8b): la cotizada MXN trae UN renglón alternativa (con
     # descripción y precio) y UN no-encontrado; proveedor POR RENGLÓN; el
     # total de esa opción excluye al no-encontrado (120 KG × 94.80).

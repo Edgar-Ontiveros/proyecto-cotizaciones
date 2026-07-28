@@ -68,6 +68,21 @@ export const ROLES_GESTIONABLES: Record<string, string[]> = {
 /** Roles que exigen sucursal en el alta/edición. */
 export const ROLES_CON_SUCURSAL = ["vendedor", "gerente_sucursal"];
 
+/** Etiquetas de UI de los roles (F8e): director_ventas se MUESTRA como
+ * "Director Comercial" en todo el frontend; el enum del backend NO cambia. */
+export const ETIQUETA_ROL: Record<string, string> = {
+  vendedor: "Vendedor",
+  comprador: "Comprador",
+  gerente_sucursal: "Gerente de sucursal",
+  gerente_compras: "Gerente de compras",
+  director_ventas: "Director Comercial",
+  admin: "Admin",
+};
+
+export function etiquetaRol(rol: string): string {
+  return ETIQUETA_ROL[rol] ?? rol;
+}
+
 /** Base de rutas de solicitudes según dónde está montada la vista: las vistas
  * de vendedor se REUSAN bajo /crm (F8d) y sus navegaciones internas deben
  * quedarse en su mundo. */

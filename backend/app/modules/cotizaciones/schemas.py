@@ -41,8 +41,17 @@ class OpcionIn(BaseModel):
 
 
 class SeleccionIn(BaseModel):
+    """v3 (F8e): la selección YA NO lleva tipo de cambio — usa el TC que el
+    COMPRADOR guardó al cotizar."""
+
     letra: Letra
-    # Obligatorio si la opción tiene renglones USD; prohibido si es 100% MXN.
+
+
+class CotizarIn(BaseModel):
+    """Body de cotizar (F8e): el COMPRADOR captura el TC al marcar completa.
+    Obligatorio si alguna opción tiene renglones USD; prohibido si todo es
+    MXN."""
+
     tipo_cambio: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=4)
 
 
@@ -52,7 +61,8 @@ class NoConfirmarIn(BaseModel):
 
 
 class TipoCambioIn(BaseModel):
-    """Corrección administrativa del TC de una CONFIRMADA con USD (F8d)."""
+    """Corrección del TC (F8e): comprador asignado y gerente_compras en
+    COTIZADA; admin además en CONFIRMADA."""
 
     tipo_cambio: Decimal = Field(gt=0, max_digits=10, decimal_places=4)
 
@@ -82,17 +92,29 @@ class RenglonCompradorOut(RenglonOut):
 
 
 class OpcionOut(BaseModel):
+    """Vista del VENDEDOR: subtotales por moneda, SIN consolidado — la clave
+    no existe en su JSON (F8e, patrón proveedor)."""
+
     id: int
     letra: Letra
     vigencia: date | None
     comentarios: str | None
-    # Subtotales POR MONEDA (F8c): jamás se suman entre sí en el backend; el
-    # consolidado solo nace al confirmar, con tipo de cambio explícito.
+    # Subtotales POR MONEDA (F8c): jamás se suman entre sí sin TC explícito.
     total_mxn: Decimal
     total_usd: Decimal
     completa: bool
     renglones: list[RenglonOut]
 
 
-class OpcionCompradorOut(OpcionOut):
+class OpcionConsolidadoOut(OpcionOut):
+    """Gerentes de ventas (gerente_sucursal, director): agrega el consolidado
+    MXN de la opción (total_mxn + total_usd × TC del comprador, F8e); None si
+    hay USD sin TC (datos viejos)."""
+
+    consolidado_mxn: Decimal | None = None
+
+
+class OpcionCompradorOut(OpcionConsolidadoOut):
+    """Comprador, gerente_compras y admin: consolidado + proveedor."""
+
     renglones: list[RenglonCompradorOut]  # type: ignore[assignment]

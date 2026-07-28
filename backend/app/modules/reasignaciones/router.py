@@ -12,7 +12,6 @@ from app.modules.reasignaciones.schemas import (
     ReasignarVendedorIn,
 )
 from app.modules.solicitudes import service as solicitudes_service
-from app.modules.solicitudes.schemas import SolicitudOut
 
 router = APIRouter(tags=["reasignaciones"])
 
@@ -22,7 +21,7 @@ compras_required = require_roles(Rol.ADMIN, Rol.GERENTE_COMPRAS)
 ventas_required = require_roles(Rol.ADMIN, Rol.DIRECTOR_VENTAS, Rol.GERENTE_SUCURSAL)
 
 
-@router.post("/solicitudes/{solicitud_id}/reasignar-comprador", response_model=SolicitudOut)
+@router.post("/solicitudes/{solicitud_id}/reasignar-comprador", response_model=None)
 def reasignar_comprador(
     solicitud_id: int,
     body: ReasignarCompradorIn,
@@ -30,11 +29,11 @@ def reasignar_comprador(
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(
-        db, service.reasignar_comprador(db, solicitud_id, body.comprador_id, user)
+        db, service.reasignar_comprador(db, solicitud_id, body.comprador_id, user), user
     )
 
 
-@router.post("/solicitudes/{solicitud_id}/reasignar-vendedor", response_model=SolicitudOut)
+@router.post("/solicitudes/{solicitud_id}/reasignar-vendedor", response_model=None)
 def reasignar_vendedor(
     solicitud_id: int,
     body: ReasignarVendedorIn,
@@ -42,7 +41,7 @@ def reasignar_vendedor(
     db: Session = Depends(get_db),
 ):
     return solicitudes_service.a_out(
-        db, service.reasignar_vendedor(db, solicitud_id, body.vendedor_id, user)
+        db, service.reasignar_vendedor(db, solicitud_id, body.vendedor_id, user), user
     )
 
 

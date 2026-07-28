@@ -195,7 +195,12 @@ export function useCotizar(id: number) {
   return useMutation({
     // La vista mapea los faltantes al formulario: sin toast global (F8d).
     meta: { errorManejado: true },
-    mutationFn: () => api<SolicitudOut>(`/solicitudes/${id}/cotizar`, { method: "POST" }),
+    // v3 (F8e): el comprador captura el TC al cotizar cuando hay USD.
+    mutationFn: (tipoCambio?: string) =>
+      api<SolicitudOut>(`/solicitudes/${id}/cotizar`, {
+        method: "POST",
+        body: tipoCambio !== undefined ? { tipo_cambio: tipoCambio } : undefined,
+      }),
     onSuccess: () => invalidar(id),
   });
 }
@@ -203,7 +208,8 @@ export function useCotizar(id: number) {
 export function useSeleccionar(id: number) {
   const invalidar = useInvalidarSolicitudes();
   return useMutation({
-    mutationFn: (body: { letra: Letra; tipo_cambio: string | null }) =>
+    // v3 (F8e): selección SIMPLE — sin tipo de cambio.
+    mutationFn: (body: { letra: Letra }) =>
       api<SolicitudOut>(`/solicitudes/${id}/seleccionar`, { method: "POST", body }),
     onSuccess: () => invalidar(id),
   });

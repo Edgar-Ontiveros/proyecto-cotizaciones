@@ -87,11 +87,11 @@ Partidas: `num_partida` (auto), `codigo_sap` (opcional; "SERVICIO" cuando no hay
 
 | Rol | Área · alcance | Ve | Hace |
 |---|---|---|---|
-| `vendedor` | Ventas · propio | Solo SUS solicitudes | Crear/editar/enviar/reenviar/cancelar, seleccionar opción (TC si hay USD), marcar no confirmada |
-| `comprador` | Compras · asignadas | Las asignadas, CON proveedor | Tomar, capturar renglón rico, completar, rechazar con motivo, corregir cotizadas |
-| `gerente_sucursal` | Ventas · su sucursal (exige `sucursal_id`; sin BORRADOR ajenos; sin proveedor) | Su sucursal | Acciones de LADO VENTAS en su sucursal + administra VENDEDORES de su sucursal (crear/editar/reset/baja segura/reasignar). Nada de compras ni métricas de compradores |
-| `gerente_compras` | Compras · global | Todo CON proveedor/costos, métricas de compras (% no encontrados incluido), territorios | Ejecuta el lado COMPRAS sobre cualquier solicitud (F8c.1: tomar/capturar/cotizar/corregir/rechazar; el ciclo se atribuye al comprador ASIGNADO, el historial registra al ejecutor) + administra COMPRADORES (CRUD, bajas, titularidades, reasignaciones). No ve métricas por vendedor |
-| `director_ventas` | Ventas · global | Todo ventas SIN proveedor ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas) y gerentes_sucursal |
+| `vendedor` | Ventas · propio | Solo SUS solicitudes; SIN tipo_cambio/monto_confirmado/consolidados (F8e: claves inexistentes en su JSON; ganadora en subtotales por moneda) | Crear/editar/enviar/reenviar/cancelar, seleccionar opción (SIMPLE, sin TC), marcar no confirmada |
+| `comprador` | Compras · asignadas | Las asignadas, CON proveedor y consolidados | Tomar, capturar renglón rico, completar CAPTURANDO el TC si hay USD (F8e), corregir TC en COTIZADA, rechazar con motivo, corregir cotizadas |
+| `gerente_sucursal` | Ventas · su sucursal (exige `sucursal_id`; sin BORRADOR ajenos; sin proveedor) | Su sucursal | Acciones de LADO VENTAS en su sucursal + CREA/ENVÍA solicitudes (v3: nacen con él como vendedor; ve sus borradores propios) + reasignación individual/masiva entre SUS vendedores + administra VENDEDORES de su sucursal. Nada de compras ni métricas de compradores |
+| `gerente_compras` | Compras · global | Todo CON proveedor/costos, métricas de compras (% no encontrados incluido), territorios | Ejecuta el lado COMPRAS sobre cualquier solicitud (tomar/capturar/cotizar con TC/corregir TC en COTIZADA/rechazar; ciclo atribuido al comprador ASIGNADO, historial con el ejecutor) + reasignación individual/masiva de compradores + administra COMPRADORES. No ve métricas por vendedor |
+| `director_ventas` (UI: “Director Comercial”) | Ventas · global | Todo ventas SIN proveedor ni métricas de compradores | Acciones de ventas sobre cualquier solicitud + administra vendedores (todas) y gerentes_sucursal |
 | `admin` | Todo | Todo | Control absoluto; ÚNICO que gestiona gerente_compras, director_ventas y admins |
 
 - **Matriz de gestión como dato** (`usuarios/service.MATRIZ_GESTION`); NADIE se cambia a sí mismo rol ni activo. Sin registro público.
@@ -100,7 +100,7 @@ Partidas: `num_partida` (auto), `codigo_sap` (opcional; "SERVICIO" cuando no hay
 
 ## Dinero y medición (resumen — especificación §4.7–4.9)
 
-- **Monto confirmado** (F8c) = CONSOLIDADO EN MXN de la opción seleccionada: total_mxn + total_usd × tipo_cambio (obligatorio si hay USD; prohibido si es 100% MXN). **Referencia** de una COTIZADA = subtotales MXN/USD de la opción A, por moneda separada.
+- **TC v3 (F8e)**: lo captura el COMPRADOR al cotizar (obligatorio con USD, prohibido sin; 422 exactos); el consolidado POR OPCIÓN existe desde COTIZADA para roles autorizados; la selección del vendedor es SIMPLE (usa el TC guardado). **Monto confirmado** = consolidado MXN de la ganadora. El VENDEDOR jamás ve TC/consolidados (claves excluidas del schema). **Referencia** de una COTIZADA = subtotales MXN/USD de la opción A; para el vendedor en CONFIRMADA, de la ganadora.
 - Bandas por ciclo (ENVIADA/reenvío → COTIZADA|RECHAZADA) en horas hábiles de la **zona horaria de la sucursal**: esperada ≤1 día hábil, normal ≤2, lenta >2 (alerta a administración al iniciar el 3er día).
 - Horario hábil: L–V 08:00–18:00, sábado 08:00–13:00, menos `dias_festivos`. Toda esta aritmética vive ÚNICAMENTE en `core/horario_habil.py`.
 

@@ -10,7 +10,7 @@ import { esRolCrm, menuDe } from "./menu";
 
 const TITULO_ROL: Record<string, string> = {
   admin: "Administración",
-  director_ventas: "Dirección de ventas",
+  director_ventas: "Dirección Comercial", // etiqueta de UI (F8e); el enum no cambia
   gerente_compras: "Gerencia de compras",
   gerente_sucursal: "Gerencia de sucursal",
 };

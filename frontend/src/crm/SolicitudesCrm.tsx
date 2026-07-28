@@ -10,6 +10,7 @@ import { useNavigate } from "react-router";
 
 import { useSolicitudes } from "../api/hooks";
 import { descargarExport, useFiltrosCatalogo } from "../api/crmHooks";
+import { useAuth } from "../auth/AuthContext";
 import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../components/filtrosListado";
 import { ApiError } from "../lib/api";
@@ -30,6 +31,7 @@ const ESTADOS = [
 
 export function SolicitudesCrm() {
   const navigate = useNavigate();
+  const { usuario } = useAuth();
   const listado = useFiltrosListado();
   const { pagina, setPagina } = listado;
   const { data: catalogos } = useFiltrosCatalogo();
@@ -78,9 +80,18 @@ export function SolicitudesCrm() {
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Solicitudes</Title>
-        <Button variant="light" loading={exportando} onClick={exportar}>
-          Exportar a Excel
-        </Button>
+        <Group gap="sm">
+          {usuario?.rol === "gerente_sucursal" && (
+            // v3 (F8e): el gerente crea solicitudes — nacen con ÉL como
+            // vendedor, en su sucursal.
+            <Button color="acento.6" onClick={() => navigate("/crm/nueva")}>
+              Nueva solicitud
+            </Button>
+          )}
+          <Button variant="light" loading={exportando} onClick={exportar}>
+            Exportar a Excel
+          </Button>
+        </Group>
       </Group>
       <Group mb={4} gap="sm">
         <Select

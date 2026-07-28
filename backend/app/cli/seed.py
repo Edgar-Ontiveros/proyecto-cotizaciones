@@ -488,7 +488,13 @@ def _demo_solicitudes(db: Session) -> int:
                     ),
                     comprador,
                 )
-            cotizar(db, solicitud.id, comprador)
+            # v3 (F8e): el comprador captura el TC al cotizar cuando hay USD.
+            hay_usd = any(
+                datos.get("moneda") == Moneda.USD
+                for _, renglones in OPCIONES_DEMO[flujo]
+                for datos in renglones
+            )
+            cotizar(db, solicitud.id, comprador, Decimal("18.50") if hay_usd else None)
             if flujo == "confirmada":
                 seleccionar(db, solicitud.id, Letra.B, vendedor)
             elif flujo == "no_confirmada":

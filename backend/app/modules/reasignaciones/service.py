@@ -101,6 +101,14 @@ def reasignar_vendedor(
     db: Session, solicitud_id: int, vendedor_id: int, admin: Usuario
 ) -> Solicitud:
     destino = validar_destino(db, vendedor_id, Rol.VENDEDOR, "vendedor_invalido")
+    if admin.rol == Rol.GERENTE_SUCURSAL and destino.sucursal_id != admin.sucursal_id:
+        # v3 (F8e): el gerente solo reasigna ENTRE vendedores de SU sucursal
+        # (una solicitud ajena ya es 404 por el scoping).
+        raise AppError(
+            403,
+            "Un gerente de sucursal solo reasigna hacia vendedores de SU sucursal",
+            "gestion_no_permitida",
+        )
     solicitud = obtener_scoped(db, solicitud_id, admin, for_update=True)
     if solicitud.estado in ESTADOS_TERMINALES:
         raise AppError(

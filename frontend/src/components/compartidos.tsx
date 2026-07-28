@@ -67,7 +67,9 @@ export function FolioCliente({ folio, cliente }: { folio: string | null; cliente
 /** Monto de la fila del listado (F8c): confirmado CONSOLIDADO en MXN si
  * existe; si no, la REFERENCIA por moneda ("MX$ … + US$ …") con "ref.". */
 export function MontoSolicitud({ solicitud }: { solicitud: SolicitudOut }) {
-  if (solicitud.monto_confirmado !== null && solicitud.moneda_confirmada !== null) {
+  // F8e: para el rol vendedor el consolidado NO llega (claves ausentes) —
+  // cae a la referencia por moneda original (ganadora en CONFIRMADA).
+  if (solicitud.monto_confirmado != null && solicitud.moneda_confirmada != null) {
     return <Dinero monto={solicitud.monto_confirmado} moneda={solicitud.moneda_confirmada} />;
   }
   const partes = [

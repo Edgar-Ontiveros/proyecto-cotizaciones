@@ -30,7 +30,7 @@ import {
 import { useAuth } from "../../auth/AuthContext";
 import { PAGE } from "../../components/filtrosListado";
 import { ApiError } from "../../lib/api";
-import { ROLES_CON_SUCURSAL, ROLES_GESTIONABLES } from "../../lib/crm";
+import { ROLES_CON_SUCURSAL, ROLES_GESTIONABLES, etiquetaRol } from "../../lib/crm";
 import type { UsuarioOut } from "../../lib/types";
 import { opcionesSelect } from "../FiltrosDashboard";
 import { ModalBajaSegura } from "./BajaSegura";
@@ -117,7 +117,7 @@ function FormUsuario({
       <TextInput label="Email" value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
       <Select
         label="Rol"
-        data={rolesPermitidos}
+        data={rolesPermitidos.map((r) => ({ value: r, label: etiquetaRol(r) }))}
         value={rol}
         onChange={setRol}
         disabled={existente !== null && gestorRol !== "admin"}
@@ -228,7 +228,7 @@ export function UsuariosCrm() {
         {rolesPermitidos.length > 1 && (
           <Select
             placeholder="Rol"
-            data={rolesPermitidos}
+            data={rolesPermitidos.map((r) => ({ value: r, label: etiquetaRol(r) }))}
             value={rol}
             onChange={(v) => {
               setRol(v);
@@ -276,7 +276,7 @@ export function UsuariosCrm() {
         columns={[
           { accessor: "nombre", title: "Nombre" },
           { accessor: "email", title: "Email" },
-          { accessor: "rol", title: "Rol" },
+          { accessor: "rol", title: "Rol", render: (u) => etiquetaRol(u.rol) },
           {
             accessor: "activo",
             title: "Estatus",

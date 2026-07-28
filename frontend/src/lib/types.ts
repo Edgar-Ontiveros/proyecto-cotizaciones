@@ -64,8 +64,10 @@ export interface SolicitudOut {
   sucursal_id: number;
   notas: string | null;
   opcion_seleccionada_id: number | null;
-  monto_confirmado: string | null;
-  moneda_confirmada: Moneda | null;
+  // F8e: para el rol VENDEDOR estas claves NO llegan (el backend las excluye
+  // del schema); para el resto sí. Por eso son opcionales.
+  monto_confirmado?: string | null;
+  moneda_confirmada?: Moneda | null;
   motivo_no_confirmada: string | null;
   creado_en: string;
   enviado_en: string | null;
@@ -74,11 +76,12 @@ export interface SolicitudOut {
   banda: Banda | null;
   dias_transcurridos: number | null;
   horas_habiles: number | null;
-  // Referencia (F8c): SUBTOTALES por moneda de la opción A, solo COTIZADA.
+  // Referencia: SUBTOTALES por moneda — opción A en COTIZADA; para el
+  // vendedor también la GANADORA en CONFIRMADA (F8e).
   referencia_mxn: string | null;
   referencia_usd: string | null;
-  // TC usado al confirmar (solo si la ganadora tenía USD).
-  tipo_cambio: string | null;
+  // TC capturado por el COMPRADOR al cotizar (F8e); ausente para vendedor.
+  tipo_cambio?: string | null;
 }
 
 export type Unidad = "PZ" | "KG" | "TON" | "MTS" | "M2";
@@ -112,6 +115,9 @@ export interface OpcionOut {
   total_mxn: string;
   total_usd: string;
   completa: boolean;
+  // Consolidado MXN por opción (F8e): SOLO para roles autorizados; para el
+  // vendedor la clave no llega.
+  consolidado_mxn?: string | null;
   renglones: RenglonOut[];
 }
 

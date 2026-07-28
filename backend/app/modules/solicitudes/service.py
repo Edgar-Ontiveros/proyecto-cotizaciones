@@ -20,6 +20,7 @@ from app.modules.solicitudes.schemas import (
     HistorialOut,
     PartidaIn,
     PartidaOut,
+    SolicitudConsolidadoOut,
     SolicitudCreate,
     SolicitudOut,
 )
@@ -267,29 +268,39 @@ def listar(
     return [(fila[0], fila[1]) for fila in filas], total
 
 
-def a_out(db: Session, solicitud: Solicitud, cliente_nombre: str | None = None) -> SolicitudOut:
+def a_out(
+    db: Session, solicitud: Solicitud, user: Usuario, cliente_nombre: str | None = None
+) -> SolicitudOut:
+    """Serialización POR ROL (F8e, patrón proveedor): para el VENDEDOR las
+    claves de dinero consolidado (monto_confirmado, moneda_confirmada,
+    tipo_cambio) NO EXISTEN; el resto de roles recibe el schema completo."""
     if cliente_nombre is None:
         cliente_nombre = cliente_nombre_de(db, solicitud)
-    return SolicitudOut(
-        id=solicitud.id,
-        folio=solicitud.folio,
-        estado=solicitud.estado,
-        prioridad=solicitud.prioridad,
-        cliente_id=solicitud.cliente_id,
-        cliente_nombre=cliente_nombre,
-        vendedor_id=solicitud.vendedor_id,
-        comprador_id=solicitud.comprador_id,
-        sucursal_id=solicitud.sucursal_id,
-        notas=solicitud.notas,
-        opcion_seleccionada_id=solicitud.opcion_seleccionada_id,
+    datos: dict[str, object] = {
+        "id": solicitud.id,
+        "folio": solicitud.folio,
+        "estado": solicitud.estado,
+        "prioridad": solicitud.prioridad,
+        "cliente_id": solicitud.cliente_id,
+        "cliente_nombre": cliente_nombre,
+        "vendedor_id": solicitud.vendedor_id,
+        "comprador_id": solicitud.comprador_id,
+        "sucursal_id": solicitud.sucursal_id,
+        "notas": solicitud.notas,
+        "opcion_seleccionada_id": solicitud.opcion_seleccionada_id,
+        "motivo_no_confirmada": solicitud.motivo_no_confirmada,
+        "creado_en": solicitud.creado_en,
+        "enviado_en": solicitud.enviado_en,
+        "cotizado_en": solicitud.cotizado_en,
+        "confirmado_en": solicitud.confirmado_en,
+    }
+    if user.rol == Rol.VENDEDOR:
+        return SolicitudOut(**datos)
+    return SolicitudConsolidadoOut(
+        **datos,
         monto_confirmado=solicitud.monto_confirmado,
         moneda_confirmada=solicitud.moneda_confirmada,
         tipo_cambio=solicitud.tipo_cambio,
-        motivo_no_confirmada=solicitud.motivo_no_confirmada,
-        creado_en=solicitud.creado_en,
-        enviado_en=solicitud.enviado_en,
-        cotizado_en=solicitud.cotizado_en,
-        confirmado_en=solicitud.confirmado_en,
     )
 
 
