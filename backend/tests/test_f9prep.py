@@ -115,7 +115,7 @@ def test_historial_eventos_normales_sin_redactar(client, entorno, auth_headers):
 
 
 def test_seed_produccion_conteos_y_cero_demos(db):
-    conteos, temporales = seed_produccion(db)
+    conteos = seed_produccion(db)
     assert conteos == {
         "sucursales": 11,
         "motivos_rechazo": 5,
@@ -123,20 +123,19 @@ def test_seed_produccion_conteos_y_cero_demos(db):
         "usuarios_reales": 4,
         "usuarios_creados": 4,
     }
-    # Una temporal por usuario nuevo, mostrada una sola vez.
-    assert set(temporales) == {email for _, email, _ in USUARIOS_REALES}
-    assert all(len(p) >= 8 for p in temporales.values())
 
     # Contadores de folio EN CERO en las 11 sucursales.
     assert db.scalar(select(func.count()).select_from(Sucursal)) == 11
     contadores = list(db.scalars(select(FolioCounter.ultimo)))
     assert len(contadores) == 11 and all(u == 0 for u in contadores)
 
-    # SOLO los 4 usuarios reales, con su rol y cambio forzado; cero demos.
+    # SOLO los 4 usuarios reales, con su rol, la temporal FIJA (mini-fase
+    # demo) y cambio forzado; cero demos.
     usuarios = list(db.scalars(select(Usuario)))
     assert len(usuarios) == 4
     assert {u.email for u in usuarios} == {email for _, email, _ in USUARIOS_REALES}
     assert all(u.must_change_password and u.activo for u in usuarios)
+    assert all(verify_password(PASSWORD_DEFAULT, u.password_hash) for u in usuarios)
     roles = {u.email: u.rol for u in usuarios}
     assert roles["eontiveros@herinox.com.mx"] == Rol.ADMIN
     assert roles["fmunoz@herinox.com.mx"] == Rol.ADMIN
@@ -153,10 +152,9 @@ def test_seed_produccion_conteos_y_cero_demos(db):
 def test_seed_produccion_con_demo(db):
     """--con-demo (mini-fase): agrega las DOS cuentas demo con contraseña
     fija y cambio forzado, y al comprador demo como titular de Matriz."""
-    conteos, temporales = seed_produccion(db, con_demo=True)
+    conteos = seed_produccion(db, con_demo=True)
     assert conteos["usuarios_creados"] == 4  # los reales, intactos
     assert conteos["usuarios_demo_creados"] == 2
-    assert len(temporales) == 4  # las demo NO llevan temporal (clave fija)
 
     assert db.scalar(select(func.count()).select_from(Usuario)) == 6
     vendedor = db.scalar(select(Usuario).where(Usuario.email == "vendedor.demo@herinox.demo"))
@@ -181,8 +179,8 @@ def test_seed_produccion_con_demo(db):
     # Segunda corrida CON flag: no duplica ni pisa la contraseña cambiada.
     comprador.password_hash = "hash-cambiado"
     db.commit()
-    conteos2, temporales2 = seed_produccion(db, con_demo=True)
-    assert conteos2["usuarios_demo_creados"] == 0 and temporales2 == {}
+    conteos2 = seed_produccion(db, con_demo=True)
+    assert conteos2["usuarios_demo_creados"] == 0 and conteos2["usuarios_creados"] == 0
     assert db.scalar(select(func.count()).select_from(Usuario)) == 6
     assert (
         db.scalar(
@@ -217,8 +215,8 @@ def test_seed_produccion_con_demo_respeta_titular_existente(db, make_user):
 
 
 def test_seed_produccion_idempotente_sin_pisar_passwords(db):
-    _, primera = seed_produccion(db)
-    assert len(primera) == 4
+    primera = seed_produccion(db)
+    assert primera["usuarios_creados"] == 4
     # Simula que Edgar ya cambió su contraseña.
     edgar = db.scalar(select(Usuario).where(Usuario.email == "eontiveros@herinox.com.mx"))
     assert edgar is not None
@@ -226,9 +224,9 @@ def test_seed_produccion_idempotente_sin_pisar_passwords(db):
     edgar.must_change_password = False
     db.commit()
 
-    conteos, segunda = seed_produccion(db)
-    # Segunda corrida: nada nuevo, ninguna temporal, contraseña INTACTA.
-    assert conteos["usuarios_creados"] == 0 and segunda == {}
+    conteos = seed_produccion(db)
+    # Segunda corrida: nada nuevo y la contraseña cambiada queda INTACTA.
+    assert conteos["usuarios_creados"] == 0
     assert db.scalar(select(func.count()).select_from(Usuario)) == 4
     assert db.scalar(select(func.count()).select_from(Sucursal)) == 11
     assert db.scalar(select(func.count()).select_from(DiaFestivo)) == 14

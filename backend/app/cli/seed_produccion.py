@@ -2,9 +2,9 @@
 
 Puebla SOLO el arranque real: las 11 sucursales (prefijos editables desde el
 CRM) con contadores de folio EN CERO, festivos de ley 2026–27, catálogo de
-motivos de rechazo y los 4 usuarios reales con contraseña temporal
-AUTOGENERADA (se muestra UNA sola vez en la salida del comando; cambio
-forzado al primer uso).
+motivos de rechazo y los 4 usuarios reales con la contraseña temporal FIJA
+Herinox2026! y cambio forzado al primer uso (decisión de Edgar, mini-fase
+demo: sin autogeneración ni impresión de contraseñas).
 
 CERO usuarios demo, CERO solicitudes, CERO titularidades: compradores,
 vendedores y gerentes reales se dan de alta desde el CRM, donde el maestro
@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.cli.seed import DIAS_FESTIVOS, MOTIVOS_RECHAZO, PASSWORD_DEFAULT, SUCURSALES
-from app.core.security import generate_temp_password, hash_password
+from app.core.security import hash_password
 from app.models.catalogos import DiaFestivo, MotivoRechazo
 from app.models.sucursal import CompradorSucursal, FolioCounter, Sucursal
 from app.models.usuario import Rol, Usuario
@@ -80,9 +80,9 @@ def _agregar_demo(db: Session) -> int:
     return creados
 
 
-def run(db: Session, con_demo: bool = False) -> tuple[dict[str, int], dict[str, str]]:
-    """Devuelve (conteos, temporales) — temporales SOLO de los usuarios recién
-    creados en esta corrida; el llamador las imprime una única vez."""
+def run(db: Session, con_demo: bool = False) -> dict[str, int]:
+    """Devuelve los conteos. TODOS los usuarios que crea (reales y demo)
+    entran con la temporal fija Herinox2026! y cambio forzado."""
     for nombre, prefijo, tz in SUCURSALES:
         sucursal = db.scalar(select(Sucursal).where(Sucursal.nombre == nombre))
         if sucursal is None:
@@ -107,33 +107,33 @@ def run(db: Session, con_demo: bool = False) -> tuple[dict[str, int], dict[str, 
         if festivo is None:
             db.add(DiaFestivo(fecha=fecha, descripcion=descripcion))
 
-    temporales: dict[str, str] = {}
+    password_hash = hash_password(PASSWORD_DEFAULT)
+    creados = 0
     for nombre, email, rol in USUARIOS_REALES:
         existente = db.scalar(select(Usuario).where(func.lower(Usuario.email) == email.lower()))
         if existente is not None:
             continue  # idempotencia: jamás se pisa una contraseña ya cambiada
-        password = generate_temp_password()
         db.add(
             Usuario(
                 nombre=nombre,
                 email=email,
-                password_hash=hash_password(password),
+                password_hash=password_hash,
                 rol=rol,
                 activo=True,
                 must_change_password=True,
             )
         )
-        temporales[email] = password
+        creados += 1
 
     conteos = {
         "sucursales": len(SUCURSALES),
         "motivos_rechazo": len(MOTIVOS_RECHAZO),
         "dias_festivos": len(DIAS_FESTIVOS),
         "usuarios_reales": len(USUARIOS_REALES),
-        "usuarios_creados": len(temporales),
+        "usuarios_creados": creados,
     }
     if con_demo:
         # Sin el flag, el comando queda EXACTAMENTE igual (ni la clave existe).
         conteos["usuarios_demo_creados"] = _agregar_demo(db)
     db.commit()
-    return conteos, temporales
+    return conteos

@@ -33,13 +33,9 @@ def main() -> None:
         from app.cli.seed_produccion import run as run_produccion
 
         with SessionLocal() as db:
-            conteos, temporales = run_produccion(db, con_demo=args.con_demo)
-        if temporales:
-            # Contraseñas temporales: se muestran UNA sola vez, aquí.
-            print("\nContraseñas temporales (un solo uso, cambio forzado al entrar):")
-            for email, password in temporales.items():
-                print(f"  {email}: {password}")
-            print()
+            conteos = run_produccion(db, con_demo=args.con_demo)
+        # Temporal FIJA (mini-fase demo): Herinox2026! con cambio forzado —
+        # nada de contraseñas en la salida.
         logger.info("seed_produccion_completado", **conteos)
 
 
