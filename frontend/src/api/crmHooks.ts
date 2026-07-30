@@ -20,6 +20,7 @@ import type {
   SolicitudOut,
   SucursalOut,
   TerritoriosOut,
+  TiemposEtapaOut,
   UsuarioCreadoOut,
   UsuarioListOut,
   UsuarioOut,
@@ -68,6 +69,14 @@ export function useMateriales(params: Params, habilitado = true) {
     queryKey: ["metricas", "materiales", params],
     queryFn: () => api<MaterialesOut>("/metricas/materiales", { params }),
     enabled: habilitado,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useTiemposEtapa(params: Params) {
+  return useQuery({
+    queryKey: ["metricas", "tiempos-etapa", params],
+    queryFn: () => api<TiemposEtapaOut>("/metricas/tiempos-etapa", { params }),
     placeholderData: (prev) => prev,
   });
 }

@@ -7,6 +7,8 @@ from app.core.database import get_db
 from app.core.permissions import get_current_user, require_roles, ve_proveedor
 from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
+from app.modules.archivos import service as archivos_service
+from app.modules.archivos.router import a_comprobante_out
 from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.metricas import ciclos as ciclos_mod
 from app.modules.metricas import tiempos as tiempos_mod
@@ -184,6 +186,7 @@ def detalle_solicitud(
             base.referencia_mxn = mxn or None
             base.referencia_usd = usd or None
     tiempos = tiempos_mod.cargar_tiempos(db, [solicitud.id]).get(solicitud.id)
+    archivo = archivos_service.comprobante_vigente(db, solicitud.id)
     datos = dict(
         **base.model_dump(),
         ciclos=ciclos,
@@ -191,6 +194,7 @@ def detalle_solicitud(
         historial=service.historial_de(db, solicitud.id, user),
         comentarios=service.comentarios_de(db, solicitud.id),
         tiempos=_tiempos_out(tiempos) if tiempos is not None else None,
+        comprobante=a_comprobante_out(db, archivo) if archivo is not None else None,
     )
     if ve_proveedor(user.rol):
         return SolicitudDetailCompradorOut(

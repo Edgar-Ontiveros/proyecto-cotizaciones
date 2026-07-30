@@ -94,6 +94,17 @@ def cotizada_mixta(client, entorno, auth_headers):
         json={"tipo_cambio": "18.5"},
     )
     assert r.status_code == 200, r.text
+    # F8g: confirmar exige comprobante — el fixture lo deja listo.
+    from io import BytesIO
+
+    from app.modules.archivos.service import pdf_minimo
+
+    r = client.post(
+        f"{BASE}/{sid}/comprobante",
+        headers=headers_v,
+        files={"archivo": ("comprobante.pdf", BytesIO(pdf_minimo()), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
     return sid
 
 
@@ -127,7 +138,7 @@ def test_confirmar_usa_tc_del_comprador_y_consolida(client, entorno, cotizada_mi
     assert oficial["tipo_cambio"] == "18.5000"
 
 
-def test_tc_en_opcion_cien_por_ciento_mxn_422(client, entorno, auth_headers):
+def test_tc_en_opcion_cien_por_ciento_mxn_422(client, entorno, auth_headers, con_comprobante):
     headers_v = auth_headers(entorno.vendedor)
     r = client.post(BASE, headers=headers_v, json={"cliente": "DINCO", "partidas": [PARTIDA_PZ]})
     sid = r.json()["id"]
@@ -160,6 +171,7 @@ def test_tc_en_opcion_cien_por_ciento_mxn_422(client, entorno, auth_headers):
         client.post(f"{BASE}/{sid}/cotizar", headers=auth_headers(entorno.comprador)).status_code
         == 200
     )
+    con_comprobante(sid, entorno.vendedor)  # F8g
     # Selección simple; el TC queda vacío para los roles que sí lo ven.
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "A"})
     assert r.status_code == 200 and "tipo_cambio" not in r.json()

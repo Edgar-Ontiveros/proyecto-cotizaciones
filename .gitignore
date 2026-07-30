@@ -24,3 +24,6 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Archivos subidos (F8g): comprobantes en filesystem; F9 lo monta como volumen
+backend/var/

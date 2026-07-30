@@ -476,6 +476,16 @@ def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> 
         raise AppError(403, "Solo el lado ventas selecciona la opción", "forbidden")
     if solicitud.estado != Estado.COTIZADA:
         raise conflicto_estado("seleccionar", solicitud)
+    # F8g (regla de la TRANSICIÓN, no del rol): sin comprobante del cliente
+    # no hay pedido — aplica a todo rol que confirme, también por API directa.
+    from app.modules.archivos.service import comprobante_vigente
+
+    if comprobante_vigente(db, solicitud.id) is None:
+        raise AppError(
+            422,
+            "El pedido requiere el comprobante del cliente antes de confirmar",
+            "comprobante_requerido",
+        )
     opcion = _opcion_o_none(db, solicitud.id, letra)
     if opcion is None:
         raise AppError(

@@ -24,6 +24,8 @@ import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 
 import { useNoConfirmar, useSeleccionar, useSolicitud } from "../../api/hooks";
+import { useAuth } from "../../auth/AuthContext";
+import { DropzoneComprobante } from "../../components/Comprobante";
 import { VolverBoton } from "../../components/Volver";
 import { baseSolicitudes } from "../../lib/crm";
 import { dinero, fecha } from "../../lib/format";
@@ -40,10 +42,12 @@ function CartaOpcion({
   solicitud,
   opcion,
   onConfirmar,
+  confirmarHabilitado,
 }: {
   solicitud: SolicitudDetailOut;
   opcion: OpcionOut;
   onConfirmar: (() => void) | null;
+  confirmarHabilitado: boolean;
 }) {
   const ganadora = solicitud.opcion_seleccionada_id === opcion.id;
   const partidasPorId = new Map(solicitud.partidas.map((p) => [p.id, p]));
@@ -155,7 +159,16 @@ function CartaOpcion({
         </Text>
       )}
       {onConfirmar && (
-        <Button mt="md" color="acento.6" fullWidth onClick={onConfirmar}>
+        // F8g: el botón solo se habilita con el comprobante ya subido (el
+        // backend lo exige de todos modos: 422 comprobante_requerido).
+        <Button
+          mt="md"
+          color="acento.6"
+          fullWidth
+          onClick={onConfirmar}
+          disabled={!confirmarHabilitado}
+          title={confirmarHabilitado ? undefined : "Sube primero el comprobante del cliente"}
+        >
           Confirmar pedido con esta opción
         </Button>
       )}
@@ -191,6 +204,7 @@ export function Comparador() {
   const navigate = useNavigate();
   // La vista se reusa bajo /crm (F8d): las navegaciones se quedan en su base.
   const base = baseSolicitudes(useLocation().pathname);
+  const { usuario } = useAuth();
   const { data: solicitud } = useSolicitud(solicitudId);
   const seleccionar = useSeleccionar(solicitudId);
   const noConfirmar = useNoConfirmar(solicitudId);
@@ -200,7 +214,11 @@ export function Comparador() {
     return <Alert color="yellow">Esta solicitud aún no tiene opciones capturadas.</Alert>;
   }
 
-  const puedeConfirmar = solicitud.estado === "COTIZADA";
+  const ladoVentas =
+    usuario !== null &&
+    ["vendedor", "gerente_sucursal", "director_ventas", "admin"].includes(usuario.rol);
+  const puedeConfirmar = solicitud.estado === "COTIZADA" && ladoVentas;
+  const tieneComprobante = solicitud.comprobante !== null;
 
   const ejecutarConfirmacion = (opcion: OpcionOut) => {
     modals.closeAll();
@@ -278,6 +296,9 @@ export function Comparador() {
           </Button>
         </Group>
       </Group>
+      {puedeConfirmar && (
+        <DropzoneComprobante solicitudId={solicitudId} comprobante={solicitud.comprobante} />
+      )}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(solicitud.opciones.length, 3) }}>
         {solicitud.opciones.map((o) => (
           <CartaOpcion
@@ -285,6 +306,7 @@ export function Comparador() {
             solicitud={solicitud}
             opcion={o}
             onConfirmar={puedeConfirmar ? () => confirmar(o) : null}
+            confirmarHabilitado={tieneComprobante}
           />
         ))}
       </SimpleGrid>

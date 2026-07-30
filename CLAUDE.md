@@ -26,7 +26,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 ### Prohibiciones explícitas
 - NO async en la capa de datos: endpoints `def`, SQLAlchemy sync (async solo para I/O externo real: S3/SES).
 - NO SQLModel, NO axios (wrapper propio sobre fetch), NO Redis/Celery, NO microservicios, NO localStorage/sessionStorage para tokens.
-- NO archivos adjuntos en ninguna parte del sistema.
+- NO archivos adjuntos, con UNA excepción (F8g, req. de dirección): el **comprobante de pedido** — tabla `archivos` + filesystem en `ARCHIVOS_DIR` (default `./var/archivos`, en .gitignore; **F9 debe montarlo como volumen persistente e incluirlo en los backups**). Validación por magic bytes (PDF/JPG/PNG/WebP, 10 MB máx); descarga SIEMPRE autenticada vía endpoint (jamás servir el directorio como estático). Confirmar un pedido exige comprobante vigente (`422 comprobante_requerido`).
 - NO estados materializados que un job "mueva": las bandas de tiempo SIEMPRE se calculan.
 
 ## Estructura del monorepo

@@ -166,6 +166,17 @@ def _confirmada(client, entorno, auth_headers, partidas, renglones_de, tipo_camb
         json={"tipo_cambio": tipo_cambio} if tipo_cambio is not None else None,
     )
     assert r.status_code == 200, r.text
+    # F8g: confirmar exige comprobante.
+    from io import BytesIO
+
+    from app.modules.archivos.service import pdf_minimo
+
+    r = client.post(
+        f"{BASE}/{sid}/comprobante",
+        headers=headers_v,
+        files={"archivo": ("comprobante.pdf", BytesIO(pdf_minimo()), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "A"})
     assert r.status_code == 200, r.text
     return sid

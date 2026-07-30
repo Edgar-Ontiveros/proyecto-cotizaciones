@@ -171,6 +171,18 @@ export interface TiemposOut {
   detenido: boolean;
 }
 
+// F8g: metadatos del comprobante de pedido (el archivo se descarga por
+// endpoint autenticado, jamás por URL estática).
+export interface ComprobanteOut {
+  id: string;
+  nombre_original: string;
+  mime: string;
+  tamano_bytes: number;
+  subido_por: number;
+  subido_por_nombre: string;
+  creado_en: string;
+}
+
 export interface SolicitudDetailOut extends SolicitudOut {
   partidas: PartidaOut[];
   opciones: OpcionOut[];
@@ -178,6 +190,7 @@ export interface SolicitudDetailOut extends SolicitudOut {
   comentarios: ComentarioOut[];
   ciclos: CicloOut[];
   tiempos: TiemposOut | null;
+  comprobante: ComprobanteOut | null;
 }
 
 export interface SolicitudListOut {
@@ -384,6 +397,19 @@ export interface NoEncontradosOut {
   pct: number | null;
   por_comprador: NoEncontradosGrupoOut[];
   top_materiales: MaterialOut[];
+}
+
+// F8f/F8g: /metricas/tiempos-etapa — estadística sobre segmentos CERRADOS.
+export interface EstadisticaTiempoOut {
+  n: number;
+  promedio_horas_habiles: number | null;
+  mediana_horas_habiles: number | null;
+}
+
+export interface TiemposEtapaOut {
+  por_estado: Record<string, EstadisticaTiempoOut>;
+  compras: EstadisticaTiempoOut;
+  ventas: EstadisticaTiempoOut;
 }
 
 export interface OpcionFiltroOut {

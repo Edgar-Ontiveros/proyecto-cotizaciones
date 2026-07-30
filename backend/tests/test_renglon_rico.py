@@ -305,7 +305,7 @@ def test_patch_sigue_prohibido_en_terminales(client, entorno, enviada, auth_head
 # ------------------------------------------------------- monto de referencia
 
 
-def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
+def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers, con_comprobante):
     headers_v = auth_headers(entorno.vendedor)
     # ENVIADA: sin referencia.
     fila = next(
@@ -347,6 +347,7 @@ def test_referencia_solo_en_cotizada(client, entorno, enviada, auth_headers):
     # CONFIRMADA (F8e): el vendedor ve los subtotales de la GANADORA (B:
     # 90×20 + 90×120 = 12,600.00) como referencia; el consolidado NO existe
     # en su JSON.
+    con_comprobante(enviada.id, entorno.vendedor)  # F8g
     r = client.post(f"{BASE}/{enviada.id}/seleccionar", headers=headers_v, json={"letra": "B"})
     assert r.status_code == 200, r.text
     fila = next(

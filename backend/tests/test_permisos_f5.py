@@ -66,6 +66,17 @@ def _cotizada(client, entorno, auth_headers):
     )
     assert r.status_code == 200, r.text
     assert client.post(f"{BASE}/{sid}/cotizar", headers=headers_c).status_code == 200
+    # F8g: confirmar exige comprobante — el helper lo deja listo.
+    from io import BytesIO
+
+    from app.modules.archivos.service import pdf_minimo
+
+    r = client.post(
+        f"{BASE}/{sid}/comprobante",
+        headers=auth_headers(entorno.vendedor),
+        files={"archivo": ("comprobante.pdf", BytesIO(pdf_minimo()), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
     return sid
 
 

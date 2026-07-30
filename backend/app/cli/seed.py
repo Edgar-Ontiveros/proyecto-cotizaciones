@@ -496,6 +496,11 @@ def _demo_solicitudes(db: Session) -> int:
             )
             cotizar(db, solicitud.id, comprador, Decimal("18.50") if hay_usd else None)
             if flujo == "confirmada":
+                # F8g: el pedido no se genera sin comprobante — el demo sube
+                # un PDF mínimo generado en código antes de confirmar.
+                from app.modules.archivos.service import pdf_minimo, subir_comprobante
+
+                subir_comprobante(db, solicitud.id, vendedor, pdf_minimo(), "comprobante-demo.pdf")
                 seleccionar(db, solicitud.id, Letra.B, vendedor)
             elif flujo == "no_confirmada":
                 no_confirmar(

@@ -50,8 +50,9 @@ def test_seed_idempotente_y_conteos_exactos(db):
     }
     # 33 de F3 (12 nacimientos + 21 transiciones) + 18 de F4: los 4 flujos
     # nuevos aportan nacimiento + ENVIADA + EN_PROCESO (auto-toma) + COTIZADA,
-    # y confirmada/no_confirmada un desenlace más cada una.
-    assert db.scalar(select(func.count()).select_from(HistorialEstado)) == 51
+    # y confirmada/no_confirmada un desenlace más cada una. F8g: +1 evento
+    # de==a "Comprobante cargado" en la confirmada.
+    assert db.scalar(select(func.count()).select_from(HistorialEstado)) == 52
     enviadas = db.scalar(
         select(func.count()).select_from(HistorialEstado).where(HistorialEstado.a == Estado.ENVIADA)
     )

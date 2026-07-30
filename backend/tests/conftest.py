@@ -7,12 +7,16 @@ tests).
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 # La URL de tests debe fijarse ANTES de importar la app (el engine se crea al
 # importar app.core.database).
 os.environ.setdefault("JWT_SECRET", "secreto-solo-para-tests")
 os.environ.setdefault("ENV", "test")
+# F8g: los archivos de tests van a un directorio temporal, nunca a
+# ./var/archivos del árbol de trabajo.
+os.environ.setdefault("ARCHIVOS_DIR", tempfile.mkdtemp(prefix="cotizaciones-archivos-tests-"))
 _BASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/cotizaciones"
 )
@@ -164,3 +168,22 @@ def auth_headers(login):
         return {"Authorization": f"Bearer {login(user, password)}"}
 
     return _headers
+
+
+@pytest.fixture
+def con_comprobante(client, auth_headers):
+    """F8g: confirmar exige comprobante — helper para los flujos que llegan a
+    CONFIRMADA (el caso SIN comprobante vive en test_f8g)."""
+    from io import BytesIO
+
+    from app.modules.archivos.service import pdf_minimo
+
+    def _subir(solicitud_id: int, usuario: Usuario) -> None:
+        r = client.post(
+            f"/api/v1/solicitudes/{solicitud_id}/comprobante",
+            headers=auth_headers(usuario),
+            files={"archivo": ("comprobante.pdf", BytesIO(pdf_minimo()), "application/pdf")},
+        )
+        assert r.status_code == 200, r.text
+
+    return _subir

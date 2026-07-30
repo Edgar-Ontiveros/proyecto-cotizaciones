@@ -24,7 +24,7 @@ import {
 } from "recharts";
 
 import { dinero } from "../lib/format";
-import type { NoEncontradosOut, SemanaOut } from "../lib/types";
+import type { NoEncontradosOut, SemanaOut, TiemposEtapaOut } from "../lib/types";
 
 export const AZUL = "#2059A6";
 export const NARANJA = "#F08215";
@@ -239,6 +239,63 @@ export function GraficaBarrasH({
                 fill: TINTA,
                 formatter: (v: unknown) => formatear(Number(v)),
               }}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </Carta>
+  );
+}
+
+const ORDEN_TIEMPOS = ORDEN_EMBUDO;
+
+/** Tiempos por etapa (F8f/addendum F8g): mediana de horas hábiles por estado
+ * sobre segmentos CERRADOS. Pinta SOLO estados con n > 0; el tooltip agrega
+ * promedio y n. */
+export function GraficaTiemposEtapa({ data }: { data: TiemposEtapaOut }) {
+  const filas = ORDEN_TIEMPOS.filter((estado) => (data.por_estado[estado]?.n ?? 0) > 0).map(
+    (estado) => {
+      const e = data.por_estado[estado];
+      return {
+        estado,
+        mediana: e?.mediana_horas_habiles ?? 0,
+        promedio: e?.promedio_horas_habiles ?? 0,
+        n: e?.n ?? 0,
+      };
+    },
+  );
+  return (
+    <Carta titulo="Tiempos por etapa (mediana de horas hábiles, estancias cerradas)">
+      {filas.length === 0 ? (
+        <Text c="dimmed" size="sm">
+          Sin estancias cerradas en el periodo
+        </Text>
+      ) : (
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={filas} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+            <CartesianGrid stroke={REJILLA} vertical={false} />
+            <XAxis
+              dataKey="estado"
+              tick={{ fontSize: 10, fill: TINTA }}
+              tickLine={false}
+              interval={0}
+            />
+            <YAxis tick={{ fontSize: 11, fill: TINTA }} tickLine={false} />
+            <Tooltip
+              formatter={(valor) => [`${Number(valor).toFixed(1)} h`, "Mediana"]}
+              labelFormatter={(estado, punto) => {
+                const p = punto[0]?.payload as (typeof filas)[number] | undefined;
+                return p
+                  ? `${String(estado)} · promedio ${p.promedio.toFixed(1)} h · n=${p.n}`
+                  : String(estado);
+              }}
+            />
+            <Bar
+              dataKey="mediana"
+              name="Mediana (h hábiles)"
+              fill={AZUL}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={40}
             />
           </BarChart>
         </ResponsiveContainer>

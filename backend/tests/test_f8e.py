@@ -118,12 +118,15 @@ def test_consolidado_por_opcion_para_roles_autorizados(client, entorno, auth_hea
         assert clave not in detalle
 
 
-def test_seleccionar_datos_viejos_usd_sin_tc_422(client, db, entorno, auth_headers):
+def test_seleccionar_datos_viejos_usd_sin_tc_422(
+    client, db, entorno, auth_headers, con_comprobante
+):
     sid = _mixta_en_proceso(client, entorno, auth_headers)
     headers_c = auth_headers(entorno.comprador)
     assert (
         client.post(f"{BASE}/{sid}/cotizar", headers=headers_c, json={"tipo_cambio": "18.5"})
     ).status_code == 200
+    con_comprobante(sid, entorno.vendedor)  # F8g: para llegar al check del TC
     # Simula datos pre-F8e: cotizada con USD y sin TC.
     db.execute(Solicitud.__table__.update().where(Solicitud.id == sid).values(tipo_cambio=None))
     db.commit()
@@ -137,7 +140,7 @@ def test_seleccionar_datos_viejos_usd_sin_tc_422(client, db, entorno, auth_heade
 # ------------------------------------------------- PATCH TC v3
 
 
-def test_patch_tc_en_cotizada_por_compras(client, entorno, auth_headers):
+def test_patch_tc_en_cotizada_por_compras(client, entorno, auth_headers, con_comprobante):
     sid = _mixta_en_proceso(client, entorno, auth_headers)
     headers_c = auth_headers(entorno.comprador)
     assert (
@@ -169,6 +172,7 @@ def test_patch_tc_en_cotizada_por_compras(client, entorno, auth_headers):
         )
         assert r.status_code == 403, usuario.rol
     # La selección posterior usa el TC corregido (19.0): 12,000 + 9,500.
+    con_comprobante(sid, entorno.vendedor)  # F8g
     r = client.post(
         f"{BASE}/{sid}/seleccionar", headers=auth_headers(entorno.vendedor), json={"letra": "A"}
     )
@@ -209,7 +213,9 @@ def test_patch_tc_cotizada_cien_mxn_422(client, entorno, auth_headers):
 # ------------------------------------- ausencia de claves para el vendedor
 
 
-def test_vendedor_sin_claves_de_consolidado_en_todas_las_vistas(client, entorno, auth_headers):
+def test_vendedor_sin_claves_de_consolidado_en_todas_las_vistas(
+    client, entorno, auth_headers, con_comprobante
+):
     sid = _mixta_en_proceso(client, entorno, auth_headers)
     headers_c = auth_headers(entorno.comprador)
     headers_v = auth_headers(entorno.vendedor)
@@ -225,6 +231,7 @@ def test_vendedor_sin_claves_de_consolidado_en_todas_las_vistas(client, entorno,
         assert "consolidado_mxn" not in opcion
 
     # Respuesta de la selección + listado y detalle en CONFIRMADA.
+    con_comprobante(sid, entorno.vendedor)  # F8g
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "A"})
     assert r.status_code == 200
     for clave in CLAVES_CONSOLIDADO:

@@ -26,6 +26,7 @@ import {
   Dinero,
   SemaforoBanda,
 } from "../../components/compartidos";
+import { SeccionComprobante } from "../../components/Comprobante";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { baseSolicitudes } from "../../lib/crm";
@@ -339,6 +340,7 @@ export function DetalleSolicitud() {
 
       <Title order={5}>Partidas</Title>
       <TablaPartidas solicitud={solicitud} />
+      <SeccionComprobante solicitudId={solicitud.id} comprobante={solicitud.comprobante} />
       <BloqueTiempos tiempos={solicitud.tiempos} />
       <HistorialComentarios solicitud={solicitud} />
     </Stack>

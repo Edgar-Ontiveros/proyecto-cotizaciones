@@ -108,6 +108,18 @@ def cotizada(client, entorno, enviada, auth_headers):
     assert r.status_code == 200, r.text
     r = client.post(f"{BASE}/{enviada.id}/cotizar", headers=headers)
     assert r.status_code == 200, r.text
+    # F8g: confirmar exige comprobante — el fixture lo deja listo (el caso
+    # SIN comprobante vive en test_f8g).
+    from io import BytesIO
+
+    from app.modules.archivos.service import pdf_minimo
+
+    r = client.post(
+        f"{BASE}/{enviada.id}/comprobante",
+        headers=auth_headers(entorno.vendedor),
+        files={"archivo": ("comprobante.pdf", BytesIO(pdf_minimo()), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
     return enviada
 
 
@@ -528,6 +540,17 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         },
     )
     assert r.status_code == 200  # corrección post-cotización
+    # F8g: sin comprobante no hay pedido — el vendedor lo sube antes.
+    from io import BytesIO
+
+    from app.modules.archivos.service import pdf_minimo
+
+    r = client.post(
+        f"{BASE}/{sid}/comprobante",
+        headers=headers_v,
+        files={"archivo": ("orden.pdf", BytesIO(pdf_minimo()), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
     # v3 (F8e): el TC lo capturó el COMPRADOR al cotizar; la selección del
     # vendedor es SIMPLE y su JSON no trae consolidado (patrón proveedor).
     r = client.post(f"{BASE}/{sid}/seleccionar", headers=headers_v, json={"letra": "B"})
@@ -548,6 +571,7 @@ def test_ciclo_completo_f4(client, entorno, enviada, auth_headers):
         ("ENVIADA", "EN_PROCESO"),  # auto-toma en el primer PUT
         ("EN_PROCESO", "COTIZADA"),
         ("COTIZADA", "COTIZADA"),  # corrección del comprador
+        ("COTIZADA", "COTIZADA"),  # F8g: comprobante cargado
         ("COTIZADA", "CONFIRMADA"),
     ]
     # El comprador ya no puede tocar nada.

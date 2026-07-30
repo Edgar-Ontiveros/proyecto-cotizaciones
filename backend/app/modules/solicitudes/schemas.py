@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
 from app.models.solicitud import Estado, Prioridad, UnidadCatalogo
+from app.modules.archivos.schemas import ComprobanteOut
 from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionConsolidadoOut, OpcionOut
 from app.modules.metricas.schemas import CicloOut, TiemposOut
 
@@ -126,6 +127,8 @@ class SolicitudDetailOut(SolicitudOut):
     # F8f: segmentos por estado + agregados general/compras/ventas. Aquí no
     # hay dinero: lo ve TODO rol con acceso a la solicitud.
     tiempos: TiemposOut | None = None
+    # F8g: metadatos del comprobante de pedido (todos los involucrados).
+    comprobante: ComprobanteOut | None = None
 
 
 class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
@@ -138,6 +141,7 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
     comentarios: list[ComentarioOut]
     ciclos: list[CicloOut] = []
     tiempos: TiemposOut | None = None
+    comprobante: ComprobanteOut | None = None
 
 
 class SolicitudDetailCompradorOut(SolicitudDetailVentasOut):
