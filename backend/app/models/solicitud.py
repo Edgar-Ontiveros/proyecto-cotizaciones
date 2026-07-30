@@ -85,6 +85,10 @@ class Solicitud(Base):
     # solo puede cambiarse mientras es BORRADOR; al enviarse notifica además
     # a los gerentes de compras y al gerente de la sucursal.
     es_proyecto: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
+    # F8h: hay un cambio de cantidad/unidad PENDIENTE (materializado; se
+    # mantiene bajo el FOR UPDATE de la solicitud). Bloquea confirmar,
+    # corregir opciones y editar hasta resolverse.
+    cambio_pendiente: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
 
     # Confirmación (F4/F8c): opción ganadora y monto oficial CONSOLIDADO en
     # MXN (total_mxn + total_usd × tipo_cambio); moneda_confirmada queda fija

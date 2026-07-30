@@ -40,6 +40,7 @@ import {
   useRechazar,
   useSolicitud,
 } from "../../api/hooks";
+import { BannerCambioComprador } from "../../components/Cambios";
 import { BadgeEstado, SemaforoBanda } from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
@@ -709,7 +710,8 @@ export function CapturaCotizacion() {
         </Group>
       </Group>
 
-      {correccion && (
+      <BannerCambioComprador solicitud={solicitud} />
+      {correccion && !solicitud.cambio_pendiente && (
         <Alert color="orange" title="Estás corrigiendo una cotización ya publicada">
           <Group justify="space-between">
             <Text size="sm">Cada cambio guardado notifica al vendedor.</Text>

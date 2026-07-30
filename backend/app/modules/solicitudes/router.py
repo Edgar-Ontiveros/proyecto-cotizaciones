@@ -9,6 +9,7 @@ from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
 from app.modules.archivos import service as archivos_service
 from app.modules.archivos.router import a_comprobante_out
+from app.modules.cambios import service as cambios_service
 from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.metricas import ciclos as ciclos_mod
 from app.modules.metricas import tiempos as tiempos_mod
@@ -195,6 +196,7 @@ def detalle_solicitud(
         comentarios=service.comentarios_de(db, solicitud.id),
         tiempos=_tiempos_out(tiempos) if tiempos is not None else None,
         comprobante=a_comprobante_out(db, archivo) if archivo is not None else None,
+        cambios=cambios_service.cambios_de(db, solicitud.id),
     )
     if ve_proveedor(user.rol):
         return SolicitudDetailCompradorOut(

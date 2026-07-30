@@ -59,6 +59,9 @@ export interface SolicitudOut {
   prioridad: Prioridad;
   // F8f: solicitud de PROYECTO — badge en listados/cola/detalle/CRM.
   es_proyecto: boolean;
+  // F8h: cambio de cantidad/unidad pendiente de aprobación (bloquea
+  // confirmar/corregir/editar).
+  cambio_pendiente: boolean;
   cliente_id: number | null;
   cliente_nombre: string | null;
   vendedor_id: number;
@@ -183,6 +186,33 @@ export interface ComprobanteOut {
   creado_en: string;
 }
 
+// F8h: cambios de cantidad/unidad post-cotización.
+export type EstadoCambio = "PENDIENTE" | "APROBADO" | "RECHAZADO" | "RETIRADO";
+
+export interface CambioPartidaOut {
+  partida_id: number;
+  num_partida: number;
+  descripcion: string;
+  cantidad_anterior: string;
+  cantidad_nueva: string;
+  unidad_anterior: string;
+  unidad_nueva: string;
+}
+
+export interface CambioOut {
+  id: number;
+  estado_cambio: EstadoCambio;
+  solicitado_por: number;
+  solicitado_por_nombre: string;
+  resuelto_por: number | null;
+  resuelto_por_nombre: string | null;
+  comentario_solicitante: string | null;
+  comentario_resolucion: string | null;
+  creado_en: string;
+  resuelto_en: string | null;
+  partidas: CambioPartidaOut[];
+}
+
 export interface SolicitudDetailOut extends SolicitudOut {
   partidas: PartidaOut[];
   opciones: OpcionOut[];
@@ -191,6 +221,7 @@ export interface SolicitudDetailOut extends SolicitudOut {
   ciclos: CicloOut[];
   tiempos: TiemposOut | null;
   comprobante: ComprobanteOut | null;
+  cambios: CambioOut[];
 }
 
 export interface SolicitudListOut {

@@ -206,6 +206,13 @@ def ejecutar_transicion(
     elif a == Estado.RECHAZADA:
         _validar_motivo(db, motivo_id)
 
+    # F8h: un cambio PENDIENTE se retira automáticamente si la solicitud pasa
+    # a NO_CONFIRMADA o CANCELADA (import local: cambios usa este módulo).
+    if a in (Estado.NO_CONFIRMADA, Estado.CANCELADA):
+        from app.modules.cambios.service import auto_retirar_pendiente
+
+        auto_retirar_pendiente(db, solicitud, usuario, a)
+
     # Notificaciones EN la transacción de la transición (F7): si algo de
     # aquí en adelante falla, el rollback se lleva también la notificación.
     notificaciones.notificar_transicion(db, solicitud, de, a)

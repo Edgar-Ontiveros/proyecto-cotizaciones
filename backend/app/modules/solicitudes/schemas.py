@@ -7,6 +7,7 @@ from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
 from app.models.solicitud import Estado, Prioridad, UnidadCatalogo
 from app.modules.archivos.schemas import ComprobanteOut
+from app.modules.cambios.schemas import CambioOut
 from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionConsolidadoOut, OpcionOut
 from app.modules.metricas.schemas import CicloOut, TiemposOut
 
@@ -63,6 +64,9 @@ class SolicitudOut(BaseModel):
     estado: Estado
     prioridad: Prioridad
     es_proyecto: bool = False
+    # F8h: cambio de cantidad/unidad pendiente de aprobación (bloquea
+    # confirmar/corregir/editar).
+    cambio_pendiente: bool = False
     cliente_id: int | None
     cliente_nombre: str | None
     vendedor_id: int
@@ -129,6 +133,8 @@ class SolicitudDetailOut(SolicitudOut):
     tiempos: TiemposOut | None = None
     # F8g: metadatos del comprobante de pedido (todos los involucrados).
     comprobante: ComprobanteOut | None = None
+    # F8h: historial completo de cambios de cantidad/unidad (ambos lados).
+    cambios: list[CambioOut] = []
 
 
 class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
@@ -142,6 +148,7 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
     ciclos: list[CicloOut] = []
     tiempos: TiemposOut | None = None
     comprobante: ComprobanteOut | None = None
+    cambios: list[CambioOut] = []
 
 
 class SolicitudDetailCompradorOut(SolicitudDetailVentasOut):

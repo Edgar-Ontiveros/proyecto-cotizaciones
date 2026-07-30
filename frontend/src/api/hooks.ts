@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../lib/api";
 import type {
+  CambioOut,
   ClienteOut,
   Letra,
   MiPanelOut,
@@ -225,6 +226,66 @@ export function useNoConfirmar(id: number) {
     mutationFn: (body: { motivo: MotivoNoConfirmada; comentario: string | null }) =>
       api<SolicitudOut>(`/solicitudes/${id}/no-confirmar`, { method: "POST", body }),
     onSuccess: () => invalidar(id),
+  });
+}
+
+// ------------------------------------------------------ cambios (F8h, §4.8b)
+
+export interface CambioPartidaBody {
+  partida_id: number;
+  cantidad_nueva: string | null;
+  unidad_nueva: string | null;
+}
+
+export interface AjusteBody {
+  opcion_letra: string;
+  partida_id: number;
+  precio_unitario?: string;
+  tiempo_entrega?: string;
+}
+
+export function useSolicitarCambio(id: number) {
+  const invalidar = useInvalidarSolicitudes();
+  return useMutation({
+    meta: { errorManejado: true },
+    mutationFn: (body: { comentario: string | null; partidas: CambioPartidaBody[] }) =>
+      api<CambioOut>(`/solicitudes/${id}/cambios`, { method: "POST", body }),
+    onSuccess: () => invalidar(id),
+  });
+}
+
+export function useRetirarCambio(id: number) {
+  const invalidar = useInvalidarSolicitudes();
+  return useMutation({
+    mutationFn: () => api<CambioOut>(`/solicitudes/${id}/cambios/pendiente`, { method: "DELETE" }),
+    onSuccess: () => invalidar(id),
+  });
+}
+
+export function useAprobarCambio(solicitudId: number) {
+  const invalidar = useInvalidarSolicitudes();
+  return useMutation({
+    meta: { errorManejado: true },
+    mutationFn: ({
+      cambioId,
+      comentario,
+      ajustes,
+    }: {
+      cambioId: number;
+      comentario: string | null;
+      ajustes: AjusteBody[];
+    }) => api<CambioOut>(`/cambios/${cambioId}/aprobar`, { method: "POST", body: { comentario, ajustes } }),
+    onSuccess: () => invalidar(solicitudId),
+  });
+}
+
+export function useRechazarCambio(solicitudId: number) {
+  const invalidar = useInvalidarSolicitudes();
+  return useMutation({
+    meta: { errorManejado: true },
+    mutationFn: ({ cambioId, comentario }: { cambioId: number; comentario: string }) =>
+      api<CambioOut>(`/cambios/${cambioId}/rechazar`, { method: "POST", body: { comentario } }),
+    onSuccess: () => invalidar(solicitudId),
   });
 }
 

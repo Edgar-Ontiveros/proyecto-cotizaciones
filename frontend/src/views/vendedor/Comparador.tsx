@@ -25,6 +25,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 
 import { useNoConfirmar, useSeleccionar, useSolicitud } from "../../api/hooks";
 import { useAuth } from "../../auth/AuthContext";
+import { BannerCambioVendedor, ModalSolicitarCambio } from "../../components/Cambios";
 import { DropzoneComprobante } from "../../components/Comprobante";
 import { VolverBoton } from "../../components/Volver";
 import { baseSolicitudes } from "../../lib/crm";
@@ -167,7 +168,13 @@ function CartaOpcion({
           fullWidth
           onClick={onConfirmar}
           disabled={!confirmarHabilitado}
-          title={confirmarHabilitado ? undefined : "Sube primero el comprobante del cliente"}
+          title={
+            confirmarHabilitado
+              ? undefined
+              : solicitud.cambio_pendiente
+                ? "Hay un cambio pendiente de aprobación"
+                : "Sube primero el comprobante del cliente"
+          }
         >
           Confirmar pedido con esta opción
         </Button>
@@ -218,7 +225,16 @@ export function Comparador() {
     usuario !== null &&
     ["vendedor", "gerente_sucursal", "director_ventas", "admin"].includes(usuario.rol);
   const puedeConfirmar = solicitud.estado === "COTIZADA" && ladoVentas;
+  // F8h: el cambio pendiente bloquea confirmar (el backend lo exige igual).
   const tieneComprobante = solicitud.comprobante !== null;
+  const confirmarHabilitado = tieneComprobante && !solicitud.cambio_pendiente;
+
+  const abrirSolicitarCambio = () =>
+    modals.open({
+      title: "Solicitar cambio de cantidad/unidad",
+      size: "lg",
+      children: <ModalSolicitarCambio solicitud={solicitud} onListo={() => modals.closeAll()} />,
+    });
 
   const ejecutarConfirmacion = (opcion: OpcionOut) => {
     modals.closeAll();
@@ -286,6 +302,11 @@ export function Comparador() {
           </Title>
         </Group>
         <Group>
+          {puedeConfirmar && !solicitud.cambio_pendiente && (
+            <Button variant="outline" onClick={abrirSolicitarCambio}>
+              Solicitar cambio
+            </Button>
+          )}
           {puedeConfirmar && (
             <Button variant="outline" color="orange" onClick={abrirNoConcretado}>
               No se concretó
@@ -296,6 +317,7 @@ export function Comparador() {
           </Button>
         </Group>
       </Group>
+      {ladoVentas && <BannerCambioVendedor solicitud={solicitud} />}
       {puedeConfirmar && (
         <DropzoneComprobante solicitudId={solicitudId} comprobante={solicitud.comprobante} />
       )}
@@ -306,7 +328,7 @@ export function Comparador() {
             solicitud={solicitud}
             opcion={o}
             onConfirmar={puedeConfirmar ? () => confirmar(o) : null}
-            confirmarHabilitado={tieneComprobante}
+            confirmarHabilitado={confirmarHabilitado}
           />
         ))}
       </SimpleGrid>

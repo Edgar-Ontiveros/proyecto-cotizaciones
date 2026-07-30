@@ -15,6 +15,7 @@ from app.core.logging import configure_logging, logger, request_logging_middlewa
 from app.models.scheduler_heartbeat import SchedulerHeartbeat
 from app.modules.archivos.router import router as archivos_router
 from app.modules.auth.router import router as auth_router
+from app.modules.cambios.router import router as cambios_router
 from app.modules.catalogos.router import router as catalogos_router
 from app.modules.clientes.router import router as clientes_router
 from app.modules.comentarios.router import router as comentarios_router
@@ -106,8 +107,9 @@ app.include_router(clientes_router, prefix=API_PREFIX)
 # El export va ANTES del router de solicitudes: /solicitudes/export debe
 # ganarle a /solicitudes/{solicitud_id}.
 app.include_router(export_router, prefix=API_PREFIX)
-# Rutas fijas /solicitudes/{id}/comprobante antes del router genérico.
+# Rutas fijas /solicitudes/{id}/comprobante y /cambios antes del genérico.
 app.include_router(archivos_router, prefix=API_PREFIX)
+app.include_router(cambios_router, prefix=API_PREFIX)
 app.include_router(solicitudes_router, prefix=API_PREFIX)
 app.include_router(cotizaciones_router, prefix=API_PREFIX)
 app.include_router(metricas_router, prefix=API_PREFIX)

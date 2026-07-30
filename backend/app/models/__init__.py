@@ -1,6 +1,7 @@
 """Importa todos los modelos para que Base.metadata esté completa (Alembic)."""
 
 from app.models.archivo import Archivo
+from app.models.cambio import CambioPartida, EstadoCambio, SolicitudCambio
 from app.models.catalogos import DiaFestivo, FamiliaMotivo, MotivoRechazo
 from app.models.cliente import Cliente
 from app.models.comentario import Comentario
@@ -15,12 +16,14 @@ from app.models.usuario import Rol, Usuario
 
 __all__ = [
     "Archivo",
+    "CambioPartida",
     "Cliente",
     "Comentario",
     "CompradorSucursal",
     "CotizacionOpcion",
     "DiaFestivo",
     "Estado",
+    "EstadoCambio",
     "FamiliaMotivo",
     "FolioCounter",
     "HistorialEstado",
@@ -34,6 +37,7 @@ __all__ = [
     "Rol",
     "SchedulerHeartbeat",
     "Solicitud",
+    "SolicitudCambio",
     "SolicitudPartida",
     "Sucursal",
     "Usuario",

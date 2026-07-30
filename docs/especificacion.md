@@ -72,7 +72,7 @@ BORRADOR ──enviar──▶ ENVIADA ──comprador abre──▶ EN_PROCESO 
 | Medidas | `medidas` (texto libre: "874 PZA A 12.20 MTS") | No — *candidato a obligatorio: es lo que más falta hoy (resp. 9); decide Francisco* |
 
 **No existe columna "Acabado"** en el formato real (la junta la mencionó, el formato no la trae; se escribe dentro de la descripción). **Las columnas "Precio" y "Tiempo de entrega" del formato son la RESPUESTA de compras** → viven en las opciones (§4.8), no en la solicitud.
-**Sin archivos adjuntos** en todo el sistema (resp. 38 + Edgar).
+**Sin archivos adjuntos en solicitudes y cotizaciones, con UNA excepción: el comprobante de confirmación del cliente (PDF/JPG/PNG/WebP, máx 10 MB), obligatorio para generar el pedido (F8g).**
 
 ### 4.2 Folios — convención real observada
 `{PREFIJO_SUCURSAL}-{CONSECUTIVO}` **sin año** (observado: `CCN-3036`, sucursal Norte), consecutivo corrido por sucursal. En el asunto/nombre actual anexan el cliente (`CCN-3036 DINCO`); el sistema muestra folio y cliente juntos en listados. El **prefijo y el contador inicial de cada sucursal son editables por el admin** (para continuar la numeración actual sin saltos). Generación race-safe: `folio_counters(sucursal_id, ultimo)` con `FOR UPDATE` en la transacción del envío. *Pendiente: lista real de prefijos y número actual por sucursal.*
@@ -115,6 +115,16 @@ Sin tiempos máximos (resp. 28) pero con evaluación (resp. 49) y alerta al 3er 
 - **Respuesta parcial** (resp. 20): guardar avances deja EN_PROCESO; "marcar cotización completa" exige toda opción capturada con sus obligatorios en todas las partidas → COTIZADA.
 - **Tipo de cambio v3 (F8e):** lo captura el COMPRADOR al marcar la cotización completa — obligatorio si alguna opción tiene renglones USD (422 `tipo_cambio_requerido`), prohibido si todo es MXN (422 `tipo_cambio_invalido`); queda en `solicitudes.tipo_cambio` desde COTIZADA. El consolidado POR OPCIÓN (total_mxn + total_usd × TC, HALF_UP a 2) existe desde COTIZADA para los roles autorizados. El comprador asignado y gerente_compras corrigen el TC en COTIZADA (PATCH tipo-cambio, evento de==a); el admin además en CONFIRMADA (recalcula el monto oficial).
 - **Selección:** el vendedor compara A–E lado a lado y elige UNA al confirmar el pedido → CONFIRMADA (selección SIMPLE, sin TC: usa el guardado; si por datos viejos hay USD sin TC → 422 claro); la elegida "se queda", las demás en historial.
+
+### 4.8b Cambios de cantidad/unidad post-cotización con aprobación (F8h, req. de dirección)
+
+Tras COTIZADA y ANTES de generar el pedido, el lado ventas (vendedor dueño, gerente de su sucursal, director o admin) puede **solicitar cambiar cantidad y/o unidad** de una o más partidas:
+
+- **Solicitud del cambio**: solo en COTIZADA y con UN solo cambio PENDIENTE por solicitud (409 `cambio_ya_pendiente`); cada renglón debe traer al menos un cambio real vs lo actual (422). Se guarda un **snapshot inmutable** del antes/después (`solicitudes_cambio` + `cambio_partidas`), queda evento en historial con el resumen partida por partida y se notifica al comprador ASIGNADO (`cambio_solicitado`). Las partidas NO se tocan todavía.
+- **Bloqueo**: mientras hay cambio pendiente NO se puede confirmar (422 `cambio_pendiente`, además del comprobante §4.1), ni el comprador corrige opciones ni el vendedor edita (409): el cambio se resuelve primero — el flujo no se bifurca.
+- **Retiro**: solo el SOLICITANTE (o admin) retira el pendiente; si la solicitud pasa a NO_CONFIRMADA o CANCELADA con un cambio pendiente, éste queda RETIRADO automáticamente (el evento lo menciona).
+- **Resolución (lado compras: asignado, gerente_compras o admin)**: ve el diff antes→después y los renglones de opciones afectados con sus precios; puede **ajustar** precio/tiempo/cantidad/unidad por renglón y opción al aprobar. Aprobar aplica cantidad/unidad a las partidas, propaga a TODOS los renglones de las opciones (si cambia la UNIDAD, el precio anterior queda inválido y debe reponerse con un ajuste), recalcula importes, subtotales por moneda y consolidado con el TC vigente — **atómico**: ninguna opción puede quedar incompleta (422 y nada cambia). Rechazar exige comentario y deja todo intacto. Ambos desenlaces notifican al SOLICITANTE (`cambio_aprobado` — mencionando si cambió el precio — / `cambio_rechazado`).
+- El detalle (ambos lados) lista el **historial completo de cambios**: quién pidió qué y cuándo, desenlace, quién resolvió y comentarios. Cantidades/unidades no son dinero (visibles para todos los involucrados); los precios siguen sus reglas de visibilidad de siempre.
 
 ### 4.9 Dinero (requisito prioritario)
 - **Monto confirmado** = consolidado MXN de la opción seleccionada usando el TC capturado por el COMPRADOR al cotizar (F8e). **Monto de referencia** de una COTIZADA sin confirmar = subtotales por moneda de la **opción A**; para el VENDEDOR en CONFIRMADA, subtotales de la GANADORA.

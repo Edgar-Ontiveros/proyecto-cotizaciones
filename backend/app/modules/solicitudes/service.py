@@ -116,6 +116,14 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo el lado ventas puede editar la solicitud", "forbidden")
+    # F8h: con cambio pendiente no se edita (aplica de todos modos: el cambio
+    # solo existe en COTIZADA, que no es editable — guardia explícita).
+    if solicitud.cambio_pendiente:
+        raise AppError(
+            409,
+            "Hay un cambio de cantidad/unidad pendiente: resuélvelo antes de editar",
+            "cambio_pendiente",
+        )
     if solicitud.estado not in ESTADOS_EDITABLES:
         raise conflicto_estado("editar", solicitud)
     if solicitud.estado != Estado.BORRADOR:
@@ -298,6 +306,7 @@ def a_out(
         "estado": solicitud.estado,
         "prioridad": solicitud.prioridad,
         "es_proyecto": solicitud.es_proyecto,
+        "cambio_pendiente": solicitud.cambio_pendiente,
         "cliente_id": solicitud.cliente_id,
         "cliente_nombre": cliente_nombre,
         "vendedor_id": solicitud.vendedor_id,

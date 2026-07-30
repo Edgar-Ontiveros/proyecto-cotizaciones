@@ -297,6 +297,13 @@ def guardar_opcion(
         solicitud = ejecutar_transicion(db, solicitud.id, Estado.EN_PROCESO, user, commit=False)
     if solicitud.estado not in (Estado.EN_PROCESO, Estado.COTIZADA):
         raise conflicto_estado("capturar", solicitud)
+    # F8h: mientras hay cambio pendiente la corrección espera (no se bifurca).
+    if solicitud.cambio_pendiente:
+        raise AppError(
+            409,
+            "Hay un cambio de cantidad/unidad pendiente: resuélvelo antes de corregir",
+            "cambio_pendiente",
+        )
     correccion = solicitud.estado == Estado.COTIZADA
 
     partidas = _partidas_de(db, solicitud.id)
@@ -397,6 +404,12 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario)
         raise AppError(403, "Solo el lado compras captura opciones", "forbidden")
     if solicitud.estado not in (Estado.EN_PROCESO, Estado.COTIZADA):
         raise conflicto_estado("eliminar la opción", solicitud)
+    if solicitud.cambio_pendiente:
+        raise AppError(
+            409,
+            "Hay un cambio de cantidad/unidad pendiente: resuélvelo antes de corregir",
+            "cambio_pendiente",
+        )
     opcion = _opcion_o_none(db, solicitud.id, letra)
     if opcion is None:
         raise AppError(404, f"La opción {letra.value} no existe", "opcion_no_encontrada")
@@ -476,6 +489,15 @@ def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> 
         raise AppError(403, "Solo el lado ventas selecciona la opción", "forbidden")
     if solicitud.estado != Estado.COTIZADA:
         raise conflicto_estado("seleccionar", solicitud)
+    # F8h: un cambio pendiente bloquea la confirmación AUNQUE haya
+    # comprobante — el cambio se resuelve primero.
+    if solicitud.cambio_pendiente:
+        raise AppError(
+            422,
+            "Hay un cambio de cantidad/unidad pendiente de aprobación: "
+            "resuélvelo antes de confirmar",
+            "cambio_pendiente",
+        )
     # F8g (regla de la TRANSICIÓN, no del rol): sin comprobante del cliente
     # no hay pedido — aplica a todo rol que confirme, también por API directa.
     from app.modules.archivos.service import comprobante_vigente

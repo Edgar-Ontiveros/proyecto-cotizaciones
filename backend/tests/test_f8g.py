@@ -308,8 +308,9 @@ def test_pdf_minimo_es_pdf_valido():
 
 
 def test_migracion_up_down():
-    """La migración de archivos baja y sube limpia (up/down/up) en una BD
-    scratch aparte — sin tocar la BD de la suite."""
+    """TODA la cadena de migraciones baja y sube limpia (head → base → head)
+    en una BD scratch aparte — cubre el downgrade de archivos (F8g) y de
+    cambios (F8h) sin depender de cuál sea la head vigente."""
     from alembic.config import Config
     from sqlalchemy import create_engine
 
@@ -337,11 +338,13 @@ def test_migracion_up_down():
             with engine.connect() as conn:
                 return set(inspect(conn).get_table_names())
 
-        assert "archivos" in tablas()
-        command.downgrade(cfg, "-1")
-        assert "archivos" not in tablas()
+        assert {"archivos", "solicitudes_cambio", "cambio_partidas"} <= tablas()
+        command.downgrade(cfg, "base")
+        restantes = tablas()
+        assert "archivos" not in restantes and "solicitudes_cambio" not in restantes
+        assert restantes <= {"alembic_version"}
         command.upgrade(cfg, "head")
-        assert "archivos" in tablas()
+        assert {"archivos", "solicitudes_cambio", "cambio_partidas"} <= tablas()
         engine.dispose()
     finally:
         drop_database(nombre)

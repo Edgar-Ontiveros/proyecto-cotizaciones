@@ -36,6 +36,10 @@ TIPO_BANDA_ROJA = "banda_roja"
 # para los gerentes de compras y el gerente de la sucursal.
 TIPO_PROYECTO_COMPRAS = "proyecto_compras"
 TIPO_PROYECTO_SUCURSAL = "proyecto_sucursal"
+# F8h: flujo de cambios post-cotización.
+TIPO_CAMBIO_SOLICITADO = "cambio_solicitado"
+TIPO_CAMBIO_APROBADO = "cambio_aprobado"
+TIPO_CAMBIO_RECHAZADO = "cambio_rechazado"
 
 
 def _agregar(
@@ -152,6 +156,41 @@ def notificar_correccion(db: Session, solicitud: Solicitud) -> None:
         solicitud.vendedor_id,
         TIPO_CORRECCION,
         f"El comprador corrigió la cotización de tu solicitud {_folio_de(solicitud)}",
+        solicitud.id,
+    )
+
+
+def notificar_cambio_solicitado(db: Session, solicitud: Solicitud) -> None:
+    """F8h: aviso al comprador ASIGNADO de que hay un cambio por resolver."""
+    if solicitud.comprador_id is None:
+        return
+    _agregar(
+        db,
+        solicitud.comprador_id,
+        TIPO_CAMBIO_SOLICITADO,
+        f"La solicitud {_folio_de(solicitud)} tiene un cambio de cantidad/unidad "
+        "pendiente de tu aprobación",
+        solicitud.id,
+    )
+
+
+def notificar_cambio_resuelto(
+    db: Session, solicitud: Solicitud, cambio: Any, aprobado: bool, precio_ajustado: bool
+) -> None:
+    """F8h: desenlace al SOLICITANTE (quien pidió el cambio, no necesariamente
+    el vendedor dueño)."""
+    folio = _folio_de(solicitud)
+    if aprobado:
+        mensaje = f"Tu cambio en la solicitud {folio} fue aprobado"
+        if precio_ajustado:
+            mensaje += " (el comprador ajustó el precio)"
+    else:
+        mensaje = f"Tu cambio en la solicitud {folio} fue rechazado"
+    _agregar(
+        db,
+        cambio.solicitado_por,
+        TIPO_CAMBIO_APROBADO if aprobado else TIPO_CAMBIO_RECHAZADO,
+        mensaje,
         solicitud.id,
     )
 
