@@ -11,7 +11,12 @@ import { useNavigate } from "react-router";
 import { useSolicitudes } from "../api/hooks";
 import { descargarExport, useFiltrosCatalogo } from "../api/crmHooks";
 import { useAuth } from "../auth/AuthContext";
-import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../components/compartidos";
+import {
+  BadgeEstado,
+  FolioConProyecto,
+  MontoSolicitud,
+  SemaforoBanda,
+} from "../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../components/filtrosListado";
 import { ApiError } from "../lib/api";
 import { fecha } from "../lib/format";
@@ -37,6 +42,7 @@ export function SolicitudesCrm() {
   const { data: catalogos } = useFiltrosCatalogo();
   const [estado, setEstado] = useState<string | null>(null);
   const [prioridad, setPrioridad] = useState<string | null>(null);
+  const [tipo, setTipo] = useState<string | null>(null);
   const [sucursalId, setSucursalId] = useState<string | null>(null);
   const [compradorId, setCompradorId] = useState<string | null>(null);
   const [vendedorId, setVendedorId] = useState<string | null>(null);
@@ -45,6 +51,7 @@ export function SolicitudesCrm() {
   const filtrosQuery = {
     estado: estado ?? undefined,
     prioridad: prioridad ?? undefined,
+    es_proyecto: tipo !== null ? tipo === "PROYECTO" : undefined,
     sucursal_id: sucursalId !== null ? Number(sucursalId) : undefined,
     comprador_id: compradorId !== null ? Number(compradorId) : undefined,
     vendedor_id: vendedorId !== null ? Number(vendedorId) : undefined,
@@ -111,6 +118,17 @@ export function SolicitudesCrm() {
           w={130}
         />
         <Select
+          placeholder="Tipo"
+          data={[
+            { value: "PROYECTO", label: "Proyectos" },
+            { value: "NORMAL", label: "Normales" },
+          ]}
+          value={tipo}
+          onChange={limpiarPagina(setTipo)}
+          clearable
+          w={130}
+        />
+        <Select
           placeholder="Sucursal"
           data={opcionesSelect(catalogos?.sucursales)}
           value={sucursalId}
@@ -156,7 +174,7 @@ export function SolicitudesCrm() {
         onRowClick={({ record }) => navigate(`/crm/solicitudes/${record.id}`)}
         noRecordsText="Sin solicitudes"
         columns={[
-          { accessor: "folio", title: "Folio", render: (s) => s.folio ?? "(borrador)" },
+          { accessor: "folio", title: "Folio", render: (s) => <FolioConProyecto solicitud={s} /> },
           { accessor: "cliente_nombre", title: "Cliente", render: (s) => s.cliente_nombre ?? "—" },
           { accessor: "creado_en", title: "Fecha", render: (s) => fecha(s.creado_en) },
           { accessor: "estado", title: "Estado", render: (s) => <BadgeEstado estado={s.estado} /> },

@@ -36,6 +36,27 @@ export function BadgeEstado({ estado }: { estado: Estado }) {
   );
 }
 
+/** Badge PROYECTO (F8f): identifica la solicitud en listados, cola, detalle
+ * y CRM. Devuelve null si no es proyecto. */
+export function BadgeProyecto({ esProyecto }: { esProyecto: boolean }) {
+  if (!esProyecto) return null;
+  return (
+    <Badge color="grape" variant="filled" size="sm" data-testid="badge-proyecto">
+      PROYECTO
+    </Badge>
+  );
+}
+
+/** Folio + badge PROYECTO para las columnas de listado. */
+export function FolioConProyecto({ solicitud }: { solicitud: SolicitudOut }) {
+  return (
+    <Group gap={6} wrap="nowrap">
+      <Text fw={500}>{solicitud.folio ?? "(borrador)"}</Text>
+      <BadgeProyecto esProyecto={solicitud.es_proyecto} />
+    </Group>
+  );
+}
+
 export function SemaforoBanda({
   banda,
   horasHabiles,

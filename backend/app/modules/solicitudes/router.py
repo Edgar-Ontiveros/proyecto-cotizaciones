@@ -9,7 +9,8 @@ from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.metricas import ciclos as ciclos_mod
-from app.modules.metricas.schemas import CicloOut
+from app.modules.metricas import tiempos as tiempos_mod
+from app.modules.metricas.schemas import CicloOut, SegmentoOut, TiemposOut
 from app.modules.solicitudes import service
 from app.modules.solicitudes.schemas import (
     RechazarIn,
@@ -33,6 +34,26 @@ creador_required = require_roles(Rol.VENDEDOR, Rol.GERENTE_SUCURSAL)
 _a_out = service.a_out
 
 
+def _tiempos_out(t: tiempos_mod.TiemposSolicitud) -> TiemposOut:
+    return TiemposOut(
+        segmentos=[
+            SegmentoOut(
+                estado=s.estado,
+                inicio=s.inicio,
+                fin=s.fin,
+                horas_habiles=round(s.horas_habiles, 2),
+                horas_naturales=round(s.horas_naturales, 2),
+            )
+            for s in t.segmentos
+        ],
+        general_horas_habiles=t.general_horas_habiles,
+        general_horas_naturales=t.general_horas_naturales,
+        compras_horas_habiles=t.compras_horas_habiles,
+        ventas_horas_habiles=t.ventas_horas_habiles,
+        detenido=t.detenido,
+    )
+
+
 @router.post("", response_model=None, status_code=status.HTTP_201_CREATED)
 def crear_solicitud(
     body: SolicitudCreate,
@@ -46,6 +67,7 @@ def crear_solicitud(
 def listar_solicitudes(
     estado: Estado | None = None,
     prioridad: Prioridad | None = None,
+    es_proyecto: bool | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
     comprador_id: int | None = None,
@@ -63,6 +85,7 @@ def listar_solicitudes(
         user,
         estado=estado,
         prioridad=prioridad,
+        es_proyecto=es_proyecto,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -160,12 +183,14 @@ def detalle_solicitud(
             mxn, usd = ganadora
             base.referencia_mxn = mxn or None
             base.referencia_usd = usd or None
+    tiempos = tiempos_mod.cargar_tiempos(db, [solicitud.id]).get(solicitud.id)
     datos = dict(
         **base.model_dump(),
         ciclos=ciclos,
         partidas=service.partidas_de(db, solicitud.id),
         historial=service.historial_de(db, solicitud.id, user),
         comentarios=service.comentarios_de(db, solicitud.id),
+        tiempos=_tiempos_out(tiempos) if tiempos is not None else None,
     )
     if ve_proveedor(user.rol):
         return SolicitudDetailCompradorOut(

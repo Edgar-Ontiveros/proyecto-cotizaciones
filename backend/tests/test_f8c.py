@@ -185,10 +185,11 @@ def test_kpi_confirmado_consolidado_y_export_con_tc(client, entorno, cotizada_mi
     r = client.get("/api/v1/solicitudes/export", headers=auth_headers(entorno.admin))
     ws = load_workbook(BytesIO(r.content)).active
     encabezados = [c.value for c in ws[1]]
-    assert encabezados[13:17] == ["Monto MXN", "Monto USD", "Tipo de cambio", "Confirmado MXN"]
+    # F8f corrió los índices: Proyecto (7) y las 3 columnas de tiempos (14-16).
+    assert encabezados[17:21] == ["Monto MXN", "Monto USD", "Tipo de cambio", "Confirmado MXN"]
     fila = next(f for f in ws.iter_rows(min_row=2, values_only=True) if f[5] == "CONFIRMADA")
-    assert (fila[13], fila[14]) == (12000, 500)
-    assert float(fila[15]) == 18.5 and fila[16] == 21250
+    assert (fila[17], fila[18]) == (12000, 500)
+    assert float(fila[19]) == 18.5 and fila[20] == 21250
 
 
 # --------------------------------------------- fix 2a: comprador en CONFIRMADA

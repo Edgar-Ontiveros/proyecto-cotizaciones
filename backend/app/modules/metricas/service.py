@@ -37,6 +37,7 @@ from app.modules.metricas.ciclos import (
 )
 from app.modules.metricas.schemas import (
     ConversionOut,
+    EstadisticaTiempoOut,
     FiltrosOut,
     GrupoOut,
     MaterialesOut,
@@ -50,7 +51,9 @@ from app.modules.metricas.schemas import (
     SemanaOut,
     SerieOut,
     SinDesenlaceOut,
+    TiemposEtapaOut,
 )
+from app.modules.metricas.tiempos import ESTADOS_COMPRAS, ESTADOS_VENTAS, cargar_tiempos
 
 Dimension = Literal["comprador", "sucursal", "vendedor", "cliente"]
 
@@ -643,6 +646,53 @@ def filtros(db: Session, user: Usuario) -> FiltrosOut:
             for u in db.scalars(stmt.order_by(Usuario.nombre))
         ]
     return FiltrosOut(sucursales=sucursales, compradores=compradores, vendedores=vendedores)
+
+
+def _estadistica(observaciones: list[float]) -> EstadisticaTiempoOut:
+    if not observaciones:
+        return EstadisticaTiempoOut(n=0, promedio_horas_habiles=None, mediana_horas_habiles=None)
+    return EstadisticaTiempoOut(
+        n=len(observaciones),
+        promedio_horas_habiles=round(sum(observaciones) / len(observaciones), 2),
+        mediana_horas_habiles=round(median(observaciones), 2),
+    )
+
+
+def tiempos_etapa(db: Session, user: Usuario, f: Filtros) -> TiemposEtapaOut:
+    """Promedio y mediana de horas hábiles por estado + agregados compras/
+    ventas (F8f). Universo: solicitudes CREADAS en el periodo (mismo criterio
+    que el embudo). Solo alimentan las estadísticas los segmentos CERRADOS
+    (una estancia vigente aún no terminó); la observación es la SUMA por
+    solicitud de sus segmentos cerrados en el estado o grupo."""
+    f = con_scoping(user, f)
+    ini, fin = _limites(f)
+    ids = list(
+        db.scalars(
+            _filtrar(select(Solicitud.id), user, f).where(
+                *_en_periodo(Solicitud.creado_en, ini, fin)
+            )
+        )
+    )
+    por_estado: dict[str, list[float]] = {e.value: [] for e in Estado}
+    compras: list[float] = []
+    ventas: list[float] = []
+    for tiempos in cargar_tiempos(db, ids).values():
+        sumas: dict[Estado, float] = {}
+        for seg in tiempos.segmentos:
+            if seg.fin is None:
+                continue
+            sumas[seg.estado] = sumas.get(seg.estado, 0.0) + seg.horas_habiles
+        for estado, horas in sumas.items():
+            por_estado[estado.value].append(horas)
+        if any(e in ESTADOS_COMPRAS for e in sumas):
+            compras.append(sum(h for e, h in sumas.items() if e in ESTADOS_COMPRAS))
+        if any(e in ESTADOS_VENTAS for e in sumas):
+            ventas.append(sum(h for e, h in sumas.items() if e in ESTADOS_VENTAS))
+    return TiemposEtapaOut(
+        por_estado={estado: _estadistica(obs) for estado, obs in por_estado.items()},
+        compras=_estadistica(compras),
+        ventas=_estadistica(ventas),
+    )
 
 
 def no_encontrados(db: Session, user: Usuario, f: Filtros, limite: int = 10) -> NoEncontradosOut:

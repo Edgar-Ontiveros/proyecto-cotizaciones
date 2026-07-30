@@ -32,6 +32,10 @@ TIPO_RECHAZO = "rechazo"
 TIPO_SEGURIDAD = "seguridad"
 TIPO_BANDA_AMARILLA = "banda_amarilla"
 TIPO_BANDA_ROJA = "banda_roja"
+# F8f: envío/reenvío de una solicitud de PROYECTO — tipos identificables
+# para los gerentes de compras y el gerente de la sucursal.
+TIPO_PROYECTO_COMPRAS = "proyecto_compras"
+TIPO_PROYECTO_SUCURSAL = "proyecto_sucursal"
 
 
 def _agregar(
@@ -65,6 +69,8 @@ def notificar_transicion(db: Session, solicitud: Solicitud, de: Estado, a: Estad
             else f"Se te asignó la solicitud {folio}"
         )
         _agregar(db, solicitud.comprador_id, TIPO_ASIGNACION, mensaje, solicitud.id)
+        if solicitud.es_proyecto:
+            _notificar_proyecto(db, solicitud, es_reenvio=de == Estado.RECHAZADA)
     elif a == Estado.COTIZADA and de == Estado.EN_PROCESO:
         # Solo el cierre real de captura; la reversión de NO_CONFIRMADA
         # (administración) no notifica.
@@ -75,6 +81,35 @@ def notificar_transicion(db: Session, solicitud: Solicitud, de: Estado, a: Estad
             f"Tu solicitud {folio} fue cotizada",
             solicitud.id,
         )
+
+
+def _notificar_proyecto(db: Session, solicitud: Solicitud, es_reenvio: bool) -> None:
+    """Envío/reenvío de un PROYECTO (F8f): ADEMÁS de la notificación normal al
+    comprador, avisa a TODOS los gerente_compras activos y al gerente_sucursal
+    de la sucursal (si existe; TIK y Manufactura no tienen). Si el gerente es
+    el propio vendedor de la solicitud (v3: el gerente crea y envía), no se
+    auto-notifica."""
+    folio = _folio_de(solicitud)
+    mensaje = (
+        f"Solicitud de PROYECTO {folio} corregida y reenviada"
+        if es_reenvio
+        else f"Nueva solicitud de PROYECTO {folio}"
+    )
+    gerentes_compras = db.scalars(
+        select(Usuario.id).where(Usuario.rol == Rol.GERENTE_COMPRAS, Usuario.activo)
+    )
+    for gerente_id in gerentes_compras:
+        _agregar(db, gerente_id, TIPO_PROYECTO_COMPRAS, mensaje, solicitud.id)
+    gerentes_sucursal = db.scalars(
+        select(Usuario.id).where(
+            Usuario.rol == Rol.GERENTE_SUCURSAL,
+            Usuario.activo,
+            Usuario.sucursal_id == solicitud.sucursal_id,
+            Usuario.id != solicitud.vendedor_id,
+        )
+    )
+    for gerente_id in gerentes_sucursal:
+        _agregar(db, gerente_id, TIPO_PROYECTO_SUCURSAL, mensaje, solicitud.id)
 
 
 def notificar_rechazo(db: Session, solicitud: Solicitud, motivo_id: int) -> None:

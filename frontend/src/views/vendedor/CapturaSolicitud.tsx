@@ -8,6 +8,7 @@ import {
   Alert,
   Autocomplete,
   Button,
+  Checkbox,
   Group,
   Paper,
   SegmentedControl,
@@ -58,6 +59,7 @@ function aBody(values: SolicitudForm) {
   return {
     cliente: values.cliente?.trim() ? values.cliente.trim() : null,
     prioridad: values.prioridad,
+    es_proyecto: values.es_proyecto,
     notas: values.notas?.trim() ? values.notas.trim() : null,
     partidas: values.partidas.map((p) => ({
       codigo_sap: p.codigo_sap?.trim() ? p.codigo_sap.trim() : null,
@@ -89,6 +91,7 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
     initialValues: {
       cliente: "",
       prioridad: "NORMAL",
+      es_proyecto: false,
       notas: "",
       partidas: [{ ...PARTIDA_VACIA }],
     },
@@ -102,6 +105,7 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
     form.setValues({
       cliente: existente.cliente_nombre ?? "",
       prioridad: existente.prioridad,
+      es_proyecto: existente.es_proyecto,
       notas: existente.notas ?? "",
       partidas: existente.partidas.map((p) => ({
         codigo_sap: p.codigo_sap ?? "",
@@ -224,6 +228,13 @@ export function CapturaSolicitud({ modo }: { modo: "nueva" | "editar" }) {
             { value: "URGENTE", label: "URGENTE" },
           ]}
           {...form.getInputProps("prioridad")}
+        />
+        <Checkbox
+          label="Proyecto"
+          description="Notifica a gerencia al enviarse"
+          // F8f: solo puede cambiarse mientras es BORRADOR.
+          disabled={modo === "editar" && existente?.estado !== "BORRADOR"}
+          {...form.getInputProps("es_proyecto", { type: "checkbox" })}
         />
       </Group>
       <Textarea label="Notas" autosize minRows={2} {...form.getInputProps("notas")} />

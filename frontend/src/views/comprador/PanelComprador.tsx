@@ -7,7 +7,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useMiPanel, useSolicitudes } from "../../api/hooks";
-import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../../components/compartidos";
+import {
+  BadgeEstado,
+  FolioConProyecto,
+  MontoSolicitud,
+  SemaforoBanda,
+} from "../../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../../components/filtrosListado";
 import { fecha, horas, pct } from "../../lib/format";
 import type { SolicitudOut } from "../../lib/types";
@@ -103,7 +108,7 @@ export function PanelComprador() {
     {
       accessor: "folio",
       title: "Folio",
-      render: (s: SolicitudOut) => s.folio ?? "—",
+      render: (s: SolicitudOut) => <FolioConProyecto solicitud={s} />,
     },
     {
       accessor: "cliente_nombre",

@@ -57,6 +57,8 @@ export interface SolicitudOut {
   folio: string | null;
   estado: Estado;
   prioridad: Prioridad;
+  // F8f: solicitud de PROYECTO — badge en listados/cola/detalle/CRM.
+  es_proyecto: boolean;
   cliente_id: number | null;
   cliente_nombre: string | null;
   vendedor_id: number;
@@ -150,12 +152,32 @@ export interface CicloOut {
   banda: Banda;
 }
 
+// F8f: estancia continua en un estado (las transiciones reales cortan, los
+// eventos de==a no); fin=null = segmento vigente.
+export interface SegmentoOut {
+  estado: Estado;
+  inicio: string;
+  fin: string | null;
+  horas_habiles: number;
+  horas_naturales: number;
+}
+
+export interface TiemposOut {
+  segmentos: SegmentoOut[];
+  general_horas_habiles: number;
+  general_horas_naturales: number;
+  compras_horas_habiles: number;
+  ventas_horas_habiles: number;
+  detenido: boolean;
+}
+
 export interface SolicitudDetailOut extends SolicitudOut {
   partidas: PartidaOut[];
   opciones: OpcionOut[];
   historial: HistorialOut[];
   comentarios: ComentarioOut[];
   ciclos: CicloOut[];
+  tiempos: TiemposOut | null;
 }
 
 export interface SolicitudListOut {

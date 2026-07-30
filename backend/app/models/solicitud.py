@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -80,6 +81,10 @@ class Solicitud(Base):
         default=Prioridad.NORMAL,
     )
     notas: Mapped[str | None] = mapped_column(Text)
+    # F8f: solicitud de PROYECTO (req. de dirección). Se define al crear y
+    # solo puede cambiarse mientras es BORRADOR; al enviarse notifica además
+    # a los gerentes de compras y al gerente de la sucursal.
+    es_proyecto: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
 
     # Confirmación (F4/F8c): opción ganadora y monto oficial CONSOLIDADO en
     # MXN (total_mxn + total_usd × tipo_cambio); moneda_confirmada queda fija

@@ -27,6 +27,7 @@ from app.models.sucursal import Sucursal
 from app.models.usuario import Usuario
 from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.metricas.ciclos import cargar_ciclos
+from app.modules.metricas.tiempos import cargar_tiempos
 from app.modules.solicitudes import service as solicitudes_service
 
 router = APIRouter(tags=["export"])
@@ -41,12 +42,16 @@ _ENCABEZADOS = [
     ("Comprador", 26),
     ("Estado", 14),
     ("Prioridad", 10),
+    ("Proyecto", 10),
     ("Creado", 17),
     ("Enviado", 17),
     ("Cotizado", 17),
     ("Confirmado", 17),
     ("Banda último ciclo", 16),
     ("Horas hábiles último ciclo", 22),
+    ("Total general (hrs naturales)", 24),
+    ("Tiempo compras (hrs hábiles)", 24),
+    ("Tiempo ventas (hrs hábiles)", 24),
     ("Monto MXN", 14),
     ("Monto USD", 14),
     ("Tipo de cambio", 12),
@@ -119,6 +124,7 @@ def _local(instante: datetime | None, tz: str) -> datetime | None:
 def exportar_solicitudes(
     estado: Estado | None = None,
     prioridad: Prioridad | None = None,
+    es_proyecto: bool | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
     comprador_id: int | None = None,
@@ -133,6 +139,7 @@ def exportar_solicitudes(
         user,
         estado=estado,
         prioridad=prioridad,
+        es_proyecto=es_proyecto,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -160,6 +167,7 @@ def exportar_solicitudes(
         | {s.comprador_id for s in solicitudes if s.comprador_id is not None},
     )
     ciclos = cargar_ciclos(db, ids)
+    tiempos = cargar_tiempos(db, ids)
     referencias = _opciones_a(db, [s.id for s in solicitudes if s.estado == Estado.COTIZADA])
     desgloses = _desgloses_ganadores(
         db, [s.id for s in solicitudes if s.estado == Estado.CONFIRMADA]
@@ -193,6 +201,7 @@ def exportar_solicitudes(
         elif solicitud.estado == Estado.NO_CONFIRMADA:
             motivo = solicitud.motivo_no_confirmada
 
+        t = tiempos.get(solicitud.id)
         ws.append(
             [
                 solicitud.folio,
@@ -202,12 +211,16 @@ def exportar_solicitudes(
                 usuarios.get(solicitud.comprador_id) if solicitud.comprador_id else None,
                 solicitud.estado.value,
                 solicitud.prioridad.value,
+                "Sí" if solicitud.es_proyecto else "No",
                 _local(solicitud.creado_en, tz),
                 _local(solicitud.enviado_en, tz),
                 _local(solicitud.cotizado_en, tz),
                 _local(solicitud.confirmado_en, tz),
                 ultimo.banda.value if ultimo else None,
                 round(ultimo.horas_habiles, 2) if ultimo else None,
+                t.general_horas_naturales if t else None,
+                t.compras_horas_habiles if t else None,
+                t.ventas_horas_habiles if t else None,
                 monto_mxn or None,
                 monto_usd or None,
                 solicitud.tipo_cambio,
@@ -216,7 +229,7 @@ def exportar_solicitudes(
             ]
         )
         fila_num = ws.max_row
-        for col in (8, 9, 10, 11):  # columnas de fecha
+        for col in (9, 10, 11, 12):  # columnas de fecha
             ws.cell(row=fila_num, column=col).number_format = _FORMATO_FECHA
 
     buffer = BytesIO()

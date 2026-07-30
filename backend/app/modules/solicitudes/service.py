@@ -88,6 +88,7 @@ def crear(db: Session, data: SolicitudCreate, vendedor: Usuario) -> Solicitud:
         estado=Estado.BORRADOR,
         prioridad=data.prioridad,
         notas=data.notas,
+        es_proyecto=bool(data.es_proyecto),
     )
     db.add(solicitud)
     db.flush()
@@ -131,6 +132,16 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
                 f"No se puede editar, faltan: {', '.join(faltantes)}",
                 "solicitud_incompleta",
             )
+    # F8f: el carácter de PROYECTO se define al crear y solo puede cambiarse
+    # mientras es BORRADOR (None en el body = "sin cambio").
+    if data.es_proyecto is not None and data.es_proyecto != solicitud.es_proyecto:
+        if solicitud.estado != Estado.BORRADOR:
+            raise AppError(
+                422,
+                "El carácter de proyecto solo puede cambiarse mientras es borrador",
+                "es_proyecto_inmutable",
+            )
+        solicitud.es_proyecto = data.es_proyecto
     solicitud.cliente_id = (
         obtener_o_crear(db, data.cliente, user).id if data.cliente is not None else None
     )
@@ -186,6 +197,7 @@ def stmt_listado(
     *,
     estado: Estado | None,
     prioridad: Prioridad | None,
+    es_proyecto: bool | None = None,
     cliente_id: int | None,
     sucursal_id: int | None,
     comprador_id: int | None,
@@ -209,6 +221,8 @@ def stmt_listado(
         stmt = stmt.where(Solicitud.estado == estado)
     if prioridad is not None:
         stmt = stmt.where(Solicitud.prioridad == prioridad)
+    if es_proyecto is not None:
+        stmt = stmt.where(Solicitud.es_proyecto == es_proyecto)
     if cliente_id is not None:
         stmt = stmt.where(Solicitud.cliente_id == cliente_id)
     if sucursal_id is not None:
@@ -239,6 +253,7 @@ def listar(
     *,
     estado: Estado | None,
     prioridad: Prioridad | None,
+    es_proyecto: bool | None = None,
     cliente_id: int | None,
     sucursal_id: int | None,
     comprador_id: int | None,
@@ -253,6 +268,7 @@ def listar(
         user,
         estado=estado,
         prioridad=prioridad,
+        es_proyecto=es_proyecto,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -281,6 +297,7 @@ def a_out(
         "folio": solicitud.folio,
         "estado": solicitud.estado,
         "prioridad": solicitud.prioridad,
+        "es_proyecto": solicitud.es_proyecto,
         "cliente_id": solicitud.cliente_id,
         "cliente_nombre": cliente_nombre,
         "vendedor_id": solicitud.vendedor_id,

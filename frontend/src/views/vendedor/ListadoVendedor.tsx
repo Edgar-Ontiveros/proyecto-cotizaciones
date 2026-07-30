@@ -4,7 +4,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useClientes, useSolicitudes } from "../../api/hooks";
-import { BadgeEstado, MontoSolicitud, SemaforoBanda } from "../../components/compartidos";
+import {
+  BadgeEstado,
+  FolioConProyecto,
+  MontoSolicitud,
+  SemaforoBanda,
+} from "../../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../../components/filtrosListado";
 import { fecha } from "../../lib/format";
 import type { SolicitudOut } from "../../lib/types";
@@ -25,12 +30,14 @@ export function ListadoVendedor() {
   const listado = useFiltrosListado();
   const { pagina, setPagina } = listado;
   const [estado, setEstado] = useState<string | null>(null);
+  const [tipo, setTipo] = useState<string | null>(null);
   const [clienteTexto, setClienteTexto] = useState("");
   const [clienteId, setClienteId] = useState<number | undefined>();
 
   const { data: clientes } = useClientes(clienteTexto);
   const { data, isFetching } = useSolicitudes({
     estado: estado ?? undefined,
+    es_proyecto: tipo !== null ? tipo === "PROYECTO" : undefined,
     cliente_id: clienteId,
     ...listado.filtros,
     limit: PAGE,
@@ -62,6 +69,20 @@ export function ListadoVendedor() {
           clearable
           w={160}
         />
+        <Select
+          placeholder="Tipo"
+          data={[
+            { value: "PROYECTO", label: "Proyectos" },
+            { value: "NORMAL", label: "Normales" },
+          ]}
+          value={tipo}
+          onChange={(v) => {
+            setTipo(v);
+            setPagina(1);
+          }}
+          clearable
+          w={140}
+        />
         <Autocomplete
           placeholder="Cliente"
           data={opcionesCliente}
@@ -89,7 +110,7 @@ export function ListadoVendedor() {
         onRowClick={({ record }) => navigate(`/vendedor/solicitudes/${record.id}`)}
         noRecordsText="Sin solicitudes"
         columns={[
-          { accessor: "folio", title: "Folio", render: (s) => s.folio ?? "(borrador)" },
+          { accessor: "folio", title: "Folio", render: (s) => <FolioConProyecto solicitud={s} /> },
           { accessor: "cliente_nombre", title: "Cliente", render: (s) => s.cliente_nombre ?? "—" },
           { accessor: "creado_en", title: "Fecha", render: (s) => fecha(s.creado_en) },
           { accessor: "estado", title: "Estado", render: (s) => <BadgeEstado estado={s.estado} /> },

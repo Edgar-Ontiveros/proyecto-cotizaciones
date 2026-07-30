@@ -19,6 +19,7 @@ import type {
 
 export interface FiltrosListado {
   estado?: string;
+  es_proyecto?: boolean;
   cliente_id?: number;
   desde?: string;
   hasta?: string;
@@ -98,6 +99,9 @@ export interface SolicitudBody {
   cliente: string | null;
   prioridad: string;
   notas: string | null;
+  // F8f: solo puede cambiar mientras es BORRADOR (el backend responde 422
+  // es_proyecto_inmutable después).
+  es_proyecto: boolean;
   partidas: {
     codigo_sap: string | null;
     cantidad: string;

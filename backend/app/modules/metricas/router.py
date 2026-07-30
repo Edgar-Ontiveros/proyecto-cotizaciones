@@ -18,6 +18,7 @@ from app.modules.metricas.schemas import (
     NoEncontradosOut,
     ResumenOut,
     SerieOut,
+    TiemposEtapaOut,
 )
 from app.modules.metricas.service import Dimension, Filtros
 
@@ -89,6 +90,17 @@ def serie(
     """Tendencia semanal para el dashboard (F8d): mismos filtros y scoping
     que /resumen."""
     return service.serie_semanal(db, user, f)
+
+
+@router.get("/tiempos-etapa", response_model=TiemposEtapaOut)
+def tiempos_etapa(
+    f: Filtros = Depends(filtros_query),
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Promedio y mediana de horas hábiles por estado + agregados compras/
+    ventas (F8f), con los filtros y el scoping estándar de /metricas."""
+    return service.tiempos_etapa(db, user, f)
 
 
 @router.get("/no-encontrados", response_model=NoEncontradosOut)

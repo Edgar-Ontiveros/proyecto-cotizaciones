@@ -20,12 +20,17 @@ import { useLocation, useNavigate, useParams } from "react-router";
 
 import { useAccionSolicitud, useComentar, useSolicitud } from "../../api/hooks";
 import { useAuth } from "../../auth/AuthContext";
-import { BadgeEstado, Dinero, SemaforoBanda } from "../../components/compartidos";
+import {
+  BadgeEstado,
+  BadgeProyecto,
+  Dinero,
+  SemaforoBanda,
+} from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { baseSolicitudes } from "../../lib/crm";
 import { dinero, fecha, fechaHora, folioCliente } from "../../lib/format";
-import type { SolicitudDetailOut } from "../../lib/types";
+import type { SolicitudDetailOut, TiemposOut } from "../../lib/types";
 
 function TablaPartidas({ solicitud }: { solicitud: SolicitudDetailOut }) {
   return (
@@ -55,6 +60,69 @@ function TablaPartidas({ solicitud }: { solicitud: SolicitudDetailOut }) {
         ))}
       </Table.Tbody>
     </Table>
+  );
+}
+
+const TEXTO_SEGMENTO: Record<string, string> = {
+  BORRADOR: "Borrador",
+  ENVIADA: "Enviada",
+  EN_PROCESO: "En proceso",
+  COTIZADA: "Cotizada",
+  CONFIRMADA: "Confirmada",
+  NO_CONFIRMADA: "No confirmada",
+  RECHAZADA: "Rechazada",
+  CANCELADA: "Cancelada",
+};
+
+/** Bloque de tiempos (F8f): temporizador general + compras/ventas y el
+ * desglose de segmentos por estado. Sin dinero: lo ve todo rol con acceso. */
+function BloqueTiempos({ tiempos }: { tiempos: TiemposOut | null }) {
+  if (tiempos === null) return null;
+  return (
+    <Paper withBorder p="md">
+      <Group justify="space-between" mb="sm">
+        <Title order={5}>Tiempos</Title>
+        {tiempos.detenido && (
+          <Text size="xs" c="dimmed">
+            Temporizador detenido (estado terminal)
+          </Text>
+        )}
+      </Group>
+      <Group gap="xl" mb="sm">
+        <Text size="sm">
+          <b>General:</b> {tiempos.general_horas_habiles.toFixed(1)} h hábiles ·{" "}
+          {tiempos.general_horas_naturales.toFixed(1)} h naturales
+        </Text>
+        <Text size="sm">
+          <b>Compras:</b> {tiempos.compras_horas_habiles.toFixed(1)} h hábiles
+        </Text>
+        <Text size="sm">
+          <b>Ventas:</b> {tiempos.ventas_horas_habiles.toFixed(1)} h hábiles
+        </Text>
+      </Group>
+      <Table withTableBorder withColumnBorders>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Etapa</Table.Th>
+            <Table.Th>Inicio</Table.Th>
+            <Table.Th>Fin</Table.Th>
+            <Table.Th>Hrs hábiles</Table.Th>
+            <Table.Th>Hrs naturales</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {tiempos.segmentos.map((s, i) => (
+            <Table.Tr key={i}>
+              <Table.Td>{TEXTO_SEGMENTO[s.estado] ?? s.estado}</Table.Td>
+              <Table.Td>{fechaHora(s.inicio)}</Table.Td>
+              <Table.Td>{s.fin !== null ? fechaHora(s.fin) : "(en curso)"}</Table.Td>
+              <Table.Td>{s.horas_habiles.toFixed(1)}</Table.Td>
+              <Table.Td>{s.horas_naturales.toFixed(1)}</Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Paper>
   );
 }
 
@@ -173,6 +241,7 @@ export function DetalleSolicitud() {
           <VolverBoton />
           <Title order={3}>{folioCliente(solicitud.folio, solicitud.cliente_nombre)}</Title>
           <BadgeEstado estado={solicitud.estado} />
+          <BadgeProyecto esProyecto={solicitud.es_proyecto} />
           <SemaforoBanda
             banda={solicitud.banda}
             horasHabiles={solicitud.horas_habiles}
@@ -270,6 +339,7 @@ export function DetalleSolicitud() {
 
       <Title order={5}>Partidas</Title>
       <TablaPartidas solicitud={solicitud} />
+      <BloqueTiempos tiempos={solicitud.tiempos} />
       <HistorialComentarios solicitud={solicitud} />
     </Stack>
   );

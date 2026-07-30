@@ -221,6 +221,9 @@ def ejecutar_transicion(
         solicitud.confirmado_en = ahora
 
     solicitud.estado = a
+    # F8f: el evento →ENVIADA de un PROYECTO lo menciona en el historial.
+    if a == Estado.ENVIADA and solicitud.es_proyecto and comentario is None:
+        comentario = "Solicitud de PROYECTO"
     db.add(
         HistorialEstado(
             solicitud_id=solicitud.id,

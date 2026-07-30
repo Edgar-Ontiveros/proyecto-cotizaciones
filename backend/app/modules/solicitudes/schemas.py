@@ -7,7 +7,7 @@ from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
 from app.models.solicitud import Estado, Prioridad, UnidadCatalogo
 from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionConsolidadoOut, OpcionOut
-from app.modules.metricas.schemas import CicloOut
+from app.modules.metricas.schemas import CicloOut, TiemposOut
 
 
 class PartidaIn(BaseModel):
@@ -27,6 +27,9 @@ class SolicitudCreate(BaseModel):
     cliente: str | None = None  # nombre libre → obtener_o_crear
     prioridad: Prioridad = Prioridad.NORMAL
     notas: str | None = None
+    # F8f: None = "sin cambio" (al crear, None equivale a False). Cambiarlo
+    # fuera de BORRADOR responde 422 es_proyecto_inmutable.
+    es_proyecto: bool | None = None
     partidas: list[PartidaIn] = []
 
 
@@ -58,6 +61,7 @@ class SolicitudOut(BaseModel):
     folio: str | None
     estado: Estado
     prioridad: Prioridad
+    es_proyecto: bool = False
     cliente_id: int | None
     cliente_nombre: str | None
     vendedor_id: int
@@ -119,6 +123,9 @@ class SolicitudDetailOut(SolicitudOut):
     historial: list[HistorialOut]
     comentarios: list[ComentarioOut]
     ciclos: list[CicloOut] = []  # desglose completo (F6)
+    # F8f: segmentos por estado + agregados general/compras/ventas. Aquí no
+    # hay dinero: lo ve TODO rol con acceso a la solicitud.
+    tiempos: TiemposOut | None = None
 
 
 class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
@@ -130,6 +137,7 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
     historial: list[HistorialOut]
     comentarios: list[ComentarioOut]
     ciclos: list[CicloOut] = []
+    tiempos: TiemposOut | None = None
 
 
 class SolicitudDetailCompradorOut(SolicitudDetailVentasOut):

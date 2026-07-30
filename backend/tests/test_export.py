@@ -185,15 +185,17 @@ def test_export_valido_con_fechas_locales(client, db, entorno, auth_headers):
     assert fila[2] == "Export Suc"
     assert fila[3] == entorno.vendedor.nombre
     assert fila[5] == "CONFIRMADA"
+    # F8f: columna Proyecto (Sí/No) tras Prioridad.
+    assert fila[7] == "No"
     # Fecha en la zona horaria de la sucursal (UTC-6): 21:00Z → 15:00 local.
     esperado = creado.astimezone(ZoneInfo(entorno.sucursal.timezone)).replace(tzinfo=None)
-    assert fila[7] == esperado
+    assert fila[8] == esperado
     # Último ciclo cerrado: 2 horas hábiles (15:00→17:00 local de un jueves).
-    assert fila[11] == "ESPERADA" and fila[12] == 2.0
+    assert fila[12] == "ESPERADA" and fila[13] == 2.0
     # F8c: columnas Monto MXN/USD (desglose de la ganadora — aquí no hay
     # opción, la fila se creó directo), TC y Confirmado MXN consolidado.
-    assert fila[13] is None and fila[14] is None and fila[15] is None
-    assert fila[16] == 1234.5
+    assert fila[17] is None and fila[18] is None and fila[19] is None
+    assert fila[20] == 1234.5
 
 
 def test_export_respeta_filtros_y_scoping(client, db, entorno, auth_headers, make_user):

@@ -4,6 +4,7 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from app.core.horario_habil import Banda
+from app.models.solicitud import Estado
 
 
 class CicloOut(BaseModel):
@@ -13,6 +14,46 @@ class CicloOut(BaseModel):
     horas_habiles: float
     dias_transcurridos: int
     banda: Banda
+
+
+class SegmentoOut(BaseModel):
+    """Estancia continua en un estado (F8f): las transiciones reales cortan,
+    los eventos de==a no. fin=None = segmento vigente."""
+
+    estado: Estado
+    inicio: datetime
+    fin: datetime | None
+    horas_habiles: float
+    horas_naturales: float
+
+
+class TiemposOut(BaseModel):
+    """Bloque `tiempos` del detalle (F8f): visible para TODO rol con acceso a
+    la solicitud (aquí no hay dinero)."""
+
+    segmentos: list[SegmentoOut]
+    # Temporizador general: creado_en → primer evento terminal (o ahora si
+    # sigue viva); la reversión de una NO_CONFIRMADA lo reanuda.
+    general_horas_habiles: float
+    general_horas_naturales: float
+    compras_horas_habiles: float  # ENVIADA + EN_PROCESO
+    ventas_horas_habiles: float  # BORRADOR + COTIZADA + RECHAZADA
+    detenido: bool
+
+
+class EstadisticaTiempoOut(BaseModel):
+    """Promedio/mediana de horas hábiles sobre observaciones POR SOLICITUD
+    (suma de sus segmentos CERRADOS del estado o grupo)."""
+
+    n: int
+    promedio_horas_habiles: float | None
+    mediana_horas_habiles: float | None
+
+
+class TiemposEtapaOut(BaseModel):
+    por_estado: dict[str, EstadisticaTiempoOut]
+    compras: EstadisticaTiempoOut
+    ventas: EstadisticaTiempoOut
 
 
 class SinDesenlaceOut(BaseModel):

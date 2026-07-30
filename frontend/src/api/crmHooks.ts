@@ -25,7 +25,7 @@ import type {
   UsuarioOut,
 } from "../lib/types";
 
-type Params = Record<string, string | number | undefined>;
+type Params = Record<string, string | number | boolean | undefined>;
 
 // ------------------------------------------------------------------ métricas
 

@@ -22,6 +22,8 @@ export const partidaSchema = z.object({
 export const solicitudSchema = z.object({
   cliente: z.string().trim().optional().or(z.literal("")),
   prioridad: z.enum(["NORMAL", "URGENTE"]),
+  // F8f: checkbox "Proyecto" — solo editable mientras es BORRADOR.
+  es_proyecto: z.boolean(),
   notas: z.string().trim().optional().or(z.literal("")),
   partidas: z.array(partidaSchema),
 });
