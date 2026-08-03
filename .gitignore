@@ -27,3 +27,6 @@ dist/
 
 # Archivos subidos (F8g): comprobantes en filesystem; F9 lo monta como volumen
 backend/var/
+
+# Manual de despliegue con identificadores de cuenta (F9) — NUNCA se commitea
+MANUAL-DESPLIEGUE-EDGAR.md

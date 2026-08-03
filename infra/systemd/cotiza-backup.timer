@@ -1,0 +1,11 @@
+# Diario a las 02:00 de America/Chihuahua (la zona de la matriz).
+# Persistent: si la instancia estaba apagada a esa hora, corre al arrancar.
+[Unit]
+Description=Timer del respaldo diario de cotizaciones
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 America/Chihuahua
+Persistent=true
+
+[Install]
+WantedBy=timers.target

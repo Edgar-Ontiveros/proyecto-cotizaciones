@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # relativo al backend y está en .gitignore; F9 lo monta como volumen
     # persistente incluido en los backups.
     archivos_dir: str = "./var/archivos"
+    # F9: pools del engine configurables por entorno (DB_POOL_SIZE /
+    # DB_MAX_OVERFLOW). La RDS de producción tiene 1 GB de RAM: la API corre
+    # con 5/5 y el proceso del scheduler con 2/0 (lo fija su servicio en
+    # compose.prod.yml — abre su propio pool y no atiende requests).
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
 
 
 @lru_cache

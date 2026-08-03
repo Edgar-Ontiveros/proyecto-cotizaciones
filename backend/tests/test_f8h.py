@@ -135,7 +135,7 @@ def test_solicitar_solo_en_cotizada(client, entorno, auth_headers):
 
 
 def test_unico_pendiente_por_solicitud(client, entorno, auth_headers):
-    sid, p1, p2, _ = _cambio_pendiente(client, entorno, auth_headers)
+    sid, _p1, p2, _ = _cambio_pendiente(client, entorno, auth_headers)
     r = _solicitar(
         client, auth_headers(entorno.vendedor), sid, [{"partida_id": p2, "cantidad_nueva": "99"}]
     )
@@ -387,7 +387,7 @@ def test_rechazar_todo_intacto_y_comentario_obligatorio(client, db, entorno, aut
 
 
 def test_permisos_de_resolucion(client, entorno, auth_headers):
-    sid, p1, _p2, cambio_id = _cambio_pendiente(client, entorno, auth_headers)
+    _sid, _p1, _p2, cambio_id = _cambio_pendiente(client, entorno, auth_headers)
     # El vendedor (dueño) NO aprueba: 403.
     r = client.post(
         f"{CAMBIOS}/{cambio_id}/aprobar", headers=auth_headers(entorno.vendedor), json={}

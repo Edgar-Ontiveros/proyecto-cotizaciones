@@ -1,0 +1,75 @@
+# Producción (F9): corre EN la EC2 desde /opt/cotiza (ver infra/RUNBOOK.md).
+# deploy.sh invoca `docker compose --env-file /opt/cotiza/.env` — de ahí salen
+# ECR_REGISTRY, TAG y los pools del scheduler para la sustitución de variables.
+name: cotiza
+
+services:
+  api:
+    image: ${ECR_REGISTRY}/cotiza-api:${TAG}
+    restart: unless-stopped
+    env_file: /opt/cotiza/.env
+    expose:
+      - "8000" # solo red interna del compose; el único puerto publicado es el 80 de nginx
+    volumes:
+      - /opt/cotiza/archivos:/data/archivos
+      - /opt/rds-ca.pem:/opt/rds-ca.pem:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; r = urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5); sys.exit(0 if r.status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  scheduler:
+    # La MISMA imagen con otro command. UNA sola réplica SIEMPRE (manual §5.1):
+    # dos schedulers duplicarían los jobs de bandas. compose levanta 1 por
+    # definición — no usar --scale con este servicio.
+    image: ${ECR_REGISTRY}/cotiza-api:${TAG}
+    command: python -m app.scheduler
+    restart: unless-stopped
+    env_file: /opt/cotiza/.env
+    environment:
+      # RDS con 1 GB de RAM (manual §5.5): el scheduler no atiende requests,
+      # le basta un pool mínimo. Sobreescribe los 5/5 del .env de la API.
+      DB_POOL_SIZE: ${SCHEDULER_DB_POOL_SIZE:-2}
+      DB_MAX_OVERFLOW: ${SCHEDULER_DB_MAX_OVERFLOW:-0}
+    volumes:
+      - /opt/cotiza/archivos:/data/archivos
+      - /opt/rds-ca.pem:/opt/rds-ca.pem:ro
+    healthcheck:
+      # Liveness real: el heartbeat que el job de bandas escribe cada corrida
+      # (15 min) debe tener < 45 min. Abre UNA conexión breve cada 5 min.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys; from datetime import datetime, timedelta, timezone; from app.core.database import SessionLocal; from app.models.scheduler_heartbeat import SchedulerHeartbeat; db = SessionLocal(); hb = db.get(SchedulerHeartbeat, 1); db.close(); sys.exit(0 if hb and datetime.now(timezone.utc) - hb.ultima_corrida < timedelta(minutes=45) else 1)"
+      interval: 5m
+      timeout: 15s
+      retries: 3
+      start_period: 2m
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - /opt/cotiza/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Se monta static/ COMPLETO (no static/current): un bind mount resuelve
+      # el symlink al CREAR el contenedor y el swap atómico de deploy.sh no se
+      # reflejaría. Montando el padre, nginx sigue `current` (symlink RELATIVO
+      # a releases/TAG) dentro del contenedor y cada release entra sin reinicio.
+      - /opt/cotiza/static:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

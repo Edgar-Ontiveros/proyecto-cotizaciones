@@ -1,0 +1,9 @@
+# Respaldo diario de la base y los comprobantes (F9). Lo dispara el timer.
+[Unit]
+Description=Respaldo diario cotizaciones (pg_dump + comprobantes a S3)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cotiza/backup.sh
