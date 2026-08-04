@@ -111,10 +111,24 @@ docker exec restore-test psql -U postgres -d postgres -c "select count(*) from u
 docker rm -f restore-test
 ```
 
-Criterio de éxito: el `psql` termina sin errores y los conteos de `usuarios`,
-`sucursales` y `solicitudes` coinciden con producción. Esta prueba se ejecutó
-de verdad al cierre de F9 (la salida quedó en el entregable de la fase);
-repetirla al menos tras cada cambio de esquema mayor.
+Criterio de éxito: los conteos de `usuarios`, `sucursales` y `solicitudes`
+coinciden con producción y `alembic_version` trae la revisión head esperada.
+**Nota esperada:** el restore en un Postgres scratch imprime errores
+`role "cotiza_app"/"cotiza_migrate" does not exist` — son los `GRANT` del
+dump; no afectan los datos. Para un restore silencioso, crear antes los roles
+(`CREATE ROLE cotiza_app; CREATE ROLE cotiza_migrate;`).
+
+Prueba real ejecutada al cierre de F9 (día 1, dump `2026-08-04.sql.gz`):
+
+```
+usuarios: 54
+sucursales: 11
+solicitudes: 0
+titularidades: 11
+version alembic: 0f37792d31f7
+```
+
+Repetirla al menos tras cada cambio de esquema mayor.
 
 ## Diagnóstico rápido
 
