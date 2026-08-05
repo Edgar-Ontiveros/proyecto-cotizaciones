@@ -47,12 +47,25 @@ export function BadgeProyecto({ esProyecto }: { esProyecto: boolean }) {
   );
 }
 
-/** Folio + badge PROYECTO para las columnas de listado. */
+/** F10 p.7b: estado visible del flujo de cambios — derivado SIEMPRE de
+ * cambio_pendiente (nunca materializado en otro lado). */
+export function BadgeCambioPendiente({ pendiente }: { pendiente: boolean }) {
+  if (!pendiente) return null;
+  return (
+    <Badge color="orange" variant="filled" size="sm" data-testid="badge-cambio">
+      CAMBIO SOLICITADO
+    </Badge>
+  );
+}
+
+/** Folio + badges PROYECTO y CAMBIO SOLICITADO para las columnas de listado
+ * (vendedor, cola del comprador y tabla del CRM usan este componente). */
 export function FolioConProyecto({ solicitud }: { solicitud: SolicitudOut }) {
   return (
     <Group gap={6} wrap="nowrap">
       <Text fw={500}>{solicitud.folio ?? "(borrador)"}</Text>
       <BadgeProyecto esProyecto={solicitud.es_proyecto} />
+      <BadgeCambioPendiente pendiente={solicitud.cambio_pendiente} />
     </Group>
   );
 }

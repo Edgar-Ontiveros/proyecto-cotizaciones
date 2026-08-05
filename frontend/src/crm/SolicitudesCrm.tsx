@@ -2,7 +2,7 @@
  * export a Excel con los filtros ACTUALES. El alcance real lo pone el
  * backend (scoping por rol). */
 
-import { Button, Group, Select, Title } from "@mantine/core";
+import { Button, Checkbox, Group, Select, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { DataTable } from "mantine-datatable";
 import { useState } from "react";
@@ -43,6 +43,7 @@ export function SolicitudesCrm() {
   const [estado, setEstado] = useState<string | null>(null);
   const [prioridad, setPrioridad] = useState<string | null>(null);
   const [tipo, setTipo] = useState<string | null>(null);
+  const [soloCambios, setSoloCambios] = useState(false);
   const [sucursalId, setSucursalId] = useState<string | null>(null);
   const [compradorId, setCompradorId] = useState<string | null>(null);
   const [vendedorId, setVendedorId] = useState<string | null>(null);
@@ -52,6 +53,8 @@ export function SolicitudesCrm() {
     estado: estado ?? undefined,
     prioridad: prioridad ?? undefined,
     es_proyecto: tipo !== null ? tipo === "PROYECTO" : undefined,
+    // F10 p.7b: mismo filtro para el listado Y el export a Excel.
+    cambio_pendiente: soloCambios || undefined,
     sucursal_id: sucursalId !== null ? Number(sucursalId) : undefined,
     comprador_id: compradorId !== null ? Number(compradorId) : undefined,
     vendedor_id: vendedorId !== null ? Number(vendedorId) : undefined,
@@ -127,6 +130,14 @@ export function SolicitudesCrm() {
           onChange={limpiarPagina(setTipo)}
           clearable
           w={130}
+        />
+        <Checkbox
+          label="Con cambio pendiente"
+          checked={soloCambios}
+          onChange={(e) => {
+            setSoloCambios(e.currentTarget.checked);
+            setPagina(1);
+          }}
         />
         <Select
           placeholder="Sucursal"

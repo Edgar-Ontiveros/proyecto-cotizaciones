@@ -143,6 +143,10 @@ function AccionesCrm() {
   // Mapa de acciones por rol (F9-prep): dato puro testeado en crm.test.
   const acciones = accionesDetalleCrm(usuario.rol);
   const capturable = ["ENVIADA", "EN_PROCESO", "COTIZADA"].includes(solicitud.estado);
+  // F10 p.3: en CONFIRMADA la información post-pedido (proveedor, TC,
+  // consolidado, ganadora) vive en la vista de cotización en modo lectura —
+  // sin esta puerta, gerente_compras y admin se quedaban sin ella.
+  const verCotizacion = solicitud.estado === "CONFIRMADA" && solicitud.opciones.length > 0;
   const ganadora = solicitud.opciones.find((o) => o.id === solicitud.opcion_seleccionada_id);
   const corregibleTC =
     acciones.corregirTC && solicitud.estado === "CONFIRMADA" && ganadora !== undefined
@@ -166,6 +170,16 @@ function AccionesCrm() {
         onClick={() => navigate(`/crm/solicitudes/${solicitudId}/capturar`)}
       >
         Capturar cotización
+      </Button>
+    ),
+    acciones.capturar && verCotizacion && (
+      <Button
+        key="ver-cotizacion"
+        variant="light"
+        color="green"
+        onClick={() => navigate(`/crm/solicitudes/${solicitudId}/capturar`)}
+      >
+        Ver cotización completa
       </Button>
     ),
     acciones.reasignarComprador && reasignable && solicitud.comprador_id !== null && (

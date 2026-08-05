@@ -2,14 +2,15 @@
 
 El contenido vive en el filesystem (settings.archivos_dir) con el UUID como
 nombre en disco, sin extensión; el nombre original solo existe en BD y se
-sirve vía Content-Disposition. UNA fila vigente por (solicitud, tipo): el
-reemplazo pre-confirmación sustituye la fila y borra el archivo anterior.
+sirve vía Content-Disposition. Desde F10 p.6 una solicitud puede tener N
+comprobantes: se eliminan individualmente ANTES de confirmar (quien lo subió
+o admin) y tras CONFIRMADA todos quedan inmutables.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -20,7 +21,9 @@ TIPO_COMPROBANTE_PEDIDO = "comprobante_pedido"
 
 class Archivo(Base):
     __tablename__ = "archivos"
-    __table_args__ = (UniqueConstraint("solicitud_id", "tipo"),)
+    # F10 p.6: fuera el UNIQUE(solicitud, tipo) — ahora N comprobantes por
+    # solicitud; queda un índice normal para las búsquedas.
+    __table_args__ = (Index("ix_archivos_solicitud_tipo", "solicitud_id", "tipo"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     solicitud_id: Mapped[int] = mapped_column(ForeignKey("solicitudes.id"))

@@ -188,10 +188,10 @@ def test_confirmar_con_comprobante_y_archivo_persiste(client, db, entorno, auth_
     archivo = db.scalar(select(Archivo).where(Archivo.solicitud_id == sid))
     assert archivo is not None
     assert archivos.ruta_de(archivo.id).read_bytes() == PDF
-    # El detalle expone los metadatos (nombre, quién, cuándo).
+    # El detalle expone los metadatos (F10 p.6: lista de comprobantes).
     detalle = client.get(f"{BASE}/{sid}", headers=headers).json()
-    assert detalle["comprobante"]["nombre_original"] == "orden-compra.pdf"
-    assert detalle["comprobante"]["subido_por"] == entorno.vendedor.id
+    assert detalle["comprobantes"][0]["nombre_original"] == "orden-compra.pdf"
+    assert detalle["comprobantes"][0]["subido_por"] == entorno.vendedor.id
 
 
 def test_gerente_confirmando_tambien_exige_comprobante(client, entorno, auth_headers):
@@ -209,26 +209,26 @@ def test_gerente_confirmando_tambien_exige_comprobante(client, entorno, auth_hea
 # ------------------------------------------------------------ reemplazo e inmutable
 
 
-def test_reemplazo_pre_confirmacion(client, db, entorno, auth_headers):
-    """Re-subir antes de confirmar REEMPLAZA: fila sustituida, archivo viejo
-    fuera del disco y evento de==a 'Comprobante actualizado'."""
+def test_subir_varios_acumula(client, db, entorno, auth_headers):
+    """F10 p.6: re-subir antes de confirmar YA NO reemplaza — acumula. Ambos
+    archivos viven en disco y el historial registra cada carga."""
     sid = _cotizada(client, entorno, auth_headers)
     headers = auth_headers(entorno.vendedor)
     primero = _subir(client, headers, sid, PDF, "v1.pdf").json()
-    ruta_primero = archivos.ruta_de(primero["id"])
-    assert ruta_primero.is_file()
-
     segundo = _subir(client, headers, sid, PNG, "v2.png").json()
     assert segundo["id"] != primero["id"]
-    assert not ruta_primero.exists()  # el viejo se fue del disco
+    assert archivos.ruta_de(primero["id"]).read_bytes() == PDF
     assert archivos.ruta_de(segundo["id"]).read_bytes() == PNG
     filas = db.scalars(select(Archivo).where(Archivo.solicitud_id == sid)).all()
-    assert len(filas) == 1 and filas[0].nombre_original == "v2.png"
+    assert {f.nombre_original for f in filas} == {"v1.pdf", "v2.png"}
 
-    historial = client.get(f"{BASE}/{sid}", headers=headers).json()["historial"]
-    eventos = [h["comentario"] for h in historial if h["de"] == h["a"]]
+    detalle = client.get(f"{BASE}/{sid}", headers=headers).json()
+    # Orden por creado_en: en tests TODO corre en una transacción (now() de
+    # Postgres es fijo por transacción → empate) — se compara sin orden.
+    assert {c["nombre_original"] for c in detalle["comprobantes"]} == {"v1.pdf", "v2.png"}
+    eventos = [h["comentario"] for h in detalle["historial"] if h["de"] == h["a"]]
     assert "Comprobante cargado (v1.pdf)" in eventos
-    assert "Comprobante actualizado" in eventos
+    assert "Comprobante cargado (v2.png)" in eventos
 
 
 def test_tras_confirmada_es_inmutable(client, entorno, auth_headers):
@@ -249,7 +249,7 @@ def test_descarga_por_cada_rol_permitido_y_404_para_ajeno(client, entorno, auth_
     director, comprador asignado, gerente_compras y admin. Un vendedor ajeno
     (misma sucursal) recibe el mismo 404 del scoping."""
     sid = _cotizada(client, entorno, auth_headers)
-    assert _subir(client, auth_headers(entorno.vendedor), sid, PDF, "orden.pdf").status_code == 200
+    subido = _subir(client, auth_headers(entorno.vendedor), sid, PDF, "orden.pdf").json()
 
     permitidos = [
         entorno.vendedor,
@@ -260,19 +260,23 @@ def test_descarga_por_cada_rol_permitido_y_404_para_ajeno(client, entorno, auth_
         entorno.admin,
     ]
     for usuario in permitidos:
-        r = client.get(f"{BASE}/{sid}/comprobante", headers=auth_headers(usuario))
+        r = client.get(f"{BASE}/{sid}/comprobantes/{subido['id']}", headers=auth_headers(usuario))
         assert r.status_code == 200, f"{usuario.rol}: {r.text}"
         assert r.content == PDF
         assert 'filename="orden.pdf"' in r.headers["content-disposition"]
         assert r.headers["content-type"].startswith("application/pdf")
 
-    r = client.get(f"{BASE}/{sid}/comprobante", headers=auth_headers(entorno.ajeno))
+    r = client.get(f"{BASE}/{sid}/comprobantes/{subido['id']}", headers=auth_headers(entorno.ajeno))
     assert r.status_code == 404
 
 
 def test_descarga_sin_comprobante_404(client, entorno, auth_headers):
+    import uuid as uuid_mod
+
     sid = _cotizada(client, entorno, auth_headers)
-    r = client.get(f"{BASE}/{sid}/comprobante", headers=auth_headers(entorno.vendedor))
+    r = client.get(
+        f"{BASE}/{sid}/comprobantes/{uuid_mod.uuid4()}", headers=auth_headers(entorno.vendedor)
+    )
     assert r.status_code == 404 and r.json()["code"] == "comprobante_no_encontrado"
 
 
@@ -281,7 +285,7 @@ def test_descarga_sin_comprobante_404(client, entorno, auth_headers):
 
 def test_confirmadas_previas_sin_archivo_siguen_validas(client, db, entorno, auth_headers):
     """La regla es del flujo NUEVO: una CONFIRMADA histórica sin comprobante
-    no se invalida — su detalle sirve y comprobante viene null."""
+    no se invalida — su detalle sirve y comprobantes viene vacía."""
     sid = _cotizada(client, entorno, auth_headers)
     headers = auth_headers(entorno.vendedor)
     assert _subir(client, headers, sid).status_code == 200
@@ -293,7 +297,7 @@ def test_confirmadas_previas_sin_archivo_siguen_validas(client, db, entorno, aut
     db.execute(Archivo.__table__.delete().where(Archivo.solicitud_id == sid))
     db.commit()
     detalle = client.get(f"{BASE}/{sid}", headers=headers).json()
-    assert detalle["estado"] == "CONFIRMADA" and detalle["comprobante"] is None
+    assert detalle["estado"] == "CONFIRMADA" and detalle["comprobantes"] == []
 
 
 def test_pdf_minimo_es_pdf_valido():

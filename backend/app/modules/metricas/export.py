@@ -43,6 +43,7 @@ _ENCABEZADOS = [
     ("Estado", 14),
     ("Prioridad", 10),
     ("Proyecto", 10),
+    ("Cambio pendiente", 14),
     ("Creado", 17),
     ("Enviado", 17),
     ("Cotizado", 17),
@@ -125,6 +126,7 @@ def exportar_solicitudes(
     estado: Estado | None = None,
     prioridad: Prioridad | None = None,
     es_proyecto: bool | None = None,
+    cambio_pendiente: bool | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
     comprador_id: int | None = None,
@@ -140,6 +142,7 @@ def exportar_solicitudes(
         estado=estado,
         prioridad=prioridad,
         es_proyecto=es_proyecto,
+        cambio_pendiente=cambio_pendiente,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -212,6 +215,7 @@ def exportar_solicitudes(
                 solicitud.estado.value,
                 solicitud.prioridad.value,
                 "Sí" if solicitud.es_proyecto else "No",
+                "Sí" if solicitud.cambio_pendiente else "No",
                 _local(solicitud.creado_en, tz),
                 _local(solicitud.enviado_en, tz),
                 _local(solicitud.cotizado_en, tz),
@@ -229,7 +233,7 @@ def exportar_solicitudes(
             ]
         )
         fila_num = ws.max_row
-        for col in (9, 10, 11, 12):  # columnas de fecha
+        for col in (10, 11, 12, 13):  # columnas de fecha (corridas por Cambio pendiente)
             ws.cell(row=fila_num, column=col).number_format = _FORMATO_FECHA
 
     buffer = BytesIO()

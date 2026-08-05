@@ -3,6 +3,7 @@ import "@mantine/dates/styles.css";
 import "@mantine/dropzone/styles.css";
 import "@mantine/notifications/styles.css";
 import "mantine-datatable/styles.css";
+import "./impresion.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

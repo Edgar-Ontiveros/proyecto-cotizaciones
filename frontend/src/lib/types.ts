@@ -214,13 +214,17 @@ export interface CambioOut {
 }
 
 export interface SolicitudDetailOut extends SolicitudOut {
+  // F10 p.5: identidad para la hoja de impresión (todo rol con acceso).
+  vendedor_nombre: string | null;
+  sucursal_nombre: string | null;
   partidas: PartidaOut[];
   opciones: OpcionOut[];
   historial: HistorialOut[];
   comentarios: ComentarioOut[];
   ciclos: CicloOut[];
   tiempos: TiemposOut | null;
-  comprobante: ComprobanteOut | null;
+  // F10 p.6: pueden ser varios; confirmar exige al menos uno.
+  comprobantes: ComprobanteOut[];
   cambios: CambioOut[];
 }
 

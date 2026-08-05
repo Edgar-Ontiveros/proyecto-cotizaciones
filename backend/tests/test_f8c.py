@@ -197,11 +197,12 @@ def test_kpi_confirmado_consolidado_y_export_con_tc(client, entorno, cotizada_mi
     r = client.get("/api/v1/solicitudes/export", headers=auth_headers(entorno.admin))
     ws = load_workbook(BytesIO(r.content)).active
     encabezados = [c.value for c in ws[1]]
-    # F8f corrió los índices: Proyecto (7) y las 3 columnas de tiempos (14-16).
-    assert encabezados[17:21] == ["Monto MXN", "Monto USD", "Tipo de cambio", "Confirmado MXN"]
+    # F8f corrió los índices (Proyecto, tiempos); F10 p.7b agrega "Cambio
+    # pendiente" tras Proyecto → todo lo posterior corre +1.
+    assert encabezados[18:22] == ["Monto MXN", "Monto USD", "Tipo de cambio", "Confirmado MXN"]
     fila = next(f for f in ws.iter_rows(min_row=2, values_only=True) if f[5] == "CONFIRMADA")
-    assert (fila[17], fila[18]) == (12000, 500)
-    assert float(fila[19]) == 18.5 and fila[20] == 21250
+    assert (fila[18], fila[19]) == (12000, 500)
+    assert float(fila[20]) == 18.5 and fila[21] == 21250
 
 
 # --------------------------------------------- fix 2a: comprador en CONFIRMADA
@@ -221,11 +222,14 @@ def test_comprador_ve_proveedor_en_confirmada(client, entorno, cotizada_mixta, a
     assert detalle["opcion_seleccionada_id"] == detalle["opciones"][0]["id"]
     proveedores = {r_["proveedor"] for r_ in detalle["opciones"][0]["renglones"]}
     assert proveedores == {"Aceros del Norte", "Rolled Alloys"}
-    # Todo el lado ventas sigue SIN la clave.
-    for usuario in (entorno.vendedor, entorno.gsuc, entorno.dventas):
+    # F10 p.2: el ÚNICO sin la clave es el VENDEDOR; los gerentes ya la ven.
+    detalle = client.get(f"{BASE}/{cotizada_mixta}", headers=auth_headers(entorno.vendedor)).json()
+    for renglon in detalle["opciones"][0]["renglones"]:
+        assert "proveedor" not in renglon
+    for usuario in (entorno.gsuc, entorno.dventas):
         detalle = client.get(f"{BASE}/{cotizada_mixta}", headers=auth_headers(usuario)).json()
-        for renglon in detalle["opciones"][0]["renglones"]:
-            assert "proveedor" not in renglon, usuario.rol
+        proveedores = {r_["proveedor"] for r_ in detalle["opciones"][0]["renglones"]}
+        assert proveedores == {"Aceros del Norte", "Rolled Alloys"}, usuario.rol
 
 
 # ------------------------------------------------- permisos v2: matriz
@@ -333,14 +337,14 @@ def test_gestion_de_listado_scoped(client, entorno, make_user, auth_headers):
 # ------------------------------------------------- permisos v2: scoping/área
 
 
-def test_director_ventas_global_sin_proveedor_y_confirma(
+def test_director_ventas_global_con_proveedor_y_confirma(
     client, entorno, cotizada_mixta, auth_headers
 ):
     headers = auth_headers(entorno.dventas)
-    # Ve la solicitud (global) SIN clave proveedor.
+    # F10 p.2: el director YA ve el proveedor (política nueva de Edgar).
     detalle = client.get(f"{BASE}/{cotizada_mixta}", headers=headers).json()
-    for renglon in detalle["opciones"][0]["renglones"]:
-        assert "proveedor" not in renglon
+    proveedores = {r_["proveedor"] for r_ in detalle["opciones"][0]["renglones"]}
+    assert "Aceros del Norte" in proveedores
     # Confirma CUALQUIER solicitud y el historial LO registra a él.
     r = client.post(f"{BASE}/{cotizada_mixta}/seleccionar", headers=headers, json={"letra": "A"})
     assert r.status_code == 200, r.text

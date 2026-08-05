@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import get_current_user, require_roles, ve_proveedor
+from app.core.permissions import get_current_user, require_roles
 from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
 from app.modules.archivos import service as archivos_service
@@ -20,7 +20,6 @@ from app.modules.solicitudes.schemas import (
     SolicitudCreate,
     SolicitudDetailCompradorOut,
     SolicitudDetailOut,
-    SolicitudDetailVentasOut,
     SolicitudListOut,
     SolicitudListVendedorOut,
 )
@@ -71,6 +70,7 @@ def listar_solicitudes(
     estado: Estado | None = None,
     prioridad: Prioridad | None = None,
     es_proyecto: bool | None = None,
+    cambio_pendiente: bool | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
     comprador_id: int | None = None,
@@ -89,6 +89,7 @@ def listar_solicitudes(
         estado=estado,
         prioridad=prioridad,
         es_proyecto=es_proyecto,
+        cambio_pendiente=cambio_pendiente,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -143,10 +144,10 @@ def detalle_solicitud(
     solicitud_id: int,
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> SolicitudDetailOut | SolicitudDetailVentasOut | SolicitudDetailCompradorOut:
-    """El schema se elige por rol (§4.8, F8e): compras/admin con proveedor y
-    consolidado; gerentes de ventas con consolidado sin proveedor; VENDEDOR
-    sin ninguno de los dos — las claves NO existen en su JSON.
+) -> SolicitudDetailOut | SolicitudDetailCompradorOut:
+    """El schema se elige por rol (F10 p.2): TODOS los roles de gestión con
+    proveedor y consolidado; el VENDEDOR sin ninguno de los dos — las claves
+    NO existen en su JSON.
     response_model=None: la respuesta se serializa tal cual se construye, sin
     re-validación de FastAPI que pudiera mezclar las vistas."""
     solicitud = service.obtener_scoped(db, solicitud_id, user)
@@ -187,27 +188,31 @@ def detalle_solicitud(
             base.referencia_mxn = mxn or None
             base.referencia_usd = usd or None
     tiempos = tiempos_mod.cargar_tiempos(db, [solicitud.id]).get(solicitud.id)
-    archivo = archivos_service.comprobante_vigente(db, solicitud.id)
+    # F10 p.6: TODOS los comprobantes (pueden ser varios).
+    comprobantes = [
+        a_comprobante_out(db, a) for a in archivos_service.comprobantes_de(db, solicitud.id)
+    ]
+    vendedor_nombre, sucursal_nombre = service.nombres_detalle(db, solicitud)
     datos = dict(
         **base.model_dump(),
+        vendedor_nombre=vendedor_nombre,
+        sucursal_nombre=sucursal_nombre,
         ciclos=ciclos,
         partidas=service.partidas_de(db, solicitud.id),
         historial=service.historial_de(db, solicitud.id, user),
         comentarios=service.comentarios_de(db, solicitud.id),
         tiempos=_tiempos_out(tiempos) if tiempos is not None else None,
-        comprobante=a_comprobante_out(db, archivo) if archivo is not None else None,
+        comprobantes=comprobantes,
         cambios=cambios_service.cambios_de(db, solicitud.id),
     )
-    if ve_proveedor(user.rol):
-        return SolicitudDetailCompradorOut(
-            **datos, opciones=cotizaciones_service.opciones_comprador_de(db, solicitud)
-        )
+    # F10 p.2: solo el VENDEDOR queda sin proveedor/consolidado; todos los
+    # demás roles reciben la vista completa de compras.
     if user.rol == Rol.VENDEDOR:
         return SolicitudDetailOut(
             **datos, opciones=cotizaciones_service.opciones_de(db, solicitud.id)
         )
-    return SolicitudDetailVentasOut(
-        **datos, opciones=cotizaciones_service.opciones_ventas_de(db, solicitud)
+    return SolicitudDetailCompradorOut(
+        **datos, opciones=cotizaciones_service.opciones_comprador_de(db, solicitud)
     )
 
 

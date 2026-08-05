@@ -1,7 +1,7 @@
 /** Comparador A–E lado a lado (la pieza central del vendedor): total GRANDE
- * con su moneda, vigencia, desglose por partida, comentarios. SIN proveedor
- * (el backend no lo manda a este rol). Confirmar UNA opción o "No se
- * concretó" con motivo. */
+ * con su moneda, vigencia, desglose por partida, comentarios. El proveedor
+ * aparece SOLO si el backend mandó la clave (F10 p.2: todos los roles menos
+ * el vendedor). Confirmar UNA opción o "No se concretó" con motivo. */
 
 import {
   Alert,
@@ -52,6 +52,9 @@ function CartaOpcion({
 }) {
   const ganadora = solicitud.opcion_seleccionada_id === opcion.id;
   const partidasPorId = new Map(solicitud.partidas.map((p) => [p.id, p]));
+  // F10 p.2: la clave `proveedor` solo existe en el JSON de los roles que
+  // pueden verla — la columna se pinta únicamente cuando viene.
+  const conProveedor = opcion.renglones.some((r) => r.proveedor !== undefined);
   return (
     <Card withBorder shadow={ganadora ? "md" : "xs"} style={ganadora ? { borderColor: "var(--mantine-color-green-6)" } : undefined}>
       <Group justify="space-between" mb="xs">
@@ -85,6 +88,7 @@ function CartaOpcion({
             <Table.Th>P. unitario</Table.Th>
             <Table.Th>Importe</Table.Th>
             <Table.Th>Entrega</Table.Th>
+            {conProveedor && <Table.Th>Proveedor</Table.Th>}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -119,7 +123,7 @@ function CartaOpcion({
                   )}
                 </Table.Td>
                 {r.no_encontrada ? (
-                  <Table.Td colSpan={4}>
+                  <Table.Td colSpan={conProveedor ? 5 : 4}>
                     <Text size="xs" fw={600} c="dimmed">
                       No disponible — el comprador no consiguió este material
                     </Text>
@@ -147,6 +151,7 @@ function CartaOpcion({
                       {r.importe !== null && r.moneda ? dinero(r.importe, r.moneda) : "—"}
                     </Table.Td>
                     <Table.Td>{r.tiempo_entrega ?? "—"}</Table.Td>
+                    {conProveedor && <Table.Td>{r.proveedor ?? "—"}</Table.Td>}
                   </>
                 )}
               </Table.Tr>
@@ -226,7 +231,8 @@ export function Comparador() {
     ["vendedor", "gerente_sucursal", "director_ventas", "admin"].includes(usuario.rol);
   const puedeConfirmar = solicitud.estado === "COTIZADA" && ladoVentas;
   // F8h: el cambio pendiente bloquea confirmar (el backend lo exige igual).
-  const tieneComprobante = solicitud.comprobante !== null;
+  // F10 p.6: basta AL MENOS UN comprobante.
+  const tieneComprobante = solicitud.comprobantes.length > 0;
   const confirmarHabilitado = tieneComprobante && !solicitud.cambio_pendiente;
 
   const abrirSolicitarCambio = () =>
@@ -319,7 +325,11 @@ export function Comparador() {
       </Group>
       {ladoVentas && <BannerCambioVendedor solicitud={solicitud} />}
       {puedeConfirmar && (
-        <DropzoneComprobante solicitudId={solicitudId} comprobante={solicitud.comprobante} />
+        <DropzoneComprobante
+          solicitudId={solicitudId}
+          comprobantes={solicitud.comprobantes}
+          estado={solicitud.estado}
+        />
       )}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(solicitud.opciones.length, 3) }}>
         {solicitud.opciones.map((o) => (

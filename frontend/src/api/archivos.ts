@@ -1,6 +1,7 @@
-/** Subida y descarga del comprobante de pedido (F8g). Multipart y blob no
- * pasan por el wrapper JSON (lib/api): mismo patrón de auth + retry único
- * tras refresh que descargarExport. */
+/** Subida, descarga y eliminación de comprobantes de pedido (F8g; F10 p.6:
+ * pueden ser VARIOS). Multipart y blob no pasan por el wrapper JSON
+ * (lib/api): mismo patrón de auth + retry único tras refresh que
+ * descargarExport. */
 
 import { API_BASE, ApiError, getAccessToken, refrescarToken } from "../lib/api";
 import type { ComprobanteOut } from "../lib/types";
@@ -35,9 +36,13 @@ export async function subirComprobante(solicitudId: number, file: File): Promise
   return (await respuesta.json()) as ComprobanteOut;
 }
 
-export async function descargarComprobante(solicitudId: number, nombre: string): Promise<void> {
+export async function descargarComprobante(
+  solicitudId: number,
+  archivoId: string,
+  nombre: string,
+): Promise<void> {
   const pedir = () =>
-    fetch(`${API_BASE}/solicitudes/${solicitudId}/comprobante`, {
+    fetch(`${API_BASE}/solicitudes/${solicitudId}/comprobantes/${archivoId}`, {
       headers: authHeaders(),
       credentials: "include",
     });
@@ -50,4 +55,16 @@ export async function descargarComprobante(solicitudId: number, nombre: string):
   enlace.download = nombre;
   enlace.click();
   URL.revokeObjectURL(enlace.href);
+}
+
+export async function eliminarComprobante(solicitudId: number, archivoId: string): Promise<void> {
+  const pedir = () =>
+    fetch(`${API_BASE}/solicitudes/${solicitudId}/comprobantes/${archivoId}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+      credentials: "include",
+    });
+  let respuesta = await pedir();
+  if (respuesta.status === 401 && (await refrescarToken())) respuesta = await pedir();
+  if (!respuesta.ok) throw await aApiError(respuesta, "No se pudo eliminar el comprobante");
 }

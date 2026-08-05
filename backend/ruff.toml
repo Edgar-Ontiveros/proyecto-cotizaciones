@@ -31,6 +31,9 @@ extend-immutable-calls = [
 [lint.per-file-ignores]
 # Los modelos usan nombres cortos de columnas heredados de la especificación.
 "alembic/versions/*" = ["E501"]
+# F10: fixtures de pytest importadas de otro módulo de tests (entorno) — los
+# parámetros de las funciones las "resombrean" y pyflakes lo marca F811.
+"tests/test_f10.py" = ["F811"]
 
 [format]
 quote-style = "double"

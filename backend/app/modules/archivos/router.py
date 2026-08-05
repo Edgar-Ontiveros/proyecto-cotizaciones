@@ -1,10 +1,12 @@
-"""Endpoints del comprobante de pedido (F8g).
+"""Endpoints del comprobante de pedido (F8g; F10 p.6: pueden ser VARIOS).
 
 La descarga es SIEMPRE autenticada y pasa por el scoping de la solicitud —
 el directorio de archivos jamás se sirve como estático.
 """
 
-from fastapi import APIRouter, Depends, UploadFile
+import uuid
+
+from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -45,11 +47,22 @@ def subir_comprobante(
     return a_comprobante_out(db, guardado)
 
 
-@router.get("/{solicitud_id}/comprobante")
+@router.get("/{solicitud_id}/comprobantes/{archivo_id}")
 def descargar_comprobante(
     solicitud_id: int,
+    archivo_id: uuid.UUID,
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> FileResponse:
-    archivo, ruta = service.obtener_comprobante(db, solicitud_id, user)
+    archivo, ruta = service.obtener_comprobante(db, solicitud_id, archivo_id, user)
     return FileResponse(ruta, media_type=archivo.mime, filename=archivo.nombre_original)
+
+
+@router.delete("/{solicitud_id}/comprobantes/{archivo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_comprobante(
+    solicitud_id: int,
+    archivo_id: uuid.UUID,
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    service.eliminar_comprobante(db, solicitud_id, archivo_id, user)

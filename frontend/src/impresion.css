@@ -1,0 +1,61 @@
+/* Impresión de la solicitud (F10 p.5).
+ * En pantalla la hoja NO existe; al imprimir, la hoja es lo ÚNICO visible
+ * (patrón de visibilidad: se oculta todo y se re-muestra solo la hoja). */
+
+.hoja-impresion {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .hoja-impresion,
+  .hoja-impresion * {
+    visibility: visible;
+  }
+
+  .hoja-impresion {
+    display: block;
+    position: absolute;
+    inset: 0;
+    padding: 24px;
+    background: white;
+    color: black;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 12px;
+  }
+
+  .hoja-impresion h1 {
+    font-size: 16px;
+    margin: 0 0 12px;
+  }
+
+  .hoja-impresion table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+  }
+
+  .hoja-impresion th,
+  .hoja-impresion td {
+    border: 1px solid #444;
+    padding: 4px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .hoja-generales th {
+    width: 12%;
+    background: #eee;
+  }
+
+  .hoja-partidas thead th {
+    background: #eee;
+  }
+
+  .hoja-notas {
+    font-size: 11px;
+  }
+}

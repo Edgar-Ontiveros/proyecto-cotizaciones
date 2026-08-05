@@ -123,6 +123,9 @@ class ComentarioOut(BaseModel):
 class SolicitudDetailOut(SolicitudOut):
     """Detalle del VENDEDOR: sin proveedor y sin consolidado (F8e)."""
 
+    # F10 p.5: identidad para la hoja de impresión (todo rol con acceso).
+    vendedor_nombre: str | None = None
+    sucursal_nombre: str | None = None
     partidas: list[PartidaOut]
     opciones: list[OpcionOut]
     historial: list[HistorialOut]
@@ -131,23 +134,26 @@ class SolicitudDetailOut(SolicitudOut):
     # F8f: segmentos por estado + agregados general/compras/ventas. Aquí no
     # hay dinero: lo ve TODO rol con acceso a la solicitud.
     tiempos: TiemposOut | None = None
-    # F8g: metadatos del comprobante de pedido (todos los involucrados).
-    comprobante: ComprobanteOut | None = None
+    # F8g/F10 p.6: metadatos de TODOS los comprobantes (pueden ser varios).
+    comprobantes: list[ComprobanteOut] = []
     # F8h: historial completo de cambios de cantidad/unidad (ambos lados).
     cambios: list[CambioOut] = []
 
 
 class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
-    """Detalle de los gerentes de VENTAS (gerente_sucursal, director):
-    consolidado sí, proveedor no (§4.8)."""
+    """Base del detalle con consolidado. Desde F10 p.2 NINGÚN endpoint la
+    responde directa (los gerentes de ventas ya reciben la vista de compras);
+    queda como padre de SolicitudDetailCompradorOut."""
 
+    vendedor_nombre: str | None = None
+    sucursal_nombre: str | None = None
     partidas: list[PartidaOut]
     opciones: list[OpcionConsolidadoOut]
     historial: list[HistorialOut]
     comentarios: list[ComentarioOut]
     ciclos: list[CicloOut] = []
     tiempos: TiemposOut | None = None
-    comprobante: ComprobanteOut | None = None
+    comprobantes: list[ComprobanteOut] = []
     cambios: list[CambioOut] = []
 
 

@@ -374,18 +374,17 @@ def test_correccion_no_elimina_la_unica_opcion(client, entorno, cotizada, auth_h
 # ---------------------------------------------------------------- proveedor
 
 
-def test_proveedor_invisible_para_vendedor_y_gerente(client, db, entorno, cotizada, auth_headers):
-    """§4.8: la clave `proveedor` (POR RENGLÓN desde F8b) NO debe existir en
-    el JSON de vendedor ni gerente; comprador y admin sí la ven. La exclusión
-    vive en el schema."""
-    for usuario in (entorno.vendedor, entorno.gerente):
-        detalle = client.get(f"{BASE}/{cotizada.id}", headers=auth_headers(usuario)).json()
-        assert detalle["opciones"], usuario.rol
-        for opcion in detalle["opciones"]:
-            assert "proveedor" not in opcion, usuario.rol
-            for renglon in opcion["renglones"]:
-                assert "proveedor" not in renglon, usuario.rol
-    for usuario in (entorno.comprador, entorno.admin):
+def test_proveedor_invisible_solo_para_vendedor(client, db, entorno, cotizada, auth_headers):
+    """F10 p.2: la clave `proveedor` NO existe SOLO en el JSON del vendedor;
+    todos los demás roles (incluido el gerente de sucursal) la ven. La
+    exclusión vive en el schema."""
+    detalle = client.get(f"{BASE}/{cotizada.id}", headers=auth_headers(entorno.vendedor)).json()
+    assert detalle["opciones"]
+    for opcion in detalle["opciones"]:
+        assert "proveedor" not in opcion
+        for renglon in opcion["renglones"]:
+            assert "proveedor" not in renglon
+    for usuario in (entorno.comprador, entorno.admin, entorno.gerente):
         detalle = client.get(f"{BASE}/{cotizada.id}", headers=auth_headers(usuario)).json()
         proveedores = {
             o["letra"]: {r["proveedor"] for r in o["renglones"]} for o in detalle["opciones"]

@@ -206,6 +206,7 @@ def stmt_listado(
     estado: Estado | None,
     prioridad: Prioridad | None,
     es_proyecto: bool | None = None,
+    cambio_pendiente: bool | None = None,
     cliente_id: int | None,
     sucursal_id: int | None,
     comprador_id: int | None,
@@ -231,6 +232,8 @@ def stmt_listado(
         stmt = stmt.where(Solicitud.prioridad == prioridad)
     if es_proyecto is not None:
         stmt = stmt.where(Solicitud.es_proyecto == es_proyecto)
+    if cambio_pendiente is not None:  # F10 p.7b: filtro "con cambio pendiente"
+        stmt = stmt.where(Solicitud.cambio_pendiente == cambio_pendiente)
     if cliente_id is not None:
         stmt = stmt.where(Solicitud.cliente_id == cliente_id)
     if sucursal_id is not None:
@@ -262,6 +265,7 @@ def listar(
     estado: Estado | None,
     prioridad: Prioridad | None,
     es_proyecto: bool | None = None,
+    cambio_pendiente: bool | None = None,
     cliente_id: int | None,
     sucursal_id: int | None,
     comprador_id: int | None,
@@ -277,6 +281,7 @@ def listar(
         estado=estado,
         prioridad=prioridad,
         es_proyecto=es_proyecto,
+        cambio_pendiente=cambio_pendiente,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -334,6 +339,16 @@ def cliente_nombre_de(db: Session, solicitud: Solicitud) -> str | None:
     if solicitud.cliente_id is None:
         return None
     return db.scalar(select(Cliente.nombre_normalizado).where(Cliente.id == solicitud.cliente_id))
+
+
+def nombres_detalle(db: Session, solicitud: Solicitud) -> tuple[str | None, str | None]:
+    """(vendedor_nombre, sucursal_nombre) SOLO para el detalle (F10 p.5: la
+    hoja de impresión los necesita). El listado no los carga — sería N+1."""
+    from app.models.sucursal import Sucursal
+
+    vendedor = db.scalar(select(Usuario.nombre).where(Usuario.id == solicitud.vendedor_id))
+    sucursal = db.scalar(select(Sucursal.nombre).where(Sucursal.id == solicitud.sucursal_id))
+    return vendedor, sucursal
 
 
 # Roles del lado VENTAS a los que se les redacta el comentario de los

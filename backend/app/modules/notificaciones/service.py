@@ -54,6 +54,12 @@ def admins_activos_ids(db: Session) -> list[int]:
     return list(db.scalars(select(Usuario.id).where(Usuario.rol == Rol.ADMIN, Usuario.activo)))
 
 
+def gerentes_compras_activos_ids(db: Session) -> list[int]:
+    return list(
+        db.scalars(select(Usuario.id).where(Usuario.rol == Rol.GERENTE_COMPRAS, Usuario.activo))
+    )
+
+
 def _folio_de(solicitud: Solicitud) -> str:
     # Solo la reasignación de vendedor puede tocar un BORRADOR sin folio.
     return solicitud.folio or f"(borrador #{solicitud.id})"
@@ -161,17 +167,18 @@ def notificar_correccion(db: Session, solicitud: Solicitud) -> None:
 
 
 def notificar_cambio_solicitado(db: Session, solicitud: Solicitud) -> None:
-    """F8h: aviso al comprador ASIGNADO de que hay un cambio por resolver."""
-    if solicitud.comprador_id is None:
-        return
-    _agregar(
-        db,
-        solicitud.comprador_id,
-        TIPO_CAMBIO_SOLICITADO,
+    """F10 p.7b (antes solo el asignado, F8h): aviso al comprador ASIGNADO y a
+    TODOS los gerentes de compras activos — en la práctica son ellos quienes
+    ejecutan el lado compras (F8c.1) y no se enteraban."""
+    mensaje = (
         f"La solicitud {_folio_de(solicitud)} tiene un cambio de cantidad/unidad "
-        "pendiente de tu aprobación",
-        solicitud.id,
+        "pendiente de aprobación"
     )
+    destinos = set(gerentes_compras_activos_ids(db))
+    if solicitud.comprador_id is not None:
+        destinos.add(solicitud.comprador_id)
+    for usuario_id in destinos:
+        _agregar(db, usuario_id, TIPO_CAMBIO_SOLICITADO, mensaje, solicitud.id)
 
 
 def notificar_cambio_resuelto(

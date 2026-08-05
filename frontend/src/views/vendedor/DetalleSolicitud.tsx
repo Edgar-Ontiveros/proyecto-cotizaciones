@@ -27,6 +27,7 @@ import {
   SemaforoBanda,
 } from "../../components/compartidos";
 import { SeccionComprobante } from "../../components/Comprobante";
+import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { baseSolicitudes } from "../../lib/crm";
@@ -255,6 +256,8 @@ export function DetalleSolicitud() {
           )}
         </Group>
         <Group>
+          {/* F10 p.5: imprimir — comprador, gerente_compras y admin. */}
+          {usuario !== null && ROLES_IMPRIMEN.includes(usuario.rol) && <BotonImprimir />}
           {puedeEditar && (
             <Button variant="light" onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/editar`)}>
               Editar
@@ -340,9 +343,18 @@ export function DetalleSolicitud() {
 
       <Title order={5}>Partidas</Title>
       <TablaPartidas solicitud={solicitud} />
-      <SeccionComprobante solicitudId={solicitud.id} comprobante={solicitud.comprobante} />
+      <SeccionComprobante
+        solicitudId={solicitud.id}
+        comprobantes={solicitud.comprobantes}
+        estado={solicitud.estado}
+      />
       <BloqueTiempos tiempos={solicitud.tiempos} />
       <HistorialComentarios solicitud={solicitud} />
+      {/* Hoja de impresión (F10 p.5): invisible en pantalla; al imprimir es
+          lo ÚNICO visible (impresion.css). */}
+      {usuario !== null && ROLES_IMPRIMEN.includes(usuario.rol) && (
+        <HojaImpresion solicitud={solicitud} />
+      )}
     </Stack>
   );
 }

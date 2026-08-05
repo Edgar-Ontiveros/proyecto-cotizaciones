@@ -425,37 +425,69 @@ function EditorOpcion({
 }
 
 
-function VistaOpcionesLectura({ solicitud }: { solicitud: SolicitudDetailOut }) {
+/** Una opción en modo lectura (F10 p.4): con ganadora fijada, la ELEGIDA va
+ * resaltada en VERDE y las demás en GRIS atenuado, colapsadas pero
+ * expandibles — toda la información sigue ahí. */
+function PaperOpcionLectura({
+  solicitud,
+  opcion: o,
+}: {
+  solicitud: SolicitudDetailOut;
+  opcion: OpcionOut;
+}) {
+  const haySeleccion = solicitud.opcion_seleccionada_id !== null;
+  const ganadora = solicitud.opcion_seleccionada_id === o.id;
+  const atenuada = haySeleccion && !ganadora;
+  const [expandida, setExpandida] = useState(!atenuada);
   return (
-    <Stack gap="sm">
-      <Title order={5}>Opciones cotizadas</Title>
-      {solicitud.opciones.map((o) => {
-        const ganadora = solicitud.opcion_seleccionada_id === o.id;
-        return (
-          <Paper
-            key={o.id}
-            withBorder
-            p="sm"
-            style={ganadora ? { borderColor: "var(--mantine-color-green-6)" } : undefined}
-          >
-            <Group gap="xs" mb="xs">
-              <Badge variant="filled">Opción {o.letra}</Badge>
-              {ganadora && <Badge color="green">GANADORA — genera la orden de compra</Badge>}
-              <Text size="sm" fw={600}>
-                {[
-                  Number(o.total_mxn) > 0 ? dinero(o.total_mxn, "MXN") : null,
-                  Number(o.total_usd) > 0 ? dinero(o.total_usd, "USD") : null,
-                ]
-                  .filter(Boolean)
-                  .join(" + ") || dinero("0", "MXN")}
-              </Text>
-              {ganadora && solicitud.tipo_cambio && (
-                <Text size="sm" c="dimmed">
-                  TC {solicitud.tipo_cambio} → {dinero(solicitud.monto_confirmado ?? "0", "MXN")}
-                </Text>
-              )}
-            </Group>
-            <Table withColumnBorders fz="sm">
+    <Paper
+      withBorder
+      p="sm"
+      style={
+        ganadora
+          ? {
+              borderColor: "var(--mantine-color-green-6)",
+              backgroundColor: "var(--mantine-color-green-0)",
+            }
+          : atenuada
+            ? { opacity: 0.65, backgroundColor: "var(--mantine-color-gray-0)" }
+            : undefined
+      }
+    >
+      <Group gap="xs" mb={expandida ? "xs" : 0}>
+        <Badge variant="filled" color={ganadora ? "green" : atenuada ? "gray" : undefined}>
+          Opción {o.letra}
+        </Badge>
+        {ganadora && <Badge color="green">GANADORA — genera la orden de compra</Badge>}
+        <Text size="sm" fw={600}>
+          {[
+            Number(o.total_mxn) > 0 ? dinero(o.total_mxn, "MXN") : null,
+            Number(o.total_usd) > 0 ? dinero(o.total_usd, "USD") : null,
+          ]
+            .filter(Boolean)
+            .join(" + ") || dinero("0", "MXN")}
+        </Text>
+        {/* Consolidado POR OPCIÓN (el backend lo manda a los roles
+            autorizados; la clave no existe para el vendedor). */}
+        {o.consolidado_mxn != null && solicitud.tipo_cambio && (
+          <Text size="sm" c="dimmed">
+            TC {solicitud.tipo_cambio} → consolidado {dinero(o.consolidado_mxn, "MXN")}
+          </Text>
+        )}
+        {atenuada && (
+          <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setExpandida(!expandida)}>
+            {expandida ? "Ocultar detalle" : "Ver detalle"}
+          </Button>
+        )}
+      </Group>
+      {expandida && <TablaRenglonesLectura opcion={o} />}
+    </Paper>
+  );
+}
+
+function TablaRenglonesLectura({ opcion: o }: { opcion: OpcionOut }) {
+  return (
+    <Table withColumnBorders fz="sm">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>No.</Table.Th>
@@ -496,9 +528,16 @@ function VistaOpcionesLectura({ solicitud }: { solicitud: SolicitudDetailOut }) 
                 ))}
               </Table.Tbody>
             </Table>
-          </Paper>
-        );
-      })}
+  );
+}
+
+function VistaOpcionesLectura({ solicitud }: { solicitud: SolicitudDetailOut }) {
+  return (
+    <Stack gap="sm">
+      <Title order={5}>Opciones cotizadas</Title>
+      {solicitud.opciones.map((o) => (
+        <PaperOpcionLectura key={o.id} solicitud={solicitud} opcion={o} />
+      ))}
     </Stack>
   );
 }

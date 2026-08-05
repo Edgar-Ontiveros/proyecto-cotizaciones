@@ -1,4 +1,4 @@
-import { Autocomplete, Button, Group, Select, Title } from "@mantine/core";
+import { Autocomplete, Button, Checkbox, Group, Select, Title } from "@mantine/core";
 import { DataTable } from "mantine-datatable";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -31,6 +31,7 @@ export function ListadoVendedor() {
   const { pagina, setPagina } = listado;
   const [estado, setEstado] = useState<string | null>(null);
   const [tipo, setTipo] = useState<string | null>(null);
+  const [soloCambios, setSoloCambios] = useState(false);
   const [clienteTexto, setClienteTexto] = useState("");
   const [clienteId, setClienteId] = useState<number | undefined>();
 
@@ -38,6 +39,7 @@ export function ListadoVendedor() {
   const { data, isFetching } = useSolicitudes({
     estado: estado ?? undefined,
     es_proyecto: tipo !== null ? tipo === "PROYECTO" : undefined,
+    cambio_pendiente: soloCambios || undefined,
     cliente_id: clienteId,
     ...listado.filtros,
     limit: PAGE,
@@ -82,6 +84,14 @@ export function ListadoVendedor() {
           }}
           clearable
           w={140}
+        />
+        <Checkbox
+          label="Con cambio pendiente"
+          checked={soloCambios}
+          onChange={(e) => {
+            setSoloCambios(e.currentTarget.checked);
+            setPagina(1);
+          }}
         />
         <Autocomplete
           placeholder="Cliente"

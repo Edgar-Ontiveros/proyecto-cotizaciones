@@ -8,10 +8,12 @@ Reglas duras:
 - En disco el archivo se llama por su UUID (sin extensión) dentro de
   settings.archivos_dir; el nombre original vive SOLO en BD y se sirve vía
   Content-Disposition. El directorio jamás se sirve como estático.
-- El comprobante lo suben quienes pueden confirmar (autoriza_ventas) con la
-  solicitud en COTIZADA; re-subir antes de confirmar REEMPLAZA (fila
-  sustituida, archivo viejo eliminado del disco); tras CONFIRMADA es
-  INMUTABLE (409 `comprobante_inmutable`).
+- F10 p.6: una solicitud puede tener N comprobantes. Los suben quienes
+  pueden confirmar (autoriza_ventas) con la solicitud en COTIZADA; se
+  eliminan INDIVIDUALMENTE antes de confirmar (solo quien lo subió o admin,
+  con borrado seguro del disco y evento en historial); confirmar exige AL
+  MENOS UNO; tras CONFIRMADA todos son INMUTABLES (409
+  `comprobante_inmutable` al subir o borrar).
 """
 
 import hashlib
@@ -26,7 +28,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.models.archivo import TIPO_COMPROBANTE_PEDIDO, Archivo
 from app.models.solicitud import Estado
-from app.models.usuario import Usuario
+from app.models.usuario import Rol, Usuario
 from app.modules.solicitudes.service import obtener_scoped
 from app.modules.solicitudes.state_machine import (
     autoriza_ventas,
@@ -102,9 +104,22 @@ def ruta_de(archivo_id: uuid.UUID) -> Path:
 
 
 def comprobante_vigente(db: Session, solicitud_id: int) -> Archivo | None:
+    """¿Hay AL MENOS un comprobante? (la regla de confirmar, F8g/F10 p.6).
+    Regresa uno cualquiera — para el detalle completo usa comprobantes_de."""
     return db.scalar(
-        select(Archivo).where(
-            Archivo.solicitud_id == solicitud_id, Archivo.tipo == TIPO_COMPROBANTE_PEDIDO
+        select(Archivo)
+        .where(Archivo.solicitud_id == solicitud_id, Archivo.tipo == TIPO_COMPROBANTE_PEDIDO)
+        .limit(1)
+    )
+
+
+def comprobantes_de(db: Session, solicitud_id: int) -> list[Archivo]:
+    """TODOS los comprobantes de la solicitud, en orden de carga (F10 p.6)."""
+    return list(
+        db.scalars(
+            select(Archivo)
+            .where(Archivo.solicitud_id == solicitud_id, Archivo.tipo == TIPO_COMPROBANTE_PEDIDO)
+            .order_by(Archivo.creado_en, Archivo.id)
         )
     )
 
@@ -112,16 +127,15 @@ def comprobante_vigente(db: Session, solicitud_id: int) -> Archivo | None:
 def subir_comprobante(
     db: Session, solicitud_id: int, user: Usuario, contenido: bytes, nombre: str | None
 ) -> Archivo:
-    """Sube o REEMPLAZA el comprobante de una COTIZADA, con evento en
-    historial. Todo el cambio de BD viaja en una transacción; el archivo viejo
-    se borra del disco SOLO después del commit."""
+    """AGREGA un comprobante a una COTIZADA (F10 p.6: pueden ser varios), con
+    evento en historial. Si el commit falla, el archivo no queda huérfano."""
     solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
     if not autoriza_ventas(user, solicitud):
         raise AppError(403, "Solo quien puede confirmar sube el comprobante", "forbidden")
     if solicitud.estado == Estado.CONFIRMADA:
         raise AppError(
             409,
-            "El pedido ya está confirmado: el comprobante es inmutable",
+            "El pedido ya está confirmado: los comprobantes son inmutables",
             "comprobante_inmutable",
         )
     if solicitud.estado != Estado.COTIZADA:
@@ -129,8 +143,6 @@ def subir_comprobante(
 
     mime = validar_contenido(contenido)
     nombre_sano = sanitizar_nombre(nombre)
-    anterior = comprobante_vigente(db, solicitud.id)
-
     nuevo = Archivo(
         id=uuid.uuid4(),
         solicitud_id=solicitud.id,
@@ -146,36 +158,64 @@ def subir_comprobante(
     ruta_nueva = ruta_de(nuevo.id)
     ruta_nueva.write_bytes(contenido)
     try:
-        if anterior is not None:
-            db.delete(anterior)
-            db.flush()  # libera el UNIQUE (solicitud, tipo) antes del insert
         db.add(nuevo)
-        registrar_evento(
-            db,
-            solicitud,
-            user,
-            "Comprobante actualizado"
-            if anterior is not None
-            else f"Comprobante cargado ({nombre_sano})",
-        )
+        registrar_evento(db, solicitud, user, f"Comprobante cargado ({nombre_sano})")
         db.commit()
     except Exception:
         # La BD no quedó: el archivo nuevo no debe quedar huérfano en disco.
         ruta_nueva.unlink(missing_ok=True)
         raise
-    if anterior is not None:
-        ruta_de(anterior.id).unlink(missing_ok=True)
     return nuevo
 
 
-def obtener_comprobante(db: Session, solicitud_id: int, user: Usuario) -> tuple[Archivo, Path]:
+def _archivo_de(db: Session, solicitud_id: int, archivo_id: uuid.UUID) -> Archivo:
+    archivo = db.scalar(
+        select(Archivo).where(
+            Archivo.id == archivo_id,
+            Archivo.solicitud_id == solicitud_id,
+            Archivo.tipo == TIPO_COMPROBANTE_PEDIDO,
+        )
+    )
+    if archivo is None:
+        raise AppError(404, "La solicitud no tiene ese comprobante", "comprobante_no_encontrado")
+    return archivo
+
+
+def eliminar_comprobante(
+    db: Session, solicitud_id: int, archivo_id: uuid.UUID, user: Usuario
+) -> None:
+    """Elimina UN comprobante ANTES de confirmar (F10 p.6): solo quien lo
+    subió o admin. La fila y el evento viajan en la transacción; el archivo
+    del disco se borra SOLO después del commit (borrado seguro)."""
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    archivo = _archivo_de(db, solicitud.id, archivo_id)
+    if solicitud.estado == Estado.CONFIRMADA:
+        raise AppError(
+            409,
+            "El pedido ya está confirmado: los comprobantes son inmutables",
+            "comprobante_inmutable",
+        )
+    if solicitud.estado != Estado.COTIZADA:
+        raise conflicto_estado("eliminar el comprobante", solicitud)
+    if user.rol != Rol.ADMIN and archivo.subido_por != user.id:
+        raise AppError(
+            403, "Solo quien subió el comprobante (o admin) puede eliminarlo", "forbidden"
+        )
+    nombre = archivo.nombre_original
+    db.delete(archivo)
+    registrar_evento(db, solicitud, user, f"Comprobante eliminado ({nombre})")
+    db.commit()
+    ruta_de(archivo_id).unlink(missing_ok=True)
+
+
+def obtener_comprobante(
+    db: Session, solicitud_id: int, archivo_id: uuid.UUID, user: Usuario
+) -> tuple[Archivo, Path]:
     """Metadatos + ruta en disco para la descarga. El scoping de
     obtener_scoped ya limita a los involucrados; cualquier otro recibe el
     mismo 404 (no se filtra existencia)."""
     solicitud = obtener_scoped(db, solicitud_id, user)
-    archivo = comprobante_vigente(db, solicitud.id)
-    if archivo is None:
-        raise AppError(404, "La solicitud no tiene comprobante", "comprobante_no_encontrado")
+    archivo = _archivo_de(db, solicitud.id, archivo_id)
     ruta = ruta_de(archivo.id)
     if not ruta.is_file():
         raise AppError(

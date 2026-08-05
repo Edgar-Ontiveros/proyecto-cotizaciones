@@ -19,7 +19,6 @@ from app.models.solicitud import Estado, MotivoNoConfirmada, Solicitud, Solicitu
 from app.models.usuario import Rol, Usuario
 from app.modules.cotizaciones.schemas import (
     OpcionCompradorOut,
-    OpcionConsolidadoOut,
     OpcionIn,
     OpcionOut,
     RenglonCompradorOut,
@@ -226,17 +225,6 @@ def opciones_de(db: Session, solicitud_id: int) -> list[OpcionOut]:
     """Vista del VENDEDOR: sin proveedor y SIN consolidado (F8e)."""
     return [
         OpcionOut(**_datos_opcion(db, o, con_proveedor=False)) for o in _opciones(db, solicitud_id)
-    ]
-
-
-def opciones_ventas_de(db: Session, solicitud: Solicitud) -> list[OpcionConsolidadoOut]:
-    """Gerentes de ventas: sin proveedor, CON consolidado por opción."""
-    return [
-        OpcionConsolidadoOut(
-            **_datos_opcion(db, o, con_proveedor=False),
-            consolidado_mxn=consolidado_de(o, solicitud.tipo_cambio),
-        )
-        for o in _opciones(db, solicitud.id)
     ]
 
 

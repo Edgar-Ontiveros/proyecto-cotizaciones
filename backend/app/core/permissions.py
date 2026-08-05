@@ -70,10 +70,11 @@ class require_roles:
 
 
 def ve_proveedor(rol: Rol) -> bool:
-    """Área COMPRAS + admin: los ÚNICOS que ven proveedor/costos (§4.8). Los
-    roles de ventas (vendedor, gerente_sucursal, director_ventas) reciben
-    schemas donde la clave ni existe."""
-    return rol in (Rol.COMPRADOR, Rol.GERENTE_COMPRAS, Rol.ADMIN)
+    """Política F10 p.2 (decisión de Edgar): el proveedor por renglón lo ven
+    TODOS los roles de gestión — comprador, gerente_compras, admin y ahora
+    también gerente_sucursal y director_ventas. El ÚNICO excluido es el
+    VENDEDOR: en su JSON la clave ni existe (patrón de siempre)."""
+    return rol != Rol.VENDEDOR
 
 
 def scope_solicitudes_query(user: Usuario, stmt: Select[Any]) -> Select[Any]:

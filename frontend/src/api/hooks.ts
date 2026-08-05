@@ -21,6 +21,8 @@ import type {
 export interface FiltrosListado {
   estado?: string;
   es_proyecto?: boolean;
+  // F10 p.7b: filtro "con cambio pendiente".
+  cambio_pendiente?: boolean;
   cliente_id?: number;
   desde?: string;
   hasta?: string;
@@ -37,11 +39,22 @@ export function useSolicitudes(filtros: FiltrosListado) {
   });
 }
 
+/** F10 p.1: mientras hay un cambio pendiente, la resolución sucede en OTRO
+ * navegador (el del comprador) y esta vista no se enteraría jamás — sin
+ * websockets y con refetchOnWindowFocus apagado, el botón de confirmar del
+ * vendedor quedaba bloqueado hasta un F5. Polling suave SOLO en ese estado. */
+export function intervaloDetalle(
+  data: { cambio_pendiente?: boolean } | undefined,
+): number | false {
+  return data?.cambio_pendiente ? 15_000 : false;
+}
+
 export function useSolicitud(id: number) {
   return useQuery({
     queryKey: ["solicitud", id],
     queryFn: () => api<SolicitudDetailOut>(`/solicitudes/${id}`),
     enabled: id > 0,
+    refetchInterval: (query) => intervaloDetalle(query.state.data),
   });
 }
 
