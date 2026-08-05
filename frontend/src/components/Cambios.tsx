@@ -34,6 +34,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
 import { fechaHora } from "../lib/format";
+import { ModalCapturaTC } from "../views/comprador/ModalesTC";
 import { armarAjustes } from "../lib/renglon";
 import type { CambioOut, SolicitudDetailOut, Unidad } from "../lib/types";
 
@@ -343,14 +344,34 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
     // F10.2 p.1: la decisión de qué viaja vive en armarAjustes (lib/renglon,
     // testeada) — incluye los ajustes de SOLO tiempo, que antes se perdían.
     const ajustes: AjusteBody[] = armarAjustes(editor);
-    aprobar.mutate(
-      { cambioId: pendiente.id, comentario: null, ajustes },
-      {
-        onSuccess: () => notifications.show({ message: "Cambio aprobado", color: "green" }),
-        onError: (e) =>
-          setError(e instanceof ApiError ? e.detail : "No se pudo aprobar el cambio"),
-      },
-    );
+    const mutar = (tipoCambio?: string) =>
+      aprobar.mutate(
+        { cambioId: pendiente.id, comentario: null, ajustes, tipoCambio },
+        {
+          onSuccess: () => notifications.show({ message: "Cambio aprobado", color: "green" }),
+          onError: (e) => {
+            // F10.3 (FASE B): USD sin TC (datos legados) → capturar AL
+            // AUTORIZAR y reintentar.
+            if (e instanceof ApiError && e.code === "tipo_cambio_requerido") {
+              modals.open({
+                title: "Tipo de cambio requerido",
+                children: (
+                  <ModalCapturaTC
+                    mensaje="La cotización tiene renglones en USD sin tipo de cambio: captúralo para autorizar el cambio."
+                    onAceptar={(tc) => {
+                      modals.closeAll();
+                      mutar(tc);
+                    }}
+                  />
+                ),
+              });
+              return;
+            }
+            setError(e instanceof ApiError ? e.detail : "No se pudo aprobar el cambio");
+          },
+        },
+      );
+    mutar();
   };
 
   const abrirRechazo = () =>

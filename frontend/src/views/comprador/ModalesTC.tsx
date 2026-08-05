@@ -120,3 +120,31 @@ export function ModalCorregirTCComprador({
     </Stack>
   );
 }
+
+/** F10.3 (FASE B): captura del TC exigida por el backend al RECOTIZAR o al
+ * AUTORIZAR un cambio (422 tipo_cambio_requerido). Modal genérico: captura y
+ * devuelve; la mutación la reintenta quien lo abrió. */
+export function ModalCapturaTC({
+  mensaje,
+  onAceptar,
+}: {
+  mensaje: string;
+  onAceptar: (tc: string) => void;
+}) {
+  const [tc, setTc] = useState("");
+  return (
+    <Stack gap="sm">
+      <Text size="sm">{mensaje}</Text>
+      <TextInput
+        label="Tipo de cambio (MXN por USD)"
+        placeholder="18.5000"
+        value={tc}
+        onChange={(e) => setTc(e.currentTarget.value)}
+        data-autofocus
+      />
+      <Button disabled={!(Number(tc) > 0)} onClick={() => onAceptar(tc.trim())}>
+        Aplicar y continuar
+      </Button>
+    </Stack>
+  );
+}

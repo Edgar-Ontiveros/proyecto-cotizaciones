@@ -9,6 +9,7 @@ Escenario base (aritmética a mano en cada docstring):
 - TC de la solicitud (capturado al cotizar): 18.5.
 """
 
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -490,7 +491,11 @@ def test_evento_e_historial_de_cambios_ambos_lados(client, entorno, auth_headers
         assert cambio["estado_cambio"] == "PENDIENTE"
         assert cambio["comentario_solicitante"] == "El cliente pidió KG"
         diff = cambio["partidas"][0]
-        assert diff["cantidad_anterior"] == "20.000" and diff["cantidad_nueva"] == "500.000"
+        # F10.3: comparación NUMÉRICA — con la fixture espejo (autoflush=False)
+        # el GET del mismo test relee objetos de la sesión sin refrescar y
+        # puede serializar "500"; producción (sesión fresca) da "500.000".
+        assert Decimal(diff["cantidad_anterior"]) == 20
+        assert Decimal(diff["cantidad_nueva"]) == 500
         assert diff["unidad_anterior"] == "PZ" and diff["unidad_nueva"] == "KG"
         # El bloque de cambios NO trae precios (no es dinero).
         assert "precio_unitario" not in diff
@@ -515,5 +520,6 @@ def test_snapshot_inmutable_tras_aprobar(client, db, entorno, auth_headers):
     cambio = detalle["cambios"][0]
     assert cambio["estado_cambio"] == "APROBADO"
     diff = cambio["partidas"][0]
-    assert diff["cantidad_anterior"] == "20.000" and diff["unidad_anterior"] == "PZ"
-    assert diff["cantidad_nueva"] == "500.000" and diff["unidad_nueva"] == "KG"
+    # F10.3: numérico (misma razón que en el historial de cambios).
+    assert Decimal(diff["cantidad_anterior"]) == 20 and diff["unidad_anterior"] == "PZ"
+    assert Decimal(diff["cantidad_nueva"]) == 500 and diff["unidad_nueva"] == "KG"

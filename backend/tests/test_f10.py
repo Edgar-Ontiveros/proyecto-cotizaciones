@@ -11,6 +11,8 @@ Escenario (aritmética heredada de test_f8h):
   → consolidado B = 500 + 1,550×18.5 = 29,175.00.
 """
 
+from decimal import Decimal
+
 from tests.test_f8h import (  # noqa: F401  (fixture entorno re-exportada)
     BASE,
     CAMBIOS,
@@ -417,3 +419,152 @@ def test_listado_orden_confirmado_en(client, entorno, auth_headers, con_comproba
     # Valor de orden inválido → 422 de validación, no un 500.
     r = client.get(f"{BASE}?orden=otra_cosa", headers=auth_headers(entorno.comprador))
     assert r.status_code == 422
+
+
+# ============================ F10.3: forense de ganadora y persistencia del TC
+
+
+def test_f103_tc_y_ganadora_persisten(client, entorno, auth_headers, con_comprobante):
+    """REGRESIÓN DEL BUG DE PRODUCCIÓN (3 rondas): con autoflush=False (la
+    sesión real), la transición pisaba los atributos pendientes. El TC debe
+    persistir al cotizar y la ganadora/monto al seleccionar.
+    Aritmética: B = 500 MXN + 600 USD × 18.5 = 11,600.00."""
+
+    from tests.test_f8h import _cotizada_mixta
+
+    sid, _p1, _p2 = _cotizada_mixta(client, entorno, auth_headers)
+    d = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert d["tipo_cambio"] is not None  # antes del fix: None (pisado)
+    assert Decimal(d["tipo_cambio"]) == Decimal("18.5")
+    con_comprobante(sid, entorno.vendedor)
+    r = client.post(
+        f"{BASE}/{sid}/seleccionar", headers=auth_headers(entorno.vendedor), json={"letra": "B"}
+    )
+    assert r.status_code == 200, r.text
+    d = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert d["opcion_seleccionada_id"] is not None  # antes: None (MTZ-8)
+    assert Decimal(d["monto_confirmado"]) == Decimal("11600.00")
+    assert Decimal(d["tipo_cambio"]) == Decimal("18.5")
+
+
+def _cotizada_mxn_simple(client, entorno, auth_headers):
+    """Cotizada de 1 partida (20 PZ) 100% MXN, sin TC (correcto)."""
+    headers_v = auth_headers(entorno.vendedor)
+    headers_c = auth_headers(entorno.comprador)
+    r = client.post(
+        BASE,
+        headers=headers_v,
+        json={
+            "cliente": "DINCO",
+            "partidas": [{"cantidad": "20", "unidad": "PZ", "descripcion": "SOLERA"}],
+        },
+    )
+    sid = r.json()["id"]
+    assert client.post(f"{BASE}/{sid}/enviar", headers=headers_v).status_code == 200
+    d = client.get(f"{BASE}/{sid}", headers=headers_c).json()
+    pid = d["partidas"][0]["id"]
+    renglon = {
+        "partida_id": pid,
+        "moneda": "MXN",
+        "precio_unitario": "100.00",
+        "tiempo_entrega": "1 semana",
+    }
+    r = client.put(
+        f"{BASE}/{sid}/opciones/A",
+        headers=headers_c,
+        json={"vigencia": "2026-09-30", "renglones": [renglon]},
+    )
+    assert r.status_code == 200
+    assert client.post(f"{BASE}/{sid}/cotizar", headers=headers_c, json={}).status_code == 200
+    return sid, pid, renglon
+
+
+def test_f103_correccion_que_introduce_usd_exige_tc(client, entorno, auth_headers, con_comprobante):
+    """FASE B: recotizar (corrección) que introduce USD sin TC → 422
+    tipo_cambio_requerido SIN mutar nada; con tipo_cambio en el body → 200 y
+    el TC persiste. Aritmética: 20 PZ × 300 USD × 17.50 = 105,000.00 (MTZ-8)."""
+    sid, _pid, renglon = _cotizada_mxn_simple(client, entorno, auth_headers)
+    headers_c = auth_headers(entorno.comprador)
+    usd = {**renglon, "moneda": "USD", "precio_unitario": "300.00"}
+
+    r = client.put(
+        f"{BASE}/{sid}/opciones/A",
+        headers=headers_c,
+        json={"vigencia": "2026-09-30", "renglones": [usd]},
+    )
+    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_requerido"
+    d = client.get(f"{BASE}/{sid}", headers=headers_c).json()
+    # Nada mutó: la opción sigue 100% MXN.
+    assert d["opciones"][0]["total_usd"] == "0.00" and d["opciones"][0]["total_mxn"] == "2000.00"
+
+    r = client.put(
+        f"{BASE}/{sid}/opciones/A",
+        headers=headers_c,
+        json={"vigencia": "2026-09-30", "renglones": [usd], "tipo_cambio": "17.50"},
+    )
+    assert r.status_code == 200, r.text
+    d = client.get(f"{BASE}/{sid}", headers=headers_c).json()
+    # Numérico: la representación varía según refresque el identity map.
+    assert Decimal(d["tipo_cambio"]) == Decimal("17.5")
+    assert Decimal(d["opciones"][0]["consolidado_mxn"]) == Decimal("105000.00")
+
+    con_comprobante(sid, entorno.vendedor)
+    r = client.post(
+        f"{BASE}/{sid}/seleccionar", headers=auth_headers(entorno.vendedor), json={"letra": "A"}
+    )
+    assert r.status_code == 200, r.text
+    d = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert d["opcion_seleccionada_id"] is not None
+    assert Decimal(d["monto_confirmado"]) == Decimal("105000.00")
+
+
+def test_f103_correccion_tc_sin_usd_invalido(client, entorno, auth_headers):
+    """FASE B: mandar TC en una corrección que queda 100% MXN → 422."""
+    sid, _pid, renglon = _cotizada_mxn_simple(client, entorno, auth_headers)
+    r = client.put(
+        f"{BASE}/{sid}/opciones/A",
+        headers=auth_headers(entorno.comprador),
+        json={
+            "vigencia": "2026-09-30",
+            "renglones": [{**renglon, "precio_unitario": "110.00"}],
+            "tipo_cambio": "17.50",
+        },
+    )
+    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_invalido"
+
+
+def test_f103_aprobar_exige_tc_con_datos_legados(client, db, entorno, auth_headers):
+    """FASE B: solicitud legada USD sin TC (estado MTZ-3) con cambio
+    pendiente → aprobar sin TC → 422 y NADA cambia; con tipo_cambio → 200,
+    TC persistido y consolidados correctos."""
+    from sqlalchemy import text
+
+    sid, p1, _p2, cambio_id = _cambio_pendiente(client, entorno, auth_headers)
+    # Simula el dato legado del hueco B3: USD ya cotizado, TC borrado.
+    db.execute(text("update solicitudes set tipo_cambio = null where id = :sid"), {"sid": sid})
+    db.commit()
+
+    body = {
+        "ajustes": [
+            {"opcion_letra": "A", "partida_id": p1, "precio_unitario": "94.80"},
+            {"opcion_letra": "B", "partida_id": p1, "precio_unitario": "3.10"},
+        ]
+    }
+    r = client.post(
+        f"{CAMBIOS}/{cambio_id}/aprobar", headers=auth_headers(entorno.comprador), json=body
+    )
+    assert r.status_code == 422 and r.json()["code"] == "tipo_cambio_requerido"
+    d = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert d["cambio_pendiente"] is True  # nada cambió
+
+    r = client.post(
+        f"{CAMBIOS}/{cambio_id}/aprobar",
+        headers=auth_headers(entorno.comprador),
+        json={**body, "tipo_cambio": "18.50"},
+    )
+    assert r.status_code == 200, r.text
+    d = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.admin)).json()
+    assert Decimal(d["tipo_cambio"]) == Decimal("18.5")
+    # B: 500 × 3.10 = 1,550 USD × 18.5 + 500 MXN = 29,175.00 (aritmética F8h).
+    consolidados = {o["letra"]: o["consolidado_mxn"] for o in d["opciones"]}
+    assert Decimal(consolidados["B"]) == Decimal("29175.00")

@@ -303,6 +303,27 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
             "cambio_incompleto",
         )
 
+    # F10.3 (FASE B): el TC se captura al AUTORIZAR si hace falta (datos del
+    # hueco B3: USD sin TC). Con los totales recién recalculados en sesión.
+    hay_usd = any(o.total_usd > 0 for o in opciones)
+    if data.tipo_cambio is not None:
+        if not hay_usd:
+            db.rollback()
+            raise AppError(
+                422,
+                "La cotización es 100 % MXN: no envíes tipo_cambio",
+                "tipo_cambio_invalido",
+            )
+        solicitud.tipo_cambio = data.tipo_cambio
+    elif hay_usd and solicitud.tipo_cambio is None:
+        db.rollback()
+        raise AppError(
+            422,
+            "La cotización tiene renglones en USD sin tipo de cambio: "
+            "captúralo al autorizar el cambio (tipo_cambio)",
+            "tipo_cambio_requerido",
+        )
+
     cambio.estado_cambio = EstadoCambio.APROBADO
     cambio.resuelto_por = user.id
     cambio.resuelto_en = datetime.now(UTC)

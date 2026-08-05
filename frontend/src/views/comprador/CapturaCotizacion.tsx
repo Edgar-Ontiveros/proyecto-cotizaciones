@@ -58,7 +58,7 @@ import {
 import type { Letra, Moneda, OpcionOut, SolicitudDetailOut, Unidad } from "../../lib/types";
 import { parsearFaltantesCotizacion, type FaltanteCotizacion } from "../../lib/validacion";
 import { HistorialComentarios } from "../vendedor/DetalleSolicitud";
-import { ModalCorregirTCComprador, ModalCotizarConTC } from "./ModalesTC";
+import { ModalCapturaTC, ModalCorregirTCComprador, ModalCotizarConTC } from "./ModalesTC";
 
 const LETRAS: Letra[] = ["A", "B", "C", "D", "E"];
 
@@ -160,7 +160,7 @@ function EditorOpcion({
     { MXN: 0, USD: 0 } as Record<Moneda, number>,
   );
 
-  const guardar = () => {
+  const guardar = (tipoCambio?: string) => {
     const locales: Record<number, string> = {};
     for (const p of solicitud.partidas) {
       const error = validarRenglonLocal(form.renglones[p.id] as RenglonForm);
@@ -177,6 +177,7 @@ function EditorOpcion({
           renglones: solicitud.partidas.map((p) =>
             renglonABody(p.id, form.renglones[p.id] as RenglonForm),
           ),
+          ...(tipoCambio !== undefined ? { tipo_cambio: tipoCambio } : {}),
         },
       },
       {
@@ -184,7 +185,24 @@ function EditorOpcion({
           notifications.show({ message: `Opción ${letra} guardada`, color: "green" });
           onGuardado();
         },
-        // El error lo muestra el handler global (main.tsx).
+        // F10.3: la corrección que introduce USD sin TC exige capturarlo AQUÍ
+        // (el toast global explica el porqué; el modal lo captura y reintenta).
+        onError: (e) => {
+          if (e instanceof ApiError && e.code === "tipo_cambio_requerido") {
+            modals.open({
+              title: "Tipo de cambio requerido",
+              children: (
+                <ModalCapturaTC
+                  mensaje="La corrección introduce renglones en USD y la cotización no tiene tipo de cambio: captúralo para aplicar la corrección."
+                  onAceptar={(tc) => {
+                    modals.closeAll();
+                    guardar(tc);
+                  }}
+                />
+              ),
+            });
+          }
+        },
       },
     );
   };
@@ -419,7 +437,7 @@ function EditorOpcion({
             </Text>
           )}
         </Group>
-        <Button onClick={guardar} loading={guardarOpcion.isPending}>
+        <Button onClick={() => guardar()} loading={guardarOpcion.isPending}>
           Guardar avance
         </Button>
       </Group>

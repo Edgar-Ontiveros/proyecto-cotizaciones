@@ -89,7 +89,17 @@ def _database():
 def db(_database):
     connection = engine.connect()
     outer = connection.begin()
-    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    # F10.3: ESPEJO FIEL de la sesión de producción (SessionLocal usa
+    # autoflush=False, expire_on_commit=False). La fixture original dejaba el
+    # autoflush=True default y OCULTÓ tres rondas del bug de populate_existing
+    # pisando atributos pendientes — los tests pasaban y producción perdía
+    # tipo_cambio/ganadora/monto.
+    session = Session(
+        bind=connection,
+        autoflush=False,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
     yield session
     session.close()
     outer.rollback()

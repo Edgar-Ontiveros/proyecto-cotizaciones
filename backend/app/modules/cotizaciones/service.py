@@ -327,6 +327,37 @@ def guardar_opcion(
                 "La corrección no puede dejar la opción incompleta: " + "; ".join(faltantes),
                 "cotizacion_incompleta",
             )
+        # F10.3 (FASE B): el TC se captura al RECOTIZAR. Coherencia prospectiva
+        # (también ANTES de mutar): USD de ESTE body + USD de las otras
+        # opciones persistidas.
+        hay_usd = any(
+            r.moneda == Moneda.USD and not r.no_encontrada for r in renglones_body.values()
+        ) or bool(
+            db.scalar(
+                select(func.count())
+                .select_from(CotizacionOpcion)
+                .where(
+                    CotizacionOpcion.solicitud_id == solicitud.id,
+                    CotizacionOpcion.letra != letra,
+                    CotizacionOpcion.total_usd > 0,
+                )
+            )
+        )
+        if data.tipo_cambio is not None:
+            if not hay_usd:
+                raise AppError(
+                    422,
+                    "La cotización quedaría 100 % MXN: no envíes tipo_cambio",
+                    "tipo_cambio_invalido",
+                )
+            solicitud.tipo_cambio = data.tipo_cambio
+        elif hay_usd and solicitud.tipo_cambio is None:
+            raise AppError(
+                422,
+                "La corrección introduce renglones en USD y la cotización no tiene "
+                "tipo de cambio: captúralo en esta misma corrección (tipo_cambio)",
+                "tipo_cambio_requerido",
+            )
 
     opcion = _opcion_o_none(db, solicitud.id, letra)
     if opcion is None:

@@ -178,6 +178,15 @@ def ejecutar_transicion(
     real en detail) · 403 transicion_no_permitida · 409 sucursal_sin_titular ·
     422 motivo_requerido/motivo_invalido.
     """
+    # F10.3 — EL BUG DE PRODUCCIÓN (tres rondas): la sesión de la app corre
+    # con autoflush=False; los atributos que el llamador asignó ANTES de la
+    # transición (tipo_cambio en cotizar; ganadora/monto/moneda en
+    # seleccionar) estaban PENDIENTES sin flushear, y el SELECT de abajo con
+    # populate_existing los PISABA con los NULL de la base. Este flush los
+    # persiste dentro de la misma transacción antes de re-leer. (Los tests no
+    # lo cazaron porque su fixture creaba la Session con autoflush=True —
+    # corregido en conftest para espejear producción.)
+    db.flush()
     # populate_existing: sin esto, si la solicitud ya estaba en el identity map
     # (p. ej. cargada sin lock por el endpoint), el FOR UPDATE bloquearía la
     # fila pero el ORM devolvería los atributos viejos — doble transición.

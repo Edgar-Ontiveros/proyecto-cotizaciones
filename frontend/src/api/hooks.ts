@@ -190,6 +190,8 @@ export interface OpcionBody {
   vigencia: string | null;
   comentarios: string | null;
   renglones: RenglonBody[];
+  // F10.3: TC capturado al RECOTIZAR cuando la corrección introduce USD.
+  tipo_cambio?: string;
 }
 
 export function useGuardarOpcion(id: number) {
@@ -285,11 +287,18 @@ export function useAprobarCambio(solicitudId: number) {
       cambioId,
       comentario,
       ajustes,
+      tipoCambio,
     }: {
       cambioId: number;
       comentario: string | null;
       ajustes: AjusteBody[];
-    }) => api<CambioOut>(`/cambios/${cambioId}/aprobar`, { method: "POST", body: { comentario, ajustes } }),
+      // F10.3: TC capturado al AUTORIZAR (422 tipo_cambio_requerido).
+      tipoCambio?: string;
+    }) =>
+      api<CambioOut>(`/cambios/${cambioId}/aprobar`, {
+        method: "POST",
+        body: { comentario, ajustes, tipo_cambio: tipoCambio },
+      }),
     onSuccess: () => invalidar(solicitudId),
   });
 }

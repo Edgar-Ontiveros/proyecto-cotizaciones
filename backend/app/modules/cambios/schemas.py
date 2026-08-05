@@ -37,6 +37,9 @@ class AjusteIn(BaseModel):
 class AprobarIn(BaseModel):
     comentario: str | None = None
     ajustes: list[AjusteIn] = []
+    # F10.3 (FASE B): si la solicitud tiene USD sin TC (datos legados del
+    # hueco B3), el comprador lo captura al AUTORIZAR (422 exactos).
+    tipo_cambio: Decimal | None = None
 
 
 class RechazarCambioIn(BaseModel):

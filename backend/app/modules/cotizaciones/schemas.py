@@ -38,6 +38,9 @@ class OpcionIn(BaseModel):
     vigencia: date | None = None
     comentarios: str | None = None
     renglones: list[RenglonIn] = []
+    # F10.3 (FASE B): al RECOTIZAR (corrección en COTIZADA) que introduce USD
+    # sin TC previo, el comprador lo captura AQUÍ (422 exactos en el service).
+    tipo_cambio: Decimal | None = None
 
 
 class SeleccionIn(BaseModel):
