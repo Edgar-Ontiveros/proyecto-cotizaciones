@@ -28,9 +28,10 @@ import {
 } from "../../components/compartidos";
 import { SeccionComprobante } from "../../components/Comprobante";
 import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
+import { VistaPedido } from "../../components/Pedido";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
-import { baseSolicitudes } from "../../lib/crm";
+import { baseSolicitudes, proveedoresGanadora } from "../../lib/crm";
 import { dinero, fecha, fechaHora, folioCliente } from "../../lib/format";
 import type { SolicitudDetailOut, TiemposOut } from "../../lib/types";
 
@@ -221,6 +222,15 @@ export function DetalleSolicitud() {
     ladoVentas && ["BORRADOR", "ENVIADA", "EN_PROCESO"].includes(solicitud.estado);
   const puedeCancelar =
     ladoVentas && ["BORRADOR", "ENVIADA", "EN_PROCESO", "RECHAZADA"].includes(solicitud.estado);
+  // F10.2 p.3c: el pedido completo va EMBEBIDO (tras Tiempos) para el área
+  // compras y admin — en F10.1 quedó al fondo de la página y parecía ausente.
+  const pedidoEmbebido =
+    usuario !== null &&
+    ["gerente_compras", "admin"].includes(usuario.rol) &&
+    solicitud.estado === "CONFIRMADA" &&
+    solicitud.opciones.length > 0;
+  const ganadora = solicitud.opciones.find((o) => o.id === solicitud.opcion_seleccionada_id);
+  const proveedores = proveedoresGanadora(solicitud);
 
   const confirmarCancelar = () =>
     modals.openConfirmModal({
@@ -268,11 +278,14 @@ export function DetalleSolicitud() {
               Corregir y reenviar
             </Button>
           )}
-          {ladoVentas && (solicitud.estado === "COTIZADA" || solicitud.estado === "CONFIRMADA") && (
-            <Button onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/comparador`)}>
-              {solicitud.estado === "COTIZADA" ? "Comparar opciones" : "Ver opciones"}
-            </Button>
-          )}
+          {/* F10.2 p.3c: con el pedido embebido abajo, el botón sobra. */}
+          {ladoVentas &&
+            !pedidoEmbebido &&
+            (solicitud.estado === "COTIZADA" || solicitud.estado === "CONFIRMADA") && (
+              <Button onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/comparador`)}>
+                {solicitud.estado === "COTIZADA" ? "Comparar opciones" : "Ver opciones"}
+              </Button>
+            )}
           {puedeCancelar && (
             <Button variant="subtle" color="red" onClick={confirmarCancelar}>
               Cancelar
@@ -288,7 +301,14 @@ export function DetalleSolicitud() {
         </Alert>
       )}
       {solicitud.estado === "CONFIRMADA" && (
-        <Alert color="green" title="Pedido confirmado">
+        <Alert
+          color="green"
+          title={`Pedido confirmado${ganadora ? ` — Ganadora: Opción ${ganadora.letra}` : ""}${
+            // F10.2 p.3b: proveedores ÚNICOS de la ganadora — la lista queda
+            // vacía para el vendedor (su JSON no trae la clave).
+            proveedores.length > 0 ? ` · Proveedores: ${proveedores.join(", ")}` : ""
+          }`}
+        >
           {solicitud.monto_confirmado != null ? (
             <Group gap="xs">
               <Text size="sm">Monto oficial (consolidado MXN):</Text>
@@ -349,6 +369,7 @@ export function DetalleSolicitud() {
         estado={solicitud.estado}
       />
       <BloqueTiempos tiempos={solicitud.tiempos} />
+      {pedidoEmbebido && <VistaPedido solicitud={solicitud} />}
       <HistorialComentarios solicitud={solicitud} />
       {/* Hoja de impresión (F10 p.5): invisible en pantalla; al imprimir es
           lo ÚNICO visible (impresion.css). */}

@@ -17,7 +17,6 @@ import {
   useUsuarios,
 } from "../api/crmHooks";
 import { useAuth } from "../auth/AuthContext";
-import { VistaPedido } from "../components/Pedido";
 import { accionesDetalleCrm } from "../lib/crm";
 import { dinero } from "../lib/format";
 import type { SolicitudDetailOut } from "../lib/types";
@@ -204,26 +203,13 @@ function AccionesCrm() {
   );
 }
 
-/** F10.1 p.4/5: el pedido completo EMBEBIDO en el detalle del CRM para el
- * área compras y admin — antes exigía navegar a otra pantalla (gap p.3: el
- * JSON traía proveedor/opciones y el detalle no pintaba ninguna). El lado
- * ventas (gerente_sucursal, director) NO cambia. */
-function PedidoCrm() {
-  const { id } = useParams();
-  const { usuario } = useAuth();
-  const { data: solicitud } = useSolicitud(Number(id));
-  if (!usuario || !solicitud) return null;
-  if (!["gerente_compras", "admin"].includes(usuario.rol)) return null;
-  if (solicitud.estado !== "CONFIRMADA") return null;
-  return <VistaPedido solicitud={solicitud} />;
-}
-
+// F10.2 p.3c: el pedido embebido ahora vive DENTRO de DetalleSolicitud (tras
+// Tiempos, visible sin scroll al fondo) — aquí ya no se monta nada extra.
 export function DetalleCrm() {
   return (
     <>
       <AccionesCrm />
       <DetalleSolicitud />
-      <PedidoCrm />
     </>
   );
 }

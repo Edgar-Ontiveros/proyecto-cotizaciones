@@ -34,6 +34,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
 import { fechaHora } from "../lib/format";
+import { armarAjustes } from "../lib/renglon";
 import type { CambioOut, SolicitudDetailOut, Unidad } from "../lib/types";
 
 const UNIDADES: Unidad[] = ["PZ", "KG", "TON", "MTS", "M2"];
@@ -248,6 +249,7 @@ interface FilaAjuste {
   cantidadNueva: string;
   unidadNueva: string;
   precioActual: string | null;
+  tiempoActual: string; // F10.2 p.1: base para detectar ajuste de solo-tiempo
   unidadCambia: boolean;
   precio: string; // editable
   tiempo: string; // editable
@@ -309,6 +311,7 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
           cantidadNueva: p.cantidad_nueva,
           unidadNueva: p.unidad_nueva,
           precioActual: renglon.precio_unitario,
+          tiempoActual: renglon.tiempo_entrega ?? "",
           unidadCambia,
           // Con cambio de unidad el precio anterior queda inválido: vacío.
           precio: unidadCambia ? "" : (renglon.precio_unitario ?? ""),
@@ -329,25 +332,17 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
 
   const ejecutarAprobar = () => {
     setError(null);
-    const ajustes: AjusteBody[] = [];
     for (const f of editor) {
-      const precioEscrito = f.precio.trim();
-      if (f.unidadCambia && !(Number(precioEscrito) > 0)) {
+      if (f.unidadCambia && !(Number(f.precio.trim()) > 0)) {
         setError(
           `Opción ${f.letra}, partida ${f.num}: la unidad cambia — captura el precio nuevo`,
         );
         return;
       }
-      const precioDistinto = precioEscrito !== "" && precioEscrito !== (f.precioActual ?? "");
-      if (f.unidadCambia || precioDistinto) {
-        ajustes.push({
-          opcion_letra: f.letra,
-          partida_id: f.partida_id,
-          precio_unitario: precioEscrito,
-          tiempo_entrega: f.tiempo.trim() || undefined,
-        });
-      }
     }
+    // F10.2 p.1: la decisión de qué viaja vive en armarAjustes (lib/renglon,
+    // testeada) — incluye los ajustes de SOLO tiempo, que antes se perdían.
+    const ajustes: AjusteBody[] = armarAjustes(editor);
     aprobar.mutate(
       { cambioId: pendiente.id, comentario: null, ajustes },
       {

@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -78,6 +79,7 @@ def listar_solicitudes(
     desde: date | None = None,
     hasta: date | None = None,
     buscar: str | None = None,
+    orden: Literal["confirmado_en"] | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: Usuario = Depends(get_current_user),
@@ -97,6 +99,7 @@ def listar_solicitudes(
         desde=desde,
         hasta=hasta,
         buscar=buscar,
+        orden=orden,
         limit=limit,
         offset=offset,
     )

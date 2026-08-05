@@ -113,3 +113,33 @@ export function baseSolicitudes(pathname: string): "/crm" | "/comprador" | "/ven
   if (pathname.startsWith("/comprador")) return "/comprador";
   return "/vendedor";
 }
+
+/** F10.2 p.3b: proveedores de la opción GANADORA — lista única, en orden de
+ * aparición, omitiendo renglones sin dato. Para el vendedor la clave no viene
+ * en su JSON y la lista queda vacía (su regla de siempre). */
+export function proveedoresGanadora(solicitud: {
+  opcion_seleccionada_id: number | null;
+  opciones: { id: number; renglones: { proveedor?: string | null }[] }[];
+}): string[] {
+  const ganadora = solicitud.opciones.find((o) => o.id === solicitud.opcion_seleccionada_id);
+  if (!ganadora) return [];
+  const unicos: string[] = [];
+  for (const r of ganadora.renglones) {
+    if (r.proveedor && !unicos.includes(r.proveedor)) unicos.push(r.proveedor);
+  }
+  return unicos;
+}
+
+/** F10.2 p.4: params de las pestañas paginadas del panel del comprador —
+ * dato puro testeado. Confirmadas ordena por fecha de confirmación (backend
+ * orden=confirmado_en); Cotizadas acepta el filtro de cambio pendiente. */
+export function paramsPestanaComprador(
+  tab: "cotizadas" | "confirmadas" | "todas",
+  soloCambios = false,
+): { estado?: string; cambio_pendiente?: boolean; orden?: string } {
+  if (tab === "cotizadas") {
+    return { estado: "COTIZADA", ...(soloCambios ? { cambio_pendiente: true } : {}) };
+  }
+  if (tab === "confirmadas") return { estado: "CONFIRMADA", orden: "confirmado_en" };
+  return {};
+}

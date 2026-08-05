@@ -23,6 +23,8 @@ export interface FiltrosListado {
   es_proyecto?: boolean;
   // F10 p.7b: filtro "con cambio pendiente".
   cambio_pendiente?: boolean;
+  // F10.2 p.4: la pestaña Confirmadas ordena por fecha de confirmación.
+  orden?: string;
   cliente_id?: number;
   desde?: string;
   hasta?: string;

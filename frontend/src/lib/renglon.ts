@@ -95,3 +95,44 @@ export function consolidadoMXN(
   }
   return mxn;
 }
+
+/** F10.2 p.1: decide qué ajustes viajan al aprobar un cambio. El bug de
+ * producción: la versión anterior solo enviaba el renglón si cambiaba la
+ * unidad o el PRECIO — un ajuste de SOLO tiempo de entrega se descartaba en
+ * silencio y jamás llegaba al backend. */
+export interface FilaAjusteEditor {
+  letra: string;
+  partida_id: number;
+  unidadCambia: boolean;
+  precioActual: string | null;
+  tiempoActual: string;
+  precio: string;
+  tiempo: string;
+}
+
+export interface AjusteArmado {
+  opcion_letra: string;
+  partida_id: number;
+  precio_unitario?: string;
+  tiempo_entrega?: string;
+}
+
+export function armarAjustes(filas: FilaAjusteEditor[]): AjusteArmado[] {
+  const ajustes: AjusteArmado[] = [];
+  for (const f of filas) {
+    const precioEscrito = f.precio.trim();
+    const tiempoEscrito = f.tiempo.trim();
+    const precioDistinto =
+      precioEscrito !== "" && Number(precioEscrito) !== Number(f.precioActual ?? "");
+    const tiempoDistinto = tiempoEscrito !== "" && tiempoEscrito !== f.tiempoActual.trim();
+    if (!f.unidadCambia && !precioDistinto && !tiempoDistinto) continue;
+    ajustes.push({
+      opcion_letra: f.letra,
+      partida_id: f.partida_id,
+      // Con cambio de unidad el precio anterior quedó inválido: SIEMPRE viaja.
+      ...(f.unidadCambia || precioDistinto ? { precio_unitario: precioEscrito } : {}),
+      ...(tiempoDistinto ? { tiempo_entrega: tiempoEscrito } : {}),
+    });
+  }
+  return ajustes;
+}

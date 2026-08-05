@@ -384,3 +384,36 @@ def test_ultimo_cambio_manda_no_cualquier_aprobado(client, entorno, auth_headers
     assert r.status_code == 200
     items = client.get(f"{BASE}", headers=auth_headers(entorno.admin)).json()["items"]
     assert next(s for s in items if s["id"] == sid)["cambio_aprobado"] is False
+
+
+# ----------------------- F10.2 p.4: orden por confirmado_en para Confirmadas
+
+
+def test_listado_orden_confirmado_en(client, entorno, auth_headers, con_comprobante):
+    """orden=confirmado_en regresa las CONFIRMADAS por fecha de confirmación
+    DESC (la segunda confirmada aparece primero aunque se creó después)."""
+    from tests.test_f8h import _cotizada_mixta
+
+    sids = []
+    for _ in range(2):
+        sid, _p1, _p2 = _cotizada_mixta(client, entorno, auth_headers)
+        con_comprobante(sid, entorno.vendedor)
+        r = client.post(
+            f"{BASE}/{sid}/seleccionar",
+            headers=auth_headers(entorno.vendedor),
+            json={"letra": "A"},
+        )
+        assert r.status_code == 200
+        sids.append(sid)
+
+    r = client.get(
+        f"{BASE}?estado=CONFIRMADA&orden=confirmado_en",
+        headers=auth_headers(entorno.comprador),
+    )
+    items = r.json()["items"]
+    fechas = [s["confirmado_en"] for s in items]
+    assert fechas == sorted(fechas, reverse=True)
+    assert {s["id"] for s in items} >= set(sids)
+    # Valor de orden inválido → 422 de validación, no un 500.
+    r = client.get(f"{BASE}?orden=otra_cosa", headers=auth_headers(entorno.comprador))
+    assert r.status_code == 422

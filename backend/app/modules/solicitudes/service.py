@@ -273,6 +273,7 @@ def listar(
     desde: date | None,
     hasta: date | None,
     buscar: str | None,
+    orden: str | None = None,
     limit: int,
     offset: int,
 ) -> tuple[list[tuple[Solicitud, str | None]], int]:
@@ -291,8 +292,14 @@ def listar(
         buscar=buscar,
     )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    # F10.2 p.4: la pestaña Confirmadas ordena por fecha de confirmación.
+    primera = (
+        Solicitud.confirmado_en.desc().nulls_last()
+        if orden == "confirmado_en"
+        else Solicitud.creado_en.desc()
+    )
     filas = db.execute(
-        stmt.order_by(Solicitud.creado_en.desc(), Solicitud.id.desc()).limit(limit).offset(offset)
+        stmt.order_by(primera, Solicitud.id.desc()).limit(limit).offset(offset)
     ).all()
     return [(fila[0], fila[1]) for fila in filas], total
 

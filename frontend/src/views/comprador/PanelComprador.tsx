@@ -1,7 +1,7 @@
 /** Vista principal del comprador: MI PANEL (los números con los que lo
  * evalúan) arriba y su COLA abajo (urgentes primero, luego T descendente). */
 
-import { Alert, Badge, Card, Group, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
+import { Alert, Badge, Card, Checkbox, Group, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
 import { DataTable } from "mantine-datatable";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -14,6 +14,7 @@ import {
   SemaforoBanda,
 } from "../../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../../components/filtrosListado";
+import { paramsPestanaComprador } from "../../lib/crm";
 import { fecha, horas, pct } from "../../lib/format";
 import type { SolicitudOut } from "../../lib/types";
 
@@ -81,11 +82,21 @@ export function PanelComprador() {
   const listado = useFiltrosListado();
   const { pagina, setPagina } = listado;
 
+  // F10.2 p.4: filtro "Cambio solicitado" de la pestaña Cotizadas.
+  const [soloCambios, setSoloCambios] = useState(false);
+
   // Cola: hasta 100 abiertas de cada estado, orden en cliente.
   const enviadas = useSolicitudes({ estado: "ENVIADA", limit: 100 });
   const enProceso = useSolicitudes({ estado: "EN_PROCESO", limit: 100 });
   const cotizadas = useSolicitudes({
-    estado: "COTIZADA",
+    ...paramsPestanaComprador("cotizadas", soloCambios),
+    ...listado.filtros,
+    limit: PAGE,
+    offset: listado.offset,
+  });
+  // F10.2 p.4: Confirmadas — orden por fecha de confirmación descendente.
+  const confirmadas = useSolicitudes({
+    ...paramsPestanaComprador("confirmadas"),
     ...listado.filtros,
     limit: PAGE,
     offset: listado.offset,
@@ -154,6 +165,7 @@ export function PanelComprador() {
         <Tabs.List>
           <Tabs.Tab value="cola">Cola ({cola.length})</Tabs.Tab>
           <Tabs.Tab value="cotizadas">Cotizadas</Tabs.Tab>
+          <Tabs.Tab value="confirmadas">Confirmadas</Tabs.Tab>
           <Tabs.Tab value="todas">Todas</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="cola" pt="sm">
@@ -174,7 +186,17 @@ export function PanelComprador() {
           />
         </Tabs.Panel>
         <Tabs.Panel value="cotizadas" pt="sm">
-          <FiltrosRangoBusqueda estado={listado} />
+          <Group gap="sm" align="center">
+            <FiltrosRangoBusqueda estado={listado} />
+            <Checkbox
+              label="Cambio solicitado"
+              checked={soloCambios}
+              onChange={(e) => {
+                setSoloCambios(e.currentTarget.checked);
+                setPagina(1);
+              }}
+            />
+          </Group>
           <DataTable<SolicitudOut>
             withTableBorder
             highlightOnHover
@@ -187,6 +209,23 @@ export function PanelComprador() {
             onPageChange={setPagina}
             onRowClick={({ record }) => navigate(`/comprador/solicitudes/${record.id}`)}
             noRecordsText="Sin cotizadas"
+            columns={columnas}
+          />
+        </Tabs.Panel>
+        <Tabs.Panel value="confirmadas" pt="sm">
+          <FiltrosRangoBusqueda estado={listado} />
+          <DataTable<SolicitudOut>
+            withTableBorder
+            highlightOnHover
+            minHeight={180}
+            records={confirmadas.data?.items ?? []}
+            fetching={confirmadas.isFetching}
+            totalRecords={confirmadas.data?.total ?? 0}
+            recordsPerPage={PAGE}
+            page={pagina}
+            onPageChange={setPagina}
+            onRowClick={({ record }) => navigate(`/comprador/solicitudes/${record.id}`)}
+            noRecordsText="Sin pedidos confirmados"
             columns={columnas}
           />
         </Tabs.Panel>
