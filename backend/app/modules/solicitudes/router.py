@@ -106,6 +106,9 @@ def listar_solicitudes(
     referencias = cotizaciones_service.referencias_opcion_a(
         db, [s.id for s, _ in filas if s.estado == Estado.COTIZADA]
     )
+    # F10.1 p.2b: badge verde "CAMBIO APROBADO" — un query fijo por página.
+    cotizadas_ids = [s.id for s, _ in filas if s.estado == Estado.COTIZADA]
+    aprobados = cambios_service.ultimos_aprobados(db, cotizadas_ids)
     # El VENDEDOR no ve consolidado (F8e): en CONFIRMADA su referencia son los
     # subtotales de la GANADORA en monedas originales.
     ganadoras: dict[int, tuple] = {}
@@ -121,6 +124,7 @@ def listar_solicitudes(
     items = []
     for solicitud, nombre in filas:
         item = _a_out(db, solicitud, user, nombre)
+        item.cambio_aprobado = solicitud.id in aprobados
         ciclo = vigentes.get(solicitud.id)
         if ciclo is not None:
             item.banda = ciclo.banda
@@ -163,6 +167,8 @@ def detalle_solicitud(
         for c in ciclos_mod.cargar_ciclos(db, [solicitud.id]).get(solicitud.id, [])
     ]
     base = _a_out(db, solicitud, user)
+    if solicitud.estado == Estado.COTIZADA:
+        base.cambio_aprobado = solicitud.id in cambios_service.ultimos_aprobados(db, [solicitud.id])
     if ciclos and ciclos[-1].cierre is None:
         base.banda = ciclos[-1].banda
         base.dias_transcurridos = ciclos[-1].dias_transcurridos

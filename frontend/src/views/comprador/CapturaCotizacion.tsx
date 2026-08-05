@@ -40,7 +40,10 @@ import {
   useRechazar,
   useSolicitud,
 } from "../../api/hooks";
+import { useAuth } from "../../auth/AuthContext";
 import { BannerCambioComprador } from "../../components/Cambios";
+import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
+import { VistaPedido } from "../../components/Pedido";
 import { BadgeEstado, SemaforoBanda } from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
@@ -425,123 +428,6 @@ function EditorOpcion({
 }
 
 
-/** Una opción en modo lectura (F10 p.4): con ganadora fijada, la ELEGIDA va
- * resaltada en VERDE y las demás en GRIS atenuado, colapsadas pero
- * expandibles — toda la información sigue ahí. */
-function PaperOpcionLectura({
-  solicitud,
-  opcion: o,
-}: {
-  solicitud: SolicitudDetailOut;
-  opcion: OpcionOut;
-}) {
-  const haySeleccion = solicitud.opcion_seleccionada_id !== null;
-  const ganadora = solicitud.opcion_seleccionada_id === o.id;
-  const atenuada = haySeleccion && !ganadora;
-  const [expandida, setExpandida] = useState(!atenuada);
-  return (
-    <Paper
-      withBorder
-      p="sm"
-      style={
-        ganadora
-          ? {
-              borderColor: "var(--mantine-color-green-6)",
-              backgroundColor: "var(--mantine-color-green-0)",
-            }
-          : atenuada
-            ? { opacity: 0.65, backgroundColor: "var(--mantine-color-gray-0)" }
-            : undefined
-      }
-    >
-      <Group gap="xs" mb={expandida ? "xs" : 0}>
-        <Badge variant="filled" color={ganadora ? "green" : atenuada ? "gray" : undefined}>
-          Opción {o.letra}
-        </Badge>
-        {ganadora && <Badge color="green">GANADORA — genera la orden de compra</Badge>}
-        <Text size="sm" fw={600}>
-          {[
-            Number(o.total_mxn) > 0 ? dinero(o.total_mxn, "MXN") : null,
-            Number(o.total_usd) > 0 ? dinero(o.total_usd, "USD") : null,
-          ]
-            .filter(Boolean)
-            .join(" + ") || dinero("0", "MXN")}
-        </Text>
-        {/* Consolidado POR OPCIÓN (el backend lo manda a los roles
-            autorizados; la clave no existe para el vendedor). */}
-        {o.consolidado_mxn != null && solicitud.tipo_cambio && (
-          <Text size="sm" c="dimmed">
-            TC {solicitud.tipo_cambio} → consolidado {dinero(o.consolidado_mxn, "MXN")}
-          </Text>
-        )}
-        {atenuada && (
-          <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setExpandida(!expandida)}>
-            {expandida ? "Ocultar detalle" : "Ver detalle"}
-          </Button>
-        )}
-      </Group>
-      {expandida && <TablaRenglonesLectura opcion={o} />}
-    </Paper>
-  );
-}
-
-function TablaRenglonesLectura({ opcion: o }: { opcion: OpcionOut }) {
-  return (
-    <Table withColumnBorders fz="sm">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>No.</Table.Th>
-                  <Table.Th>Cotizado</Table.Th>
-                  <Table.Th>Moneda</Table.Th>
-                  <Table.Th>Precio unit.</Table.Th>
-                  <Table.Th>Importe</Table.Th>
-                  <Table.Th>Entrega</Table.Th>
-                  <Table.Th>Proveedor</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {o.renglones.map((r) => (
-                  <Table.Tr key={r.id} bg={r.no_encontrada ? "var(--mantine-color-gray-1)" : undefined}>
-                    <Table.Td>{r.num_partida}</Table.Td>
-                    <Table.Td>
-                      {r.no_encontrada ? (
-                        <Text size="sm" c="dimmed">
-                          No encontrada
-                        </Text>
-                      ) : (
-                        `${r.cantidad} ${r.unidad}`
-                      )}
-                      {r.es_alternativa && (
-                        <Text size="xs" c="acento.8">
-                          ALTERNATIVA: {r.alternativa_descripcion}
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>{r.moneda ?? "—"}</Table.Td>
-                    <Table.Td>{r.precio_unitario ?? "—"}</Table.Td>
-                    <Table.Td>
-                      {r.importe !== null && r.moneda ? dinero(r.importe, r.moneda) : "—"}
-                    </Table.Td>
-                    <Table.Td>{r.tiempo_entrega ?? "—"}</Table.Td>
-                    <Table.Td>{r.proveedor ?? "—"}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-  );
-}
-
-function VistaOpcionesLectura({ solicitud }: { solicitud: SolicitudDetailOut }) {
-  return (
-    <Stack gap="sm">
-      <Title order={5}>Opciones cotizadas</Title>
-      {solicitud.opciones.map((o) => (
-        <PaperOpcionLectura key={o.id} solicitud={solicitud} opcion={o} />
-      ))}
-    </Stack>
-  );
-}
-
 function ModalRechazo({ solicitudId, onListo }: { solicitudId: number; onListo: () => void }) {
   const { data: motivos } = useMotivosRechazo();
   const rechazar = useRechazar(solicitudId);
@@ -608,6 +494,10 @@ export function CapturaCotizacion() {
   const { id } = useParams();
   const solicitudId = Number(id);
   const { data: solicitud } = useSolicitud(solicitudId);
+  const { usuario } = useAuth();
+  // F10.1 p.1: imprimir en LA pantalla del comprador (captura y pedido);
+  // gcompras/admin también la usan vía /crm. El lado ventas, sin botón.
+  const puedeImprimir = usuario !== null && ROLES_IMPRIMEN.includes(usuario.rol);
   const tomar = useAccionSolicitud("tomar");
   const cotizar = useCotizar(solicitudId);
   const eliminarOpcion = useEliminarOpcion(solicitudId);
@@ -731,6 +621,7 @@ export function CapturaCotizacion() {
           )}
         </Group>
         <Group>
+          {puedeImprimir && <BotonImprimir />}
           {solicitud.estado === "ENVIADA" && (
             <Button variant="light" onClick={() => tomar.mutate(solicitud.id)}>
               Tomar
@@ -845,10 +736,13 @@ export function CapturaCotizacion() {
       )}
 
       {!capturable && solicitud.opciones.length > 0 && (
-        <VistaOpcionesLectura solicitud={solicitud} />
+        <VistaPedido solicitud={solicitud} />
       )}
 
       <HistorialComentarios solicitud={solicitud} />
+      {/* Hoja de impresión (F10.1 p.1): lo SOLICITADO, como quedó; invisible
+          en pantalla, lo único visible al imprimir (impresion.css). */}
+      {puedeImprimir && <HojaImpresion solicitud={solicitud} />}
     </Stack>
   );
 }

@@ -93,10 +93,30 @@ def _cotizada(client, entorno, auth_headers):
     return sid
 
 
+def _cambio_aprobado(client, entorno, auth_headers, sid):
+    """F10.1 p.2b: deja la cotizada con su ÚLTIMO cambio APROBADO (solo
+    cantidad — sin ajuste de precios)."""
+    detalle = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.vendedor)).json()
+    pid = detalle["partidas"][0]["id"]
+    r = client.post(
+        f"{BASE}/{sid}/cambios",
+        headers=auth_headers(entorno.vendedor),
+        json={"comentario": None, "partidas": [{"partida_id": pid, "cantidad_nueva": "9"}]},
+    )
+    assert r.status_code == 201, r.text
+    r = client.post(
+        f"/api/v1/cambios/{r.json()['id']}/aprobar",
+        headers=auth_headers(entorno.comprador),
+        json={"ajustes": []},
+    )
+    assert r.status_code == 200, r.text
+
+
 def test_listado_sin_n_mas_uno(client, entorno, auth_headers):
     """El número de queries del listado NO crece con el número de filas
     abiertas NI con el de cotizadas (F8b: el monto de referencia también sale
-    en un query fijo por página)."""
+    en un query fijo por página; F10.1 p.2b: el badge de cambio aprobado
+    también — un DISTINCT ON por página, jamás por fila)."""
     headers = auth_headers(entorno.vendedor)
     _enviada(client, entorno, auth_headers)
     _cotizada(client, entorno, auth_headers)
@@ -115,11 +135,18 @@ def test_listado_sin_n_mas_uno(client, entorno, auth_headers):
         return len(queries)
 
     con_pocas = contar()
+    aprobadas = []
     for _ in range(3):
         _enviada(client, entorno, auth_headers)
-        _cotizada(client, entorno, auth_headers)
+        sid = _cotizada(client, entorno, auth_headers)
+        _cambio_aprobado(client, entorno, auth_headers, sid)
+        aprobadas.append(sid)
     con_muchas = contar()
-    assert con_muchas == con_pocas  # queries fijos, sin N+1
+    assert con_muchas == con_pocas  # queries fijos, sin N+1 (badge incluido)
+    # Y el dato del badge SÍ viaja en esos queries fijos.
+    items = client.get(BASE, headers=headers).json()["items"]
+    por_id = {s["id"]: s for s in items}
+    assert all(por_id[sid]["cambio_aprobado"] is True for sid in aprobadas)
 
 
 # -------------------------------------------------------------------- export

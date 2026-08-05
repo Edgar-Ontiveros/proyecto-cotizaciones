@@ -67,6 +67,9 @@ class SolicitudOut(BaseModel):
     # F8h: cambio de cantidad/unidad pendiente de aprobación (bloquea
     # confirmar/corregir/editar).
     cambio_pendiente: bool = False
+    # F10.1 p.2b: DERIVADO (nunca materializado) — True solo si el ÚLTIMO
+    # cambio quedó APROBADO y la solicitud sigue en COTIZADA.
+    cambio_aprobado: bool = False
     cliente_id: int | None
     cliente_nombre: str | None
     vendedor_id: int

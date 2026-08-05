@@ -325,3 +325,62 @@ def test_filtro_cambio_pendiente_en_listado_y_export(client, entorno, auth_heade
     col = encabezados.index("Cambio pendiente") + 1
     assert ws.max_row == 2  # solo la que tiene cambio pendiente
     assert ws.cell(row=2, column=col).value == "Sí"
+
+
+# --------------------------- F10.1 p.2b: badge verde CAMBIO APROBADO derivado
+
+
+def test_cambio_aprobado_derivado_en_listado_y_detalle(
+    client, entorno, auth_headers, con_comprobante
+):
+    """El campo cambio_aprobado es True SOLO mientras: último cambio APROBADO
+    y estado COTIZADA. Al confirmar muere solo. El rechazado no lo enciende."""
+    # Aprobado → True (listado de admin Y de vendedor; detalle también).
+    sid, p1, _p2, cambio_id = _cambio_pendiente(client, entorno, auth_headers)
+    assert _aprobar_con_ajustes(client, auth_headers, entorno, cambio_id, p1).status_code == 200
+    for usuario in (entorno.admin, entorno.vendedor):
+        items = client.get(f"{BASE}", headers=auth_headers(usuario)).json()["items"]
+        assert next(s for s in items if s["id"] == sid)["cambio_aprobado"] is True, usuario.rol
+    detalle = client.get(f"{BASE}/{sid}", headers=auth_headers(entorno.comprador)).json()
+    assert detalle["cambio_aprobado"] is True
+
+    # Confirmada → el badge muere solo (estado ya no es COTIZADA).
+    con_comprobante(sid, entorno.vendedor)
+    r = client.post(
+        f"{BASE}/{sid}/seleccionar", headers=auth_headers(entorno.vendedor), json={"letra": "A"}
+    )
+    assert r.status_code == 200
+    items = client.get(f"{BASE}", headers=auth_headers(entorno.admin)).json()["items"]
+    assert next(s for s in items if s["id"] == sid)["cambio_aprobado"] is False
+
+    # Rechazado → False (solo el aprobado lleva badge).
+    sid2, _p1b, _p2b, cambio2 = _cambio_pendiente(client, entorno, auth_headers)
+    r = client.post(
+        f"{CAMBIOS}/{cambio2}/rechazar",
+        headers=auth_headers(entorno.comprador),
+        json={"comentario": "no procede"},
+    )
+    assert r.status_code == 200
+    items = client.get(f"{BASE}", headers=auth_headers(entorno.admin)).json()["items"]
+    assert next(s for s in items if s["id"] == sid2)["cambio_aprobado"] is False
+
+
+def test_ultimo_cambio_manda_no_cualquier_aprobado(client, entorno, auth_headers):
+    """Con historial aprobado→rechazado, manda el ÚLTIMO (rechazado): False."""
+    sid, p1, _p2, cambio_id = _cambio_pendiente(client, entorno, auth_headers)
+    assert _aprobar_con_ajustes(client, auth_headers, entorno, cambio_id, p1).status_code == 200
+    # Segundo cambio sobre la misma solicitud, ahora rechazado.
+    r = client.post(
+        f"{BASE}/{sid}/cambios",
+        headers=auth_headers(entorno.vendedor),
+        json={"comentario": None, "partidas": [{"partida_id": p1, "cantidad_nueva": "600"}]},
+    )
+    assert r.status_code == 201
+    r = client.post(
+        f"{CAMBIOS}/{r.json()['id']}/rechazar",
+        headers=auth_headers(entorno.comprador),
+        json={"comentario": "ya no"},
+    )
+    assert r.status_code == 200
+    items = client.get(f"{BASE}", headers=auth_headers(entorno.admin)).json()["items"]
+    assert next(s for s in items if s["id"] == sid)["cambio_aprobado"] is False

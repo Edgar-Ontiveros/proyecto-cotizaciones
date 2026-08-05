@@ -48,6 +48,25 @@ def _fmt(cantidad: Decimal) -> str:
     return format(cantidad.normalize(), "f")
 
 
+def ultimos_aprobados(db: Session, solicitud_ids: list[int]) -> set[int]:
+    """F10.1 p.2b: ids cuyo ÚLTIMO cambio quedó APROBADO — UN query por
+    página (DISTINCT ON), jamás por fila. El badge verde del frontend se
+    deriva de esto + estado COTIZADA; al moverse de estado muere solo."""
+    if not solicitud_ids:
+        return set()
+    filas = db.execute(
+        select(SolicitudCambio.solicitud_id, SolicitudCambio.estado_cambio)
+        .distinct(SolicitudCambio.solicitud_id)
+        .where(SolicitudCambio.solicitud_id.in_(solicitud_ids))
+        .order_by(
+            SolicitudCambio.solicitud_id,
+            SolicitudCambio.creado_en.desc(),
+            SolicitudCambio.id.desc(),
+        )
+    ).all()
+    return {sid for sid, estado in filas if estado == EstadoCambio.APROBADO}
+
+
 def pendiente_de(db: Session, solicitud_id: int) -> SolicitudCambio | None:
     return db.scalar(
         select(SolicitudCambio).where(

@@ -62,6 +62,9 @@ export interface SolicitudOut {
   // F8h: cambio de cantidad/unidad pendiente de aprobación (bloquea
   // confirmar/corregir/editar).
   cambio_pendiente: boolean;
+  // F10.1 p.2b: el ÚLTIMO cambio quedó APROBADO y la solicitud sigue en
+  // COTIZADA (derivado por el backend; muere solo al cambiar de estado).
+  cambio_aprobado: boolean;
   cliente_id: number | null;
   cliente_nombre: string | null;
   vendedor_id: number;

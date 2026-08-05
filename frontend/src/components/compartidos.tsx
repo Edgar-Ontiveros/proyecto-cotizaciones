@@ -58,6 +58,18 @@ export function BadgeCambioPendiente({ pendiente }: { pendiente: boolean }) {
   );
 }
 
+/** F10.1 p.2b: desenlace visible — el último cambio quedó APROBADO y la
+ * solicitud sigue en COTIZADA (el backend lo deriva; solo aprobado lleva
+ * badge — el rechazado no se pidió). */
+export function BadgeCambioAprobado({ aprobado }: { aprobado: boolean }) {
+  if (!aprobado) return null;
+  return (
+    <Badge color="green" variant="filled" size="sm" data-testid="badge-cambio-aprobado">
+      CAMBIO APROBADO
+    </Badge>
+  );
+}
+
 /** Folio + badges PROYECTO y CAMBIO SOLICITADO para las columnas de listado
  * (vendedor, cola del comprador y tabla del CRM usan este componente). */
 export function FolioConProyecto({ solicitud }: { solicitud: SolicitudOut }) {
@@ -66,6 +78,7 @@ export function FolioConProyecto({ solicitud }: { solicitud: SolicitudOut }) {
       <Text fw={500}>{solicitud.folio ?? "(borrador)"}</Text>
       <BadgeProyecto esProyecto={solicitud.es_proyecto} />
       <BadgeCambioPendiente pendiente={solicitud.cambio_pendiente} />
+      <BadgeCambioAprobado aprobado={solicitud.cambio_aprobado} />
     </Group>
   );
 }
