@@ -130,6 +130,16 @@ version alembic: 0f37792d31f7
 
 Repetirla al menos tras cada cambio de esquema mayor.
 
+## Reinicio pre-piloto (CLAUSURADO)
+
+Reinicio pre-piloto ejecutado el 2026-08-10: `DROP SCHEMA public CASCADE` +
+re-grants del §3.2 del manual (con `FOR ROLE cotiza_migrate`), `alembic
+upgrade head` (2db348b42524), `seed-produccion` (54 usuarios, 11
+titularidades, contadores en 0; segunda corrida 0/0), comprobantes de
+`/opt/cotiza/archivos` vaciados y reinicio de api/scheduler. Verificado:
+health ok/ok/ok y todas las cuentas con `must_change_password=true`.
+Procedimiento CLAUSURADO — no volver a usar.
+
 ## Diagnóstico rápido
 
 | Síntoma | Primer vistazo |
