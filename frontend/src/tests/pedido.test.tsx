@@ -36,6 +36,8 @@ function renglon(sobre: Partial<RenglonOut>): RenglonOut {
     no_encontrada: false,
     es_alternativa: false,
     alternativa_descripcion: null,
+    con_observacion: false,
+    observacion: null,
     proveedor: "Aceros del Norte",
     ...sobre,
   };
@@ -95,6 +97,15 @@ describe("VistaPedido — mapeo ganadora→estilos (F10.2)", () => {
   it("las no elegidas quedan colapsadas con botón 'Ver detalle' (gris)", () => {
     pintar(solicitudConfirmada());
     expect(screen.getByText("Ver detalle")).toBeInTheDocument();
+  });
+
+  it("la observación del renglón (F11) es visible en el pedido", () => {
+    const solicitud = solicitudConfirmada();
+    solicitud.opciones[1]!.renglones = [
+      renglon({ id: 2, con_observacion: true, observacion: "Sujeto a disponibilidad" }),
+    ];
+    pintar(solicitud);
+    expect(screen.getByText(/OBSERVACIÓN: Sujeto a disponibilidad/)).toBeInTheDocument();
   });
 
   it("sin seleccionada (COTIZADA) no hay badge ni colapsadas", () => {

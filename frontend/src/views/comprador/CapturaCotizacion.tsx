@@ -85,6 +85,8 @@ function formDesdeServidor(
       noEncontrada: false,
       esAlternativa: false,
       alternativaDescripcion: "",
+      conObservacion: false,
+      observacion: "",
     };
   }
   for (const r of opcion?.renglones ?? []) {
@@ -98,6 +100,8 @@ function formDesdeServidor(
       noEncontrada: r.no_encontrada,
       esAlternativa: r.es_alternativa,
       alternativaDescripcion: r.alternativa_descripcion ?? "",
+      conObservacion: r.con_observacion,
+      observacion: r.observacion ?? "",
     };
   }
   return {
@@ -266,7 +270,9 @@ function EditorOpcion({
                     ? "var(--mantine-color-gray-1)"
                     : r.esAlternativa
                       ? "var(--mantine-color-orange-0)"
-                      : undefined
+                      : r.conObservacion
+                        ? "var(--mantine-color-blue-0)"
+                        : undefined
                 }
               >
                 <Table.Td>{p.num_partida}</Table.Td>
@@ -354,7 +360,7 @@ function EditorOpcion({
                       label="Alternativa"
                       size="xs"
                       checked={r.esAlternativa}
-                      disabled={r.noEncontrada}
+                      disabled={r.noEncontrada || r.conObservacion}
                       onChange={(e) => {
                         const activa = e.currentTarget.checked;
                         setRenglon(p.id, {
@@ -373,6 +379,32 @@ function EditorOpcion({
                         onChange={(e) => {
                           const v = e.currentTarget.value;
                           setRenglon(p.id, { alternativaDescripcion: v });
+                        }}
+                      />
+                    )}
+                    <Checkbox
+                      label="Con observación"
+                      size="xs"
+                      checked={r.conObservacion}
+                      disabled={r.noEncontrada || r.esAlternativa}
+                      onChange={(e) => {
+                        const activa = e.currentTarget.checked;
+                        setRenglon(p.id, {
+                          conObservacion: activa,
+                          ...(activa ? {} : { observacion: "" }),
+                        });
+                      }}
+                    />
+                    {r.conObservacion && (
+                      <Textarea
+                        placeholder="Observación de esta partida (la verá el vendedor)"
+                        size="xs"
+                        autosize
+                        minRows={1}
+                        value={r.observacion}
+                        onChange={(e) => {
+                          const v = e.currentTarget.value;
+                          setRenglon(p.id, { observacion: v });
                         }}
                       />
                     )}
@@ -446,7 +478,10 @@ function EditorOpcion({
 }
 
 
-function ModalRechazo({ solicitudId, onListo }: { solicitudId: number; onListo: () => void }) {
+// Exportado para el test de regresión F11 (el catálogo de motivos DEBE venir
+// de /motivos-rechazo; con la ruta rota el Select queda vacío y el botón
+// "Rechazar solicitud" jamás se habilita).
+export function ModalRechazo({ solicitudId, onListo }: { solicitudId: number; onListo: () => void }) {
   const { data: motivos } = useMotivosRechazo();
   const rechazar = useRechazar(solicitudId);
   const [motivoId, setMotivoId] = useState<string | null>(null);

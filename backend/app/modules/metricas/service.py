@@ -1,8 +1,10 @@
 """Agregados de medición (F6, §4.7/§4.9/§6). Definiciones que NO se
 reinterpretan:
 
-- Mediana / % esperada / distribución: SOLO ciclos CERRADOS cuya APERTURA cae
-  en el periodo filtrado.
+- Mediana / % esperada: SOLO ciclos CERRADOS cuya APERTURA cae en el periodo
+  filtrado (miden respuesta completada). La DISTRIBUCIÓN de bandas (F11 p.4)
+  suma además los ciclos ABIERTOS del periodo con su banda ACTUAL — el
+  semáforo del dashboard coincide con detalle y listado.
 - ROJAS AHORA y carga abierta: foto del momento, independientes del periodo.
 - Dinero CONFIRMADO por confirmado_en; dinero de REFERENCIA = opción A de las
   solicitudes HOY en COTIZADA por cotizado_en. MXN y USD JAMÁS se suman.
@@ -138,32 +140,38 @@ def _aperturas_en_periodo(db: Session, user: Usuario, f: Filtros) -> dict[int, i
     return dict.fromkeys(db.scalars(_filtrar(stmt, user, f)))
 
 
-def _cerrados_en_periodo(db: Session, user: Usuario, f: Filtros, ahora: datetime) -> list[Ciclo]:
-    """Ciclos CERRADOS cuya apertura cae en el periodo (universo de mediana,
-    % esperada y distribución)."""
+def _ciclos_en_periodo(
+    db: Session, user: Usuario, f: Filtros, ahora: datetime
+) -> tuple[list[Ciclo], list[Ciclo]]:
+    """(cerrados, abiertos) cuya apertura cae en el periodo. Los CERRADOS son
+    el universo de mediana y % esperada (miden respuesta completada); la
+    DISTRIBUCIÓN suma ambos (F11 p.4): un ciclo abierto en amarillo/rojo debe
+    verse en el semáforo del dashboard igual que en detalle y listado."""
     ids = list(_aperturas_en_periodo(db, user, f))
     ini, fin = _limites(f)
-    cerrados = []
+    cerrados: list[Ciclo] = []
+    abiertos: list[Ciclo] = []
     for lista in cargar_ciclos(db, ids, ahora).values():
         for ciclo in lista:
-            if ciclo.cierre is None:
-                continue
             if ini is not None and ciclo.apertura < ini:
                 continue
             if fin is not None and ciclo.apertura >= fin:
                 continue
-            cerrados.append(ciclo)
-    return cerrados
+            (cerrados if ciclo.cierre is not None else abiertos).append(ciclo)
+    return cerrados, abiertos
 
 
-def _stats(cerrados: list[Ciclo]) -> tuple[float | None, float | None, dict[str, int]]:
+def _stats(
+    cerrados: list[Ciclo], abiertos: list[Ciclo]
+) -> tuple[float | None, float | None, dict[str, int]]:
     distribucion = {banda.value: 0 for banda in Banda}
-    for ciclo in cerrados:
+    for ciclo in [*cerrados, *abiertos]:
         distribucion[ciclo.banda.value] += 1
     if not cerrados:
         return None, None, distribucion
     mediana = round(median(c.horas_habiles for c in cerrados), 2)
-    pct = round(distribucion[Banda.ESPERADA.value] / len(cerrados), 4)
+    esperadas_cerradas = sum(1 for c in cerrados if c.banda == Banda.ESPERADA)
+    pct = round(esperadas_cerradas / len(cerrados), 4)
     return mediana, pct, distribucion
 
 
@@ -315,8 +323,8 @@ def resumen(db: Session, user: Usuario, f: Filtros) -> ResumenOut:
     ).all()
     embudo = {estado.value: conteo for estado, conteo in embudo_filas}
 
-    cerrados = _cerrados_en_periodo(db, user, f, ahora)
-    mediana, pct, distribucion = _stats(cerrados)
+    cerrados, abiertos = _ciclos_en_periodo(db, user, f, ahora)
+    mediana, pct, distribucion = _stats(cerrados, abiertos)
 
     return ResumenOut(
         solicitudes_periodo=sum(embudo.values()),
@@ -379,15 +387,15 @@ def tabla_por(db: Session, user: Usuario, f: Filtros, dimension: Dimension) -> l
     grupo_de = {sid: clave for sid, clave in filas if clave is not None}
 
     cerrados_por_grupo: dict[int, list[Ciclo]] = {}
+    abiertos_por_grupo: dict[int, list[Ciclo]] = {}
     for lista in cargar_ciclos(db, list(grupo_de), ahora).values():
         for ciclo in lista:
-            if ciclo.cierre is None:
-                continue
             if ini is not None and ciclo.apertura < ini:
                 continue
             if fin is not None and ciclo.apertura >= fin:
                 continue
-            cerrados_por_grupo.setdefault(grupo_de[ciclo.solicitud_id], []).append(ciclo)
+            destino = cerrados_por_grupo if ciclo.cierre is not None else abiertos_por_grupo
+            destino.setdefault(grupo_de[ciclo.solicitud_id], []).append(ciclo)
 
     volumen: dict[int, int] = {}
     for clave in grupo_de.values():
@@ -421,7 +429,7 @@ def tabla_por(db: Session, user: Usuario, f: Filtros, dimension: Dimension) -> l
     grupos = []
     for clave in claves:
         cerrados = cerrados_por_grupo.get(clave, [])
-        mediana, pct, distribucion = _stats(cerrados)
+        mediana, pct, distribucion = _stats(cerrados, abiertos_por_grupo.get(clave, []))
         grupo = GrupoOut(
             id=clave,
             nombre=nombres.get(clave, f"#{clave}"),
@@ -593,8 +601,8 @@ def mi_panel(db: Session, comprador: Usuario) -> MiPanelOut:
     ahora = datetime.now(UTC)
     hoy = ahora.date()
     f = con_scoping(comprador, Filtros(desde=hoy.replace(day=1), hasta=hoy))
-    cerrados = _cerrados_en_periodo(db, comprador, f, ahora)
-    mediana, pct, distribucion = _stats(cerrados)
+    cerrados, abiertos_periodo = _ciclos_en_periodo(db, comprador, f, ahora)
+    mediana, pct, distribucion = _stats(cerrados, abiertos_periodo)
     abiertas = _abiertas(db, comprador, f)
     rojas = _rojas_ahora(db, comprador, f, ahora)
     folios = {s.id: s.folio for s in abiertas}

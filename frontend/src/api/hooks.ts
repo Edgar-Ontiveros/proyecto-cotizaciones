@@ -70,7 +70,7 @@ export function useClientes(buscar: string) {
 export function useMotivosRechazo() {
   return useQuery({
     queryKey: ["motivos-rechazo"],
-    queryFn: () => api<MotivoOut[]>("/catalogos/motivos-rechazo"),
+    queryFn: () => api<MotivoOut[]>("/motivos-rechazo"),
   });
 }
 

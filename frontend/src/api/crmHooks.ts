@@ -310,7 +310,7 @@ export function useMotivosAdmin() {
   return useQuery({
     queryKey: ["motivos-rechazo", "admin"],
     queryFn: () =>
-      api<MotivoOut[]>("/catalogos/motivos-rechazo", { params: { solo_activos: false } }),
+      api<MotivoOut[]>("/motivos-rechazo", { params: { solo_activos: false } }),
   });
 }
 
@@ -326,7 +326,7 @@ export function useCrearMotivo() {
   const invalidar = useInvalidarCatalogos();
   return useMutation({
     mutationFn: (body: { familia: string; texto: string }) =>
-      api<MotivoOut>("/catalogos/motivos-rechazo", { method: "POST", body }),
+      api<MotivoOut>("/motivos-rechazo", { method: "POST", body }),
     onSuccess: invalidar,
   });
 }
@@ -335,7 +335,7 @@ export function useEditarMotivo() {
   const invalidar = useInvalidarCatalogos();
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: { texto?: string; activo?: boolean } }) =>
-      api<MotivoOut>(`/catalogos/motivos-rechazo/${id}`, { method: "PATCH", body }),
+      api<MotivoOut>(`/motivos-rechazo/${id}`, { method: "PATCH", body }),
     onSuccess: invalidar,
   });
 }
@@ -343,7 +343,7 @@ export function useEditarMotivo() {
 export function useFestivos() {
   return useQuery({
     queryKey: ["festivos"],
-    queryFn: () => api<FestivoOut[]>("/catalogos/dias-festivos"),
+    queryFn: () => api<FestivoOut[]>("/dias-festivos"),
   });
 }
 
@@ -351,7 +351,7 @@ export function useCrearFestivo() {
   const invalidar = useInvalidarCatalogos();
   return useMutation({
     mutationFn: (body: { fecha: string; descripcion: string | null }) =>
-      api<FestivoOut>("/catalogos/dias-festivos", { method: "POST", body }),
+      api<FestivoOut>("/dias-festivos", { method: "POST", body }),
     onSuccess: invalidar,
   });
 }
@@ -359,7 +359,7 @@ export function useCrearFestivo() {
 export function useEliminarFestivo() {
   const invalidar = useInvalidarCatalogos();
   return useMutation({
-    mutationFn: (id: number) => api<void>(`/catalogos/dias-festivos/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => api<void>(`/dias-festivos/${id}`, { method: "DELETE" }),
     onSuccess: invalidar,
   });
 }

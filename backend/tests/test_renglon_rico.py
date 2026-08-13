@@ -261,6 +261,138 @@ def test_alternativa_visible_y_marcada(client, entorno, enviada, auth_headers):
     assert "proveedor" not in alt
 
 
+# ------------------------------------------------------ con observación (F11)
+
+
+def test_observacion_sin_comentario_422(client, entorno, enviada, auth_headers):
+    headers = auth_headers(entorno.comprador)
+    for observacion in (None, "   "):
+        r = _put(
+            client,
+            headers,
+            enviada.id,
+            "A",
+            {
+                "renglones": [
+                    {
+                        "partida_id": enviada.partida_ids[0],
+                        "con_observacion": True,
+                        "observacion": observacion,
+                        "moneda": "MXN",
+                        "precio_unitario": "10.00",
+                    }
+                ]
+            },
+        )
+        assert r.status_code == 422 and r.json()["code"] == "renglon_invalido"
+        assert "exige el comentario" in r.json()["detail"]
+
+
+def test_observacion_excluyente_con_otros_estatus_422(client, entorno, enviada, auth_headers):
+    headers = auth_headers(entorno.comprador)
+    combos = (
+        {"no_encontrada": True},
+        {"es_alternativa": True, "alternativa_descripcion": "similar", "precio_unitario": "10.00"},
+    )
+    for extra in combos:
+        r = _put(
+            client,
+            headers,
+            enviada.id,
+            "A",
+            {
+                "renglones": [
+                    {
+                        "partida_id": enviada.partida_ids[0],
+                        "con_observacion": True,
+                        "observacion": "Sujeto a disponibilidad",
+                        **extra,
+                    }
+                ]
+            },
+        )
+        assert r.status_code == 422 and r.json()["code"] == "renglon_invalido"
+        assert "no se combina" in r.json()["detail"]
+
+
+def test_observacion_cuenta_como_cotizado_normal(client, entorno, enviada, auth_headers):
+    """El renglón con observación lleva precio, SUMA al subtotal igual que uno
+    sin estatus y la cotización completa; el comentario viaja al vendedor
+    (comparador y vista de pedido leen el mismo JSON)."""
+    headers = auth_headers(entorno.comprador)
+    r = _put(
+        client,
+        headers,
+        enviada.id,
+        "A",
+        {
+            "vigencia": "2026-08-31",
+            "renglones": [
+                {
+                    "partida_id": enviada.partida_ids[0],
+                    "moneda": "MXN",
+                    "precio_unitario": "100.00",
+                    "tiempo_entrega": "1 semana",
+                },
+                {
+                    "partida_id": enviada.partida_ids[1],
+                    "moneda": "MXN",
+                    "precio_unitario": "50.00",
+                    "tiempo_entrega": "2 semanas",
+                    "con_observacion": True,
+                    "observacion": "  Precio sujeto a compra mínima de 100 KG  ",
+                },
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # 100×20 + 50×120 = 8,000.00: el renglón con observación suma NORMAL.
+    assert body["total_mxn"] == "8000.00" and body["total_usd"] == "0.00"
+    assert client.post(f"{BASE}/{enviada.id}/cotizar", headers=headers).status_code == 200
+
+    detalle = client.get(f"{BASE}/{enviada.id}", headers=auth_headers(entorno.vendedor)).json()
+    renglones = {r_["partida_id"]: r_ for r_ in detalle["opciones"][0]["renglones"]}
+    obs = renglones[enviada.partida_ids[1]]
+    assert obs["con_observacion"] is True
+    assert obs["observacion"] == "Precio sujeto a compra mínima de 100 KG"
+    assert obs["importe"] == "6000.00"  # el renglón sigue cotizado normal
+    normal = renglones[enviada.partida_ids[0]]
+    assert normal["con_observacion"] is False and normal["observacion"] is None
+
+
+def test_observacion_no_exime_de_cotizar_completo(client, entorno, enviada, auth_headers):
+    """A diferencia de no_encontrada, el estatus NO exime de precio, moneda ni
+    tiempo de entrega: cotizar con el renglón a medias sigue siendo 422."""
+    headers = auth_headers(entorno.comprador)
+    r = _put(
+        client,
+        headers,
+        enviada.id,
+        "A",
+        {
+            "vigencia": "2026-08-31",
+            "renglones": [
+                {
+                    "partida_id": enviada.partida_ids[0],
+                    "moneda": "MXN",
+                    "precio_unitario": "100.00",
+                    "tiempo_entrega": "1 semana",
+                },
+                {
+                    "partida_id": enviada.partida_ids[1],
+                    "con_observacion": True,
+                    "observacion": "Sin precio todavía",
+                },
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    r = client.post(f"{BASE}/{enviada.id}/cotizar", headers=headers)
+    assert r.status_code == 422 and r.json()["code"] == "cotizacion_incompleta"
+    assert "partida 2" in r.json()["detail"]
+
+
 # -------------------------------------------------------- PATCH en RECHAZADA
 
 

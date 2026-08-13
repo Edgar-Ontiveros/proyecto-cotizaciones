@@ -141,10 +141,10 @@ export function GraficaBandas({ distribucion }: { distribucion: Record<string, n
     .filter((d) => d.conteo > 0);
   const total = datos.reduce((suma, d) => suma + d.conteo, 0);
   return (
-    <Carta titulo="Distribución de bandas (ciclos cerrados)">
+    <Carta titulo="Distribución de bandas (ciclos del periodo)">
       {total === 0 ? (
         <Text c="dimmed" size="sm">
-          Sin ciclos cerrados en el periodo
+          Sin ciclos en el periodo
         </Text>
       ) : (
         <Group wrap="nowrap" align="center" gap="md">

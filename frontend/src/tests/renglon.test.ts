@@ -19,6 +19,8 @@ const base: RenglonForm = {
   noEncontrada: false,
   esAlternativa: false,
   alternativaDescripcion: "",
+  conObservacion: false,
+  observacion: "",
 };
 
 describe("validación local del renglón rico (espejo del backend)", () => {
@@ -54,6 +56,28 @@ describe("validación local del renglón rico (espejo del backend)", () => {
     expect(validarRenglonLocal(base)).toBeNull();
     expect(validarRenglonLocal({ ...base, noEncontrada: true })).toBeNull();
   });
+  it("con observación (F11): exige el comentario y excluye los otros estatus", () => {
+    expect(validarRenglonLocal({ ...base, conObservacion: true })).toMatch(
+      /Escribe la observación/,
+    );
+    expect(
+      validarRenglonLocal({ ...base, conObservacion: true, noEncontrada: true }),
+    ).toMatch(/no se combina/);
+    expect(
+      validarRenglonLocal({
+        ...base,
+        conObservacion: true,
+        esAlternativa: true,
+        alternativaDescripcion: "PTR similar",
+        precio: "10",
+      }),
+    ).toMatch(/no se combina/);
+    // Con comentario es un renglón normal: válido aun sin precio capturado
+    // todavía (guardado parcial), igual que un renglón sin estatus.
+    expect(
+      validarRenglonLocal({ ...base, conObservacion: true, observacion: "Sujeto a stock" }),
+    ).toBeNull();
+  });
 });
 
 describe("toggle No encontrada", () => {
@@ -66,7 +90,10 @@ describe("toggle No encontrada", () => {
       esAlternativa: true,
       alternativaDescripcion: "algo",
     };
-    const limpio = aplicarNoEncontrada(sucio, true);
+    const limpio = aplicarNoEncontrada(
+      { ...sucio, conObservacion: true, observacion: "algo" },
+      true,
+    );
     expect(limpio).toMatchObject({
       noEncontrada: true,
       precio: "",
@@ -74,6 +101,8 @@ describe("toggle No encontrada", () => {
       proveedor: "",
       esAlternativa: false,
       alternativaDescripcion: "",
+      conObservacion: false,
+      observacion: "",
     });
     // Cantidad y unidad se conservan (siguen describiendo lo pedido).
     expect(limpio.cantidad).toBe("20");
@@ -93,7 +122,19 @@ describe("renglonABody", () => {
       no_encontrada: false,
       es_alternativa: false,
       alternativa_descripcion: null,
+      con_observacion: false,
+      observacion: null,
     });
+  });
+  it("con observación viaja al backend con su comentario recortado", () => {
+    const body = renglonABody(7, {
+      ...base,
+      precio: "10",
+      conObservacion: true,
+      observacion: "  Sujeto a disponibilidad  ",
+    });
+    expect(body.con_observacion).toBe(true);
+    expect(body.observacion).toBe("Sujeto a disponibilidad");
   });
 });
 

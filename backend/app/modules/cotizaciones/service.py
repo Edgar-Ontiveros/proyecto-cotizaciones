@@ -61,6 +61,7 @@ def _renglon_vacio(renglon: RenglonIn) -> bool:
         and renglon.proveedor is None
         and not renglon.no_encontrada
         and not renglon.es_alternativa
+        and not renglon.con_observacion
     )
 
 
@@ -91,6 +92,21 @@ def _validar_renglon(renglon: RenglonIn, num_partida: int) -> None:
         raise AppError(
             422,
             f"partida {num_partida}: la alternativa exige precio",
+            "renglon_invalido",
+        )
+    # F11: "Con observación" cotiza NORMAL (precio/totales/completitud igual
+    # que un renglón sin estatus); solo adjunta un comentario obligatorio y es
+    # mutuamente excluyente con los otros dos estatus.
+    if renglon.con_observacion and (renglon.no_encontrada or renglon.es_alternativa):
+        raise AppError(
+            422,
+            f"partida {num_partida}: la observación no se combina con otro estatus",
+            "renglon_invalido",
+        )
+    if renglon.con_observacion and not (renglon.observacion or "").strip():
+        raise AppError(
+            422,
+            f"partida {num_partida}: el estatus con observación exige el comentario",
             "renglon_invalido",
         )
 
@@ -179,6 +195,8 @@ def _datos_renglon(fila: OpcionPartida, num_partida: int) -> dict[str, Any]:
         "no_encontrada": fila.no_encontrada,
         "es_alternativa": fila.es_alternativa,
         "alternativa_descripcion": fila.alternativa_descripcion,
+        "con_observacion": fila.con_observacion,
+        "observacion": fila.observacion,
     }
 
 
@@ -399,6 +417,8 @@ def guardar_opcion(
                 no_encontrada=renglon.no_encontrada,
                 es_alternativa=renglon.es_alternativa,
                 alternativa_descripcion=(renglon.alternativa_descripcion or "").strip() or None,
+                con_observacion=renglon.con_observacion,
+                observacion=(renglon.observacion or "").strip() or None,
             )
         )
     # Subtotales = SOLO renglones cotizados (los no-encontrados no suman).

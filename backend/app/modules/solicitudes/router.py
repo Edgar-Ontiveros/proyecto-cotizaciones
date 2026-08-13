@@ -103,9 +103,10 @@ def listar_solicitudes(
         limit=limit,
         offset=offset,
     )
-    # Ciclo vigente (F6) SOLO para ENVIADA/EN_PROCESO, y monto de referencia
-    # (F8b) SOLO para COTIZADA — ambos en queries fijos por página (sin N+1).
-    vigentes = ciclos_mod.ciclo_vigente(db, [solicitud for solicitud, _ in filas])
+    # F11 p.4: la columna banda es el ÚLTIMO ciclo (abierto O cerrado), la
+    # misma fuente que detalle y dashboard; el monto de referencia (F8b) SOLO
+    # para COTIZADA — ambos en queries fijos por página (sin N+1).
+    vigentes = ciclos_mod.ultimo_ciclo(db, [solicitud.id for solicitud, _ in filas])
     referencias = cotizaciones_service.referencias_opcion_a(
         db, [s.id for s, _ in filas if s.estado == Estado.COTIZADA]
     )
@@ -172,7 +173,9 @@ def detalle_solicitud(
     base = _a_out(db, solicitud, user)
     if solicitud.estado == Estado.COTIZADA:
         base.cambio_aprobado = solicitud.id in cambios_service.ultimos_aprobados(db, [solicitud.id])
-    if ciclos and ciclos[-1].cierre is None:
+    # F11 p.4: banda plana = ÚLTIMO ciclo, abierto (corriendo) o cerrado (la
+    # banda con la que se respondió) — misma fuente que listado y dashboard.
+    if ciclos:
         base.banda = ciclos[-1].banda
         base.dias_transcurridos = ciclos[-1].dias_transcurridos
         base.horas_habiles = ciclos[-1].horas_habiles

@@ -45,6 +45,11 @@ function TablaRenglones({ opcion: o }: { opcion: OpcionOut }) {
                   ALTERNATIVA: {r.alternativa_descripcion}
                 </Text>
               )}
+              {r.con_observacion && (
+                <Text size="xs" c="blue.8">
+                  OBSERVACIÓN: {r.observacion}
+                </Text>
+              )}
             </Table.Td>
             <Table.Td>{r.moneda ?? "—"}</Table.Td>
             <Table.Td>{r.precio_unitario ?? "—"}</Table.Td>

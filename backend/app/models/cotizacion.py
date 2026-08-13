@@ -82,5 +82,9 @@ class OpcionPartida(Base):
     # Cotiza un similar en el mismo renglón; exige descripción y precio.
     es_alternativa: Mapped[bool] = mapped_column(server_default=false())
     alternativa_descripcion: Mapped[str | None] = mapped_column(Text)
+    # F11: cotizado NORMAL (precio, totales y completitud intactos) que además
+    # adjunta un comentario de la partida; el comentario es obligatorio.
+    con_observacion: Mapped[bool] = mapped_column(server_default=false())
+    observacion: Mapped[str | None] = mapped_column(Text)
 
     opcion: Mapped[CotizacionOpcion] = relationship(back_populates="partidas")

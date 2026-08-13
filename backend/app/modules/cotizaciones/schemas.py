@@ -27,6 +27,9 @@ class RenglonIn(BaseModel):
     # Cotiza un similar: exige descripción y precio.
     es_alternativa: bool = False
     alternativa_descripcion: str | None = None
+    # F11: cotizado normal + comentario de la partida (obligatorio con el flag).
+    con_observacion: bool = False
+    observacion: str | None = None
 
 
 class OpcionIn(BaseModel):
@@ -86,6 +89,8 @@ class RenglonOut(BaseModel):
     no_encontrada: bool
     es_alternativa: bool
     alternativa_descripcion: str | None
+    con_observacion: bool
+    observacion: str | None
 
 
 class RenglonCompradorOut(RenglonOut):

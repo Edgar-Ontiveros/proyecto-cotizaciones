@@ -109,6 +109,9 @@ export interface RenglonOut {
   no_encontrada: boolean;
   es_alternativa: boolean;
   alternativa_descripcion: string | null;
+  // F11: cotizado normal + comentario de la partida para el vendedor.
+  con_observacion: boolean;
+  observacion: string | null;
   // SOLO llega para comprador/admin; el backend la excluye para vendedor y
   // gerente (jamás inventarla en UI).
   proveedor?: string | null;

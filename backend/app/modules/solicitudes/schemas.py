@@ -83,8 +83,9 @@ class SolicitudOut(BaseModel):
     enviado_en: datetime | None
     cotizado_en: datetime | None
     confirmado_en: datetime | None
-    # Ciclo VIGENTE (F6): solo para ENVIADA/EN_PROCESO en el listado; null en
-    # el resto (las bandas SIEMPRE se calculan, nunca se materializan).
+    # F11 p.4: banda del ÚLTIMO ciclo — abierto (corriendo) o cerrado (la
+    # respuesta del comprador); null solo sin ciclo derivable (BORRADOR,
+    # CANCELADA sin respuesta). SIEMPRE calculada, nunca materializada.
     banda: Banda | None = None
     dias_transcurridos: int | None = None
     horas_habiles: float | None = None

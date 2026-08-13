@@ -21,6 +21,8 @@ export interface RenglonForm {
   noEncontrada: boolean;
   esAlternativa: boolean;
   alternativaDescripcion: string;
+  conObservacion: boolean;
+  observacion: string;
 }
 
 /** Espejo de `_validar_renglon` del backend; null si el renglón es válido. */
@@ -37,6 +39,12 @@ export function validarRenglonLocal(r: RenglonForm): string | null {
   if (r.esAlternativa && !r.precio.trim()) {
     return "La alternativa exige precio";
   }
+  if (r.conObservacion && (r.noEncontrada || r.esAlternativa)) {
+    return "La observación no se combina con otro estatus";
+  }
+  if (r.conObservacion && !r.observacion.trim()) {
+    return "Escribe la observación de esta partida";
+  }
   return null;
 }
 
@@ -48,6 +56,8 @@ export function aplicarNoEncontrada(r: RenglonForm, activa: boolean): RenglonFor
     noEncontrada: true,
     esAlternativa: false,
     alternativaDescripcion: "",
+    conObservacion: false,
+    observacion: "",
     precio: "",
     tiempo: "",
     proveedor: "",
@@ -66,6 +76,8 @@ export function renglonABody(partidaId: number, r: RenglonForm) {
     no_encontrada: r.noEncontrada,
     es_alternativa: r.esAlternativa,
     alternativa_descripcion: r.alternativaDescripcion.trim() || null,
+    con_observacion: r.conObservacion,
+    observacion: r.observacion.trim() || null,
   };
 }
 

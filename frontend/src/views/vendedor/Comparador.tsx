@@ -105,7 +105,9 @@ function CartaOpcion({
                     ? "var(--mantine-color-gray-1)"
                     : r.es_alternativa
                       ? "var(--mantine-color-orange-0)"
-                      : undefined
+                      : r.con_observacion
+                        ? "var(--mantine-color-blue-0)"
+                        : undefined
                 }
               >
                 <Table.Td>
@@ -118,6 +120,17 @@ function CartaOpcion({
                       </Badge>
                       <Text size="xs" c="acento.8">
                         {r.alternativa_descripcion}
+                      </Text>
+                    </>
+                  )}
+                  {r.con_observacion && (
+                    <>
+                      {" "}
+                      <Badge size="xs" color="blue.7" variant="filled">
+                        OBSERVACIÓN
+                      </Badge>
+                      <Text size="xs" c="blue.8">
+                        {r.observacion}
                       </Text>
                     </>
                   )}

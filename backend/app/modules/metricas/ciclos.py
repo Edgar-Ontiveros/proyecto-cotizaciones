@@ -146,3 +146,14 @@ def ciclo_vigente(
         return {}
     ciclos = cargar_ciclos(db, abiertas, ahora)
     return {sid: lista[-1] for sid, lista in ciclos.items() if lista and lista[-1].cierre is None}
+
+
+def ultimo_ciclo(
+    db: Session, solicitud_ids: list[int], ahora: datetime | None = None
+) -> dict[int, Ciclo]:
+    """La banda VISIBLE de una solicitud (F11 p.4): su ÚLTIMO ciclo — abierto
+    (banda corriendo contra `ahora`) o cerrado (la banda con la que respondió
+    el comprador). Es la MISMA derivación que usan detalle, listado, export y
+    dashboard: una sola fuente de verdad del semáforo."""
+    ciclos = cargar_ciclos(db, solicitud_ids, ahora)
+    return {sid: lista[-1] for sid, lista in ciclos.items() if lista}
