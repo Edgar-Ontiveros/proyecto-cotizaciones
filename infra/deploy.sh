@@ -4,9 +4,10 @@
 # access keys. Reejecutarlo con el mismo TAG es seguro.
 #
 # Pasos: login ECR → pull → render de .env (Secrets Manager + Parameter Store)
-# → MIGRACIONES (si fallan, aborta sin tocar los contenedores en marcha) →
-# estáticos a releases/<TAG> + swap atómico de `current` → compose up -d →
-# poda de imágenes (conserva las últimas 3).
+# → render de nginx.conf desde la plantilla → MIGRACIONES (si fallan, aborta
+# sin tocar los contenedores en marcha) → estáticos a releases/<TAG> + swap
+# atómico de `current` → compose up -d → poda de imágenes (conserva las 3
+# últimas).
 set -euo pipefail
 
 TAG="${1:?uso: deploy.sh <TAG>}"
@@ -64,7 +65,33 @@ mv "$tmp_env" "${BASE}/.env"
 chmod 600 "${BASE}/.env"
 echo "ok (0600, secretos no impresos)"
 
-paso "[4/8] Migraciones con cotiza_migrate (si fallan: ABORTA sin tocar nada)"
+paso "[4/9] Render de nginx.conf (secreto de origen desde Secrets Manager)"
+# El secreto que CloudFront inyecta como X-Origin-Verify vive SÓLO en Secrets
+# Manager: de ahí lo toman nginx (este render) y el smoke test del paso 8. No
+# se guarda en el repo ni se edita a mano en la instancia.
+ORIGIN_VERIFY="$(secreto cotiza/prod/origin-verify)"
+render="${BASE}/nginx/.nginx.conf.render"
+sed "s|__ORIGIN_VERIFY__|${ORIGIN_VERIFY}|g" "${BASE}/nginx/nginx.conf.tpl" > "$render"
+if grep -q "__ORIGIN_VERIFY__" "$render"; then
+    echo "ERROR: la plantilla quedó sin sustituir" >&2
+    rm -f "$render"
+    exit 1
+fi
+# Se valida ANTES de instalarlo, en un contenedor de usar y tirar: si la
+# plantilla trae un error, nginx en marcha ni se entera.
+if ! docker run --rm -v "${render}:/etc/nginx/nginx.conf:ro" nginx:1.27-alpine nginx -t; then
+    echo "ERROR: nginx.conf renderizado inválido; no se instala." >&2
+    rm -f "$render"
+    exit 1
+fi
+# EN SITIO (truncar, no mv): nginx.conf es un bind mount de FICHERO y con un
+# inodo nuevo el contenedor seguiría viendo el contenido viejo.
+cat "$render" > "${BASE}/nginx/nginx.conf"
+rm -f "$render"
+chmod 600 "${BASE}/nginx/nginx.conf"
+echo "ok (0600, secreto no impreso)"
+
+paso "[5/9] Migraciones con cotiza_migrate (si fallan: ABORTA sin tocar nada)"
 db_mig_json="$(secreto cotiza/prod/db-migrate)"
 mig_user="$(jq -r .username <<<"$db_mig_json")"
 mig_pass_enc="$(jq -r '.password|@uri' <<<"$db_mig_json")"
@@ -76,7 +103,7 @@ if ! docker run --rm --env-file "${BASE}/.env" -e DATABASE_URL="$MIG_URL" \
 fi
 echo "migraciones ok"
 
-paso "[5/8] Estáticos → ${BASE}/static/releases/${TAG} + swap atómico"
+paso "[6/9] Estáticos → ${BASE}/static/releases/${TAG} + swap atómico"
 release_dir="${BASE}/static/releases/${TAG}"
 if [ ! -d "$release_dir" ]; then
     cid="$(docker create "$IMAGE")"
@@ -94,26 +121,39 @@ ln -s "releases/${TAG}" "${BASE}/static/current.nueva"
 mv -T "${BASE}/static/current.nueva" "${BASE}/static/current"
 echo "current -> releases/${TAG}"
 
-paso "[6/8] docker compose up -d (tag ${TAG})"
+paso "[7/9] docker compose up -d (tag ${TAG}) + recarga de nginx"
 docker compose --env-file "${BASE}/.env" -f "${BASE}/compose.prod.yml" \
     up -d --remove-orphans
+# compose no reinicia nginx si su definición no cambió, así que la config
+# recién renderizada se aplica con un reload explícito (sin cortar conexiones).
+docker compose --env-file "${BASE}/.env" -f "${BASE}/compose.prod.yml" \
+    exec -T nginx nginx -s reload
+echo "nginx recargado"
 
-paso "[7/8] Espera a que la API reporte salud"
+paso "[8/9] Espera a que la API reporte salud"
+# El origen sólo acepta peticiones con la cabecera de CloudFront: el smoke test
+# la manda igual que la manda el edge, así comprueba el camino REAL en vez de
+# entrar por una excepción. Con -H el 403 del cortafuegos de origen sería un
+# fallo legítimo del despliegue, no un falso negativo.
+sano() {
+    curl -fsS -o /dev/null -H "X-Origin-Verify: ${ORIGIN_VERIFY}" \
+        "http://127.0.0.1/api/v1/health"
+}
 for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null "http://127.0.0.1/api/v1/health"; then
+    if sano; then
         echo "API sana"
         break
     fi
     sleep 2
 done
-curl -fsS "http://127.0.0.1/api/v1/health" || {
+sano || {
     echo "ERROR: la API no reporta salud tras el despliegue" >&2
     docker compose --env-file "${BASE}/.env" -f "${BASE}/compose.prod.yml" ps
     exit 1
 }
 echo ""
 
-paso "[8/8] Poda de imágenes (conserva las últimas 3 de cotiza-api)"
+paso "[9/9] Poda de imágenes (conserva las últimas 3 de cotiza-api)"
 docker images "${ECR_REGISTRY}/cotiza-api" --format '{{.Tag}}' |
     tail -n +4 |
     while read -r viejo; do

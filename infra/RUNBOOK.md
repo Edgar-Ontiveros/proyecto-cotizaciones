@@ -53,8 +53,8 @@ manual (excepcional — las migraciones son aditivas por convención).
 
 ## Actualizar los artefactos de /opt/cotiza
 
-`compose.prod.yml`, `nginx/nginx.conf`, `deploy.sh` y `backup.sh` se editan EN
-EL REPO (`infra/`) y se copian a la instancia vía el bucket de respaldos
+`compose.prod.yml`, `nginx/nginx.conf.tpl`, `deploy.sh` y `backup.sh` se editan
+EN EL REPO (`infra/`) y se copian a la instancia vía el bucket de respaldos
 (la instancia no tiene acceso a GitHub):
 
 ```bash
@@ -63,8 +63,53 @@ aws s3 cp infra/deploy.sh s3://<BUCKET>/bootstrap/deploy.sh --profile cotiza
 aws s3 cp s3://<BUCKET>/bootstrap/deploy.sh /opt/cotiza/deploy.sh && chmod +x /opt/cotiza/deploy.sh
 ```
 
-(el mismo patrón aplica para los otros tres; `nginx.conf` va en
-`/opt/cotiza/nginx/` y requiere `docker compose ... restart nginx`).
+(el mismo patrón aplica para los otros tres; la plantilla va en
+`/opt/cotiza/nginx/nginx.conf.tpl`).
+
+`/opt/cotiza/nginx/nginx.conf` **no se edita ni se copia**: lo genera
+`deploy.sh` desde la plantilla en cada despliegue. Editarlo a mano en la
+instancia se pierde en el siguiente deploy.
+
+## Acceso al origen: sólo CloudFront
+
+El origen no es alcanzable desde internet abierto. Hay dos capas y las dos
+tienen que estar puestas:
+
+1. **Red** — el security group `cotiza-prod-sg-ec2` sólo admite el puerto 80
+   desde la prefix list `com.amazonaws.global.cloudfront.origin-facing`
+   (`pl-3b927c52`). El 8090 de órdenes vive en `cotiza-prod-sg-ordenes`,
+   aparte, porque una referencia a esa prefix list pesa ~55 reglas y el límite
+   por security group es 60: dos no caben en el mismo grupo.
+2. **Aplicación** — esa prefix list es de TODA CloudFront, así que cualquiera
+   podría apuntar su propia distribución aquí. La distribución de cotizaciones
+   (`E2T3ZVD4KDNIRO`) inyecta la cabecera `X-Origin-Verify` con un secreto y
+   nginx devuelve 403 a lo que no la traiga.
+
+El secreto vive **sólo** en Secrets Manager, en `cotiza/prod/origin-verify`, y
+de ahí lo leen los dos consumidores: el render de nginx.conf y el smoke test,
+ambos en `deploy.sh`. El rol de la instancia ya lo alcanza por el comodín
+`cotiza/prod/*` de `cotiza-prod-app-permisos`; no hace falta tocar IAM.
+
+**Rotación** (los dos pasos, en este orden, o el sitio devuelve 403):
+
+```bash
+aws secretsmanager put-secret-value --secret-id cotiza/prod/origin-verify \
+  --secret-string "$(openssl rand -hex 24)"
+# 1) actualizar el custom header del origen en la distribución E2T3ZVD4KDNIRO
+#    (update-distribution con el DistributionConfig completo + IfMatch)
+# 2) re-desplegar, o re-renderizar nginx.conf a mano, para que el origen
+#    acepte el valor nuevo
+```
+
+Durante la ventana entre ambos pasos conviene dejar el valor viejo también
+válido, o hacerlo en horario de bajo tráfico: nginx sólo acepta un valor.
+
+Para diagnosticar, el `access_log` marca cada petición con `cf=1` (llegó con
+cabecera válida) o `cf=0` (llegó directa al origen):
+
+```bash
+docker logs --since 15m cotiza-nginx-1 | grep -oE 'cf=[01]' | sort | uniq -c
+```
 
 ## Port-forwarding a la base de datos
 
@@ -148,4 +193,6 @@ Procedimiento CLAUSURADO — no volver a usar.
 | 502 en /api | logs de `api`; ¿migración fallida dejó imagen vieja? es lo esperado: la vieja sigue sirviendo |
 | health `degraded` | logs de `scheduler`; el heartbeat lleva >30 min sin escribirse |
 | Login devuelve 429 | rate-limit de nginx (10/min por IP); ¿algún cliente en bucle? |
+| 403 en todo el sitio | el secreto de `X-Origin-Verify` no coincide entre CloudFront y nginx; comparar el custom header de `E2T3ZVD4KDNIRO` con `cotiza/prod/origin-verify` y re-desplegar |
+| Deploy falla en el paso 8 | el smoke test recibe 403: normalmente el render de nginx.conf tomó un secreto distinto del que manda CloudFront |
 | Estáticos viejos tras deploy | `ls -l /opt/cotiza/static/current` — ¿apunta a la release nueva? |
