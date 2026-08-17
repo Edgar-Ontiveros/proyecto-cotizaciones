@@ -135,3 +135,15 @@ export function MontoSolicitud({ solicitud }: { solicitud: SolicitudOut }) {
   }
   return <Text c="dimmed">—</Text>;
 }
+
+/** F12 p.5: la fila de un pedido FINCADO se distingue en TEAL (fino: fondo
+ * suave + filete izquierdo). Solo el área compras recibe la clave `fincada`;
+ * para el resto de roles esto regresa undefined y la fila queda normal. */
+export function estiloFilaFincada({ fincada }: { fincada?: boolean }) {
+  return fincada
+    ? {
+        backgroundColor: "var(--mantine-color-teal-0)",
+        boxShadow: "inset 3px 0 0 var(--mantine-color-teal-6)",
+      }
+    : undefined;
+}

@@ -16,6 +16,7 @@ import {
   FolioConProyecto,
   MontoSolicitud,
   SemaforoBanda,
+  estiloFilaFincada,
 } from "../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../components/filtrosListado";
 import { ApiError } from "../lib/api";
@@ -44,6 +45,10 @@ export function SolicitudesCrm() {
   const [prioridad, setPrioridad] = useState<string | null>(null);
   const [tipo, setTipo] = useState<string | null>(null);
   const [soloCambios, setSoloCambios] = useState(false);
+  // F12 p.5: el fincado solo existe para gcompras/admin (el comprador tiene
+  // el suyo en su panel; los roles de ventas ni reciben la clave).
+  const veFincado = usuario?.rol === "gerente_compras" || usuario?.rol === "admin";
+  const [fincado, setFincado] = useState<string | null>(null);
   const [sucursalId, setSucursalId] = useState<string | null>(null);
   const [compradorId, setCompradorId] = useState<string | null>(null);
   const [vendedorId, setVendedorId] = useState<string | null>(null);
@@ -55,6 +60,7 @@ export function SolicitudesCrm() {
     es_proyecto: tipo !== null ? tipo === "PROYECTO" : undefined,
     // F10 p.7b: mismo filtro para el listado Y el export a Excel.
     cambio_pendiente: soloCambios || undefined,
+    fincada: veFincado && fincado !== null ? fincado === "FINCADAS" : undefined,
     sucursal_id: sucursalId !== null ? Number(sucursalId) : undefined,
     comprador_id: compradorId !== null ? Number(compradorId) : undefined,
     vendedor_id: vendedorId !== null ? Number(vendedorId) : undefined,
@@ -139,6 +145,19 @@ export function SolicitudesCrm() {
             setPagina(1);
           }}
         />
+        {veFincado && (
+          <Select
+            placeholder="Fincado"
+            data={[
+              { value: "FINCADAS", label: "Fincadas" },
+              { value: "SIN_FINCAR", label: "Sin fincar" },
+            ]}
+            value={fincado}
+            onChange={limpiarPagina(setFincado)}
+            clearable
+            w={140}
+          />
+        )}
         <Select
           placeholder="Sucursal"
           data={opcionesSelect(catalogos?.sucursales)}
@@ -176,6 +195,7 @@ export function SolicitudesCrm() {
         withTableBorder
         highlightOnHover
         minHeight={200}
+        rowStyle={estiloFilaFincada}
         records={data?.items ?? []}
         fetching={isFetching}
         totalRecords={data?.total ?? 0}

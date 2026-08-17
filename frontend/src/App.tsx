@@ -42,6 +42,9 @@ const MasivasCrm = lazy(() =>
 const CatalogosCrm = lazy(() =>
   import("./crm/admin/CatalogosCrm").then((m) => ({ default: m.CatalogosCrm })),
 );
+const EliminacionesCrm = lazy(() =>
+  import("./crm/admin/EliminacionesCrm").then((m) => ({ default: m.EliminacionesCrm })),
+);
 
 function HomePorRol() {
   const { usuario, cargando, mustChangePassword } = useAuth();
@@ -90,6 +93,7 @@ export function App() {
           <Route path="/crm/territorios" element={<TerritoriosCrm />} />
           <Route path="/crm/reasignaciones" element={<MasivasCrm />} />
           <Route path="/crm/catalogos" element={<CatalogosCrm />} />
+          <Route path="/crm/eliminaciones" element={<EliminacionesCrm />} />
         </Route>
       </Route>
 

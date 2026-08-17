@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import get_current_user, require_roles
+from app.core.errors import AppError
+from app.core.permissions import get_current_user, require_roles, ve_fincada
 from app.models.solicitud import Estado, Prioridad
 from app.models.usuario import Rol, Usuario
 from app.modules.archivos import service as archivos_service
@@ -17,10 +18,17 @@ from app.modules.metricas import tiempos as tiempos_mod
 from app.modules.metricas.schemas import CicloOut, SegmentoOut, TiemposOut
 from app.modules.solicitudes import service
 from app.modules.solicitudes.schemas import (
+    EliminacionListOut,
+    EliminacionOut,
+    EliminacionResultadoOut,
+    EliminarIn,
+    FincadaIn,
     RechazarIn,
     SolicitudCreate,
     SolicitudDetailCompradorOut,
+    SolicitudDetailComprasOut,
     SolicitudDetailOut,
+    SolicitudListComprasOut,
     SolicitudListOut,
     SolicitudListVendedorOut,
 )
@@ -72,6 +80,7 @@ def listar_solicitudes(
     prioridad: Prioridad | None = None,
     es_proyecto: bool | None = None,
     cambio_pendiente: bool | None = None,
+    fincada: bool | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
     comprador_id: int | None = None,
@@ -92,6 +101,7 @@ def listar_solicitudes(
         prioridad=prioridad,
         es_proyecto=es_proyecto,
         cambio_pendiente=cambio_pendiente,
+        fincada=fincada,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -144,7 +154,30 @@ def listar_solicitudes(
         items.append(item)
     if user.rol == Rol.VENDEDOR:
         return SolicitudListVendedorOut(items=items, total=total, limit=limit, offset=offset)
+    # F12 p.5: solo el área compras real recibe items con fincado.
+    if ve_fincada(user.rol):
+        return SolicitudListComprasOut(items=items, total=total, limit=limit, offset=offset)
     return SolicitudListOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/eliminadas", response_model=EliminacionListOut)
+def listar_eliminadas(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EliminacionListOut:
+    """Bitácora de eliminaciones (F12 p.4): SOLO admin y solo lectura. Para
+    cualquier otro rol la ruta "no existe" (404, igual que el DELETE)."""
+    if user.rol != Rol.ADMIN:
+        raise AppError(404, "No encontrado", "no_encontrado")
+    filas, total = service.listar_eliminadas(db, limit=limit, offset=offset)
+    return EliminacionListOut(
+        items=[EliminacionOut.model_validate(f) for f in filas],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{solicitud_id}", response_model=None)
@@ -223,9 +256,16 @@ def detalle_solicitud(
         return SolicitudDetailOut(
             **datos, opciones=cotizaciones_service.opciones_de(db, solicitud.id)
         )
-    return SolicitudDetailCompradorOut(
-        **datos, opciones=cotizaciones_service.opciones_comprador_de(db, solicitud)
-    )
+    opciones = cotizaciones_service.opciones_comprador_de(db, solicitud)
+    # F12 p.5: el fincado (con el nombre de quien lo movió) SOLO al área
+    # compras real; los gerentes de ventas se quedan sin esas claves.
+    if ve_fincada(user.rol):
+        return SolicitudDetailComprasOut(
+            **datos,
+            opciones=opciones,
+            fincada_por_nombre=service.fincada_por_nombre_de(db, solicitud),
+        )
+    return SolicitudDetailCompradorOut(**datos, opciones=opciones)
 
 
 @router.patch("/{solicitud_id}", response_model=None)
@@ -289,3 +329,33 @@ def cancelar_solicitud(
 ):
     service.obtener_scoped(db, solicitud_id, user)
     return _a_out(db, ejecutar_transicion(db, solicitud_id, Estado.CANCELADA, user), user)
+
+
+@router.patch("/{solicitud_id}/fincada", response_model=None)
+def marcar_fincada(
+    solicitud_id: int,
+    body: FincadaIn,
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """F12 p.5: marcado interno FINCADA (reversible), solo lado compras real
+    y solo en CONFIRMADA."""
+    return _a_out(db, service.marcar_fincada(db, solicitud_id, body.fincada, user), user)
+
+
+@router.delete("/{solicitud_id}", response_model=EliminacionResultadoOut)
+def eliminar_solicitud(
+    solicitud_id: int,
+    body: EliminarIn,
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EliminacionResultadoOut:
+    """Eliminación DEFINITIVA (F12 p.4): exclusiva del admin maestro. Para
+    cualquier otro rol el endpoint "no existe": 404 idéntico al de una
+    solicitud inexistente — sin confirmar siquiera que la ruta está viva."""
+    if user.rol != Rol.ADMIN:
+        raise AppError(404, "Solicitud no encontrada", "solicitud_no_encontrada")
+    registro, huerfanos = service.eliminar_definitivo(db, solicitud_id, body.motivo, user)
+    return EliminacionResultadoOut(
+        **EliminacionOut.model_validate(registro).model_dump(), archivos_huerfanos=huerfanos
+    )

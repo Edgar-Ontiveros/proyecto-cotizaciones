@@ -127,6 +127,9 @@ def exportar_solicitudes(
     prioridad: Prioridad | None = None,
     es_proyecto: bool | None = None,
     cambio_pendiente: bool | None = None,
+    # F12 p.5: mismo filtro que el listado (solo filtra para el área compras);
+    # el archivo NO lleva columna de fincado en esta versión (llega a Ventas).
+    fincada: bool | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
     comprador_id: int | None = None,
@@ -143,6 +146,7 @@ def exportar_solicitudes(
         prioridad=prioridad,
         es_proyecto=es_proyecto,
         cambio_pendiente=cambio_pendiente,
+        fincada=fincada,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,

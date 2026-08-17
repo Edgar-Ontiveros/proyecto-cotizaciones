@@ -1,7 +1,19 @@
 /** Vista principal del comprador: MI PANEL (los números con los que lo
  * evalúan) arriba y su COLA abajo (urgentes primero, luego T descendente). */
 
-import { Alert, Badge, Card, Checkbox, Group, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Card,
+  Checkbox,
+  Group,
+  SegmentedControl,
+  SimpleGrid,
+  Stack,
+  Tabs,
+  Text,
+  Title,
+} from "@mantine/core";
 import { DataTable } from "mantine-datatable";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -12,6 +24,7 @@ import {
   FolioConProyecto,
   MontoSolicitud,
   SemaforoBanda,
+  estiloFilaFincada,
 } from "../../components/compartidos";
 import { FiltrosRangoBusqueda, PAGE, useFiltrosListado } from "../../components/filtrosListado";
 import { paramsPestanaComprador } from "../../lib/crm";
@@ -84,6 +97,8 @@ export function PanelComprador() {
 
   // F10.2 p.4: filtro "Cambio solicitado" de la pestaña Cotizadas.
   const [soloCambios, setSoloCambios] = useState(false);
+  // F12 p.5: filtro Fincadas / Sin fincar / Todas de la pestaña Confirmadas.
+  const [fincado, setFincado] = useState("todas");
 
   // Cola: hasta 100 abiertas de cada estado, orden en cliente.
   const enviadas = useSolicitudes({ estado: "ENVIADA", limit: 100 });
@@ -98,6 +113,7 @@ export function PanelComprador() {
   const confirmadas = useSolicitudes({
     ...paramsPestanaComprador("confirmadas"),
     ...listado.filtros,
+    fincada: fincado === "todas" ? undefined : fincado === "fincadas",
     limit: PAGE,
     offset: listado.offset,
   });
@@ -213,11 +229,28 @@ export function PanelComprador() {
           />
         </Tabs.Panel>
         <Tabs.Panel value="confirmadas" pt="sm">
-          <FiltrosRangoBusqueda estado={listado} />
+          <Group gap="sm" align="center">
+            <FiltrosRangoBusqueda estado={listado} />
+            <SegmentedControl
+              size="xs"
+              color="teal"
+              value={fincado}
+              onChange={(v) => {
+                setFincado(v);
+                setPagina(1);
+              }}
+              data={[
+                { value: "todas", label: "Todas" },
+                { value: "fincadas", label: "Fincadas" },
+                { value: "sin", label: "Sin fincar" },
+              ]}
+            />
+          </Group>
           <DataTable<SolicitudOut>
             withTableBorder
             highlightOnHover
             minHeight={180}
+            rowStyle={estiloFilaFincada}
             records={confirmadas.data?.items ?? []}
             fetching={confirmadas.isFetching}
             totalRecords={confirmadas.data?.total ?? 0}
@@ -235,6 +268,7 @@ export function PanelComprador() {
             withTableBorder
             highlightOnHover
             minHeight={180}
+            rowStyle={estiloFilaFincada}
             records={todas.data?.items ?? []}
             fetching={todas.isFetching}
             totalRecords={todas.data?.total ?? 0}

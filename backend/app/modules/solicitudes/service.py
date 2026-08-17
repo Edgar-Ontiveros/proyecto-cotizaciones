@@ -5,12 +5,17 @@ from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.core.permissions import scope_solicitudes_query
+from app.core.logging import logger
+from app.core.permissions import scope_solicitudes_query, ve_fincada
+from app.models.archivo import Archivo
+from app.models.cambio import CambioPartida, SolicitudCambio
 from app.models.catalogos import MotivoRechazo
 from app.models.cliente import Cliente
 from app.models.comentario import Comentario
 from app.models.cotizacion import CotizacionOpcion, OpcionPartida
+from app.models.eliminacion import SolicitudEliminada
 from app.models.historial import HistorialEstado
+from app.models.notificacion import Notificacion
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
 from app.models.usuario import Rol, Usuario
 from app.modules.clientes.service import obtener_o_crear
@@ -20,6 +25,7 @@ from app.modules.solicitudes.schemas import (
     HistorialOut,
     PartidaIn,
     PartidaOut,
+    SolicitudComprasOut,
     SolicitudConsolidadoOut,
     SolicitudCreate,
     SolicitudOut,
@@ -207,6 +213,7 @@ def stmt_listado(
     prioridad: Prioridad | None,
     es_proyecto: bool | None = None,
     cambio_pendiente: bool | None = None,
+    fincada: bool | None = None,
     cliente_id: int | None,
     sucursal_id: int | None,
     comprador_id: int | None,
@@ -234,6 +241,10 @@ def stmt_listado(
         stmt = stmt.where(Solicitud.es_proyecto == es_proyecto)
     if cambio_pendiente is not None:  # F10 p.7b: filtro "con cambio pendiente"
         stmt = stmt.where(Solicitud.cambio_pendiente == cambio_pendiente)
+    # F12 p.5: el filtro solo existe para quien VE el fincado; para el lado
+    # ventas se ignora (el campo no existe en su mundo — ni para filtrar).
+    if fincada is not None and ve_fincada(user.rol):
+        stmt = stmt.where(Solicitud.fincada == fincada)
     if cliente_id is not None:
         stmt = stmt.where(Solicitud.cliente_id == cliente_id)
     if sucursal_id is not None:
@@ -266,6 +277,7 @@ def listar(
     prioridad: Prioridad | None,
     es_proyecto: bool | None = None,
     cambio_pendiente: bool | None = None,
+    fincada: bool | None = None,
     cliente_id: int | None,
     sucursal_id: int | None,
     comprador_id: int | None,
@@ -283,6 +295,7 @@ def listar(
         prioridad=prioridad,
         es_proyecto=es_proyecto,
         cambio_pendiente=cambio_pendiente,
+        fincada=fincada,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
         comprador_id=comprador_id,
@@ -334,6 +347,17 @@ def a_out(
     }
     if user.rol == Rol.VENDEDOR:
         return SolicitudOut(**datos)
+    # F12 p.5: el fincado SOLO viaja al área compras real (patrón proveedor).
+    if ve_fincada(user.rol):
+        return SolicitudComprasOut(
+            **datos,
+            monto_confirmado=solicitud.monto_confirmado,
+            moneda_confirmada=solicitud.moneda_confirmada,
+            tipo_cambio=solicitud.tipo_cambio,
+            fincada=solicitud.fincada,
+            fincada_por=solicitud.fincada_por,
+            fincada_en=solicitud.fincada_en,
+        )
     return SolicitudConsolidadoOut(
         **datos,
         monto_confirmado=solicitud.monto_confirmado,
@@ -416,3 +440,143 @@ def partidas_de(db: Session, solicitud_id: int) -> list[PartidaOut]:
         .order_by(SolicitudPartida.num_partida)
     )
     return [PartidaOut.model_validate(p) for p in filas]
+
+
+# ---------------------------------------------------------- fincado (F12 p.5)
+
+
+def marcar_fincada(db: Session, solicitud_id: int, fincada: bool, user: Usuario) -> Solicitud:
+    """Marca/desmarca FINCADA (reversible): SOLO comprador con acceso (el
+    asignado — el scoping vuelve 404 las ajenas), gerente_compras o admin, y
+    SOLO en CONFIRMADA. Sin notificaciones y sin evento en historial (el
+    historial lo ven ambos lados; esto es interno de compras): el rastro son
+    fincada_por/fincada_en, siempre del ÚLTIMO que movió el switch."""
+    if not ve_fincada(user.rol):
+        raise AppError(403, "El fincado es interno del área compras", "forbidden")
+    solicitud = obtener_scoped(db, solicitud_id, user, for_update=True)
+    if solicitud.estado != Estado.CONFIRMADA:
+        raise AppError(
+            409,
+            f"Solo un pedido CONFIRMADO se marca fincado: está en {solicitud.estado.value}",
+            "estado_conflicto",
+        )
+    solicitud.fincada = fincada
+    solicitud.fincada_por = user.id
+    solicitud.fincada_en = datetime.now(UTC)
+    db.commit()
+    return solicitud
+
+
+def fincada_por_nombre_de(db: Session, solicitud: Solicitud) -> str | None:
+    if solicitud.fincada_por is None:
+        return None
+    return db.scalar(select(Usuario.nombre).where(Usuario.id == solicitud.fincada_por))
+
+
+# --------------------------------------- eliminación definitiva (F12 p.4)
+
+
+def eliminar_definitivo(
+    db: Session, solicitud_id: int, motivo: str, admin: Usuario
+) -> tuple[SolicitudEliminada, list[str]]:
+    """Borra la solicitud y TODO su rastro operativo en UNA transacción,
+    dejando antes el snapshot en la bitácora inborrable. El folio no se
+    reutiliza: folio_counters no se toca — el hueco es evidencia deliberada.
+
+    Los archivos del disco se borran DESPUÉS del commit (patrón F8g): si el
+    commit falla, nada se pierde; si un unlink falla, la BD ya es consistente
+    y el archivo queda reportado como huérfano (log + respuesta)."""
+    solicitud = db.execute(
+        select(Solicitud)
+        .where(Solicitud.id == solicitud_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if solicitud is None:
+        raise AppError(404, "Solicitud no encontrada", "solicitud_no_encontrada")
+
+    # Snapshot ANTES de borrar nada (nombres como texto, sin FKs).
+    vendedor_nombre, sucursal_nombre = nombres_detalle(db, solicitud)
+    comprador_nombre = (
+        db.scalar(select(Usuario.nombre).where(Usuario.id == solicitud.comprador_id))
+        if solicitud.comprador_id is not None
+        else None
+    )
+    archivo_ids = list(db.scalars(select(Archivo.id).where(Archivo.solicitud_id == solicitud.id)))
+    registro = SolicitudEliminada(
+        solicitud_id=solicitud.id,
+        folio=solicitud.folio,
+        cliente=cliente_nombre_de(db, solicitud),
+        sucursal=sucursal_nombre or f"#{solicitud.sucursal_id}",
+        estado_final=solicitud.estado.value,
+        monto_confirmado=solicitud.monto_confirmado,
+        vendedor=vendedor_nombre or f"#{solicitud.vendedor_id}",
+        comprador=comprador_nombre,
+        num_partidas=db.scalar(
+            select(func.count())
+            .select_from(SolicitudPartida)
+            .where(SolicitudPartida.solicitud_id == solicitud.id)
+        )
+        or 0,
+        num_opciones=db.scalar(
+            select(func.count())
+            .select_from(CotizacionOpcion)
+            .where(CotizacionOpcion.solicitud_id == solicitud.id)
+        )
+        or 0,
+        num_comprobantes=len(archivo_ids),
+        motivo=motivo.strip(),
+        eliminado_por_id=admin.id,
+        eliminado_por=admin.nombre,
+    )
+    db.add(registro)
+
+    # Cascada completa, hijos antes que padres (todo con deletes de Core: el
+    # ORM no debe intentar "reparar" relaciones de filas que van a morir).
+    solicitud.opcion_seleccionada_id = None  # FK diferida hacia la ganadora
+    db.flush()
+    opcion_ids = select(CotizacionOpcion.id).where(CotizacionOpcion.solicitud_id == solicitud.id)
+    db.execute(delete(OpcionPartida).where(OpcionPartida.opcion_id.in_(opcion_ids)))
+    db.execute(delete(CotizacionOpcion).where(CotizacionOpcion.solicitud_id == solicitud.id))
+    cambio_ids = select(SolicitudCambio.id).where(SolicitudCambio.solicitud_id == solicitud.id)
+    db.execute(delete(CambioPartida).where(CambioPartida.cambio_id.in_(cambio_ids)))
+    db.execute(delete(SolicitudCambio).where(SolicitudCambio.solicitud_id == solicitud.id))
+    db.execute(delete(Notificacion).where(Notificacion.solicitud_id == solicitud.id))
+    db.execute(delete(Comentario).where(Comentario.solicitud_id == solicitud.id))
+    db.execute(delete(HistorialEstado).where(HistorialEstado.solicitud_id == solicitud.id))
+    db.execute(delete(Archivo).where(Archivo.solicitud_id == solicitud.id))
+    db.execute(delete(SolicitudPartida).where(SolicitudPartida.solicitud_id == solicitud.id))
+    db.expunge(solicitud)
+    db.execute(delete(Solicitud).where(Solicitud.id == solicitud_id))
+    db.commit()
+
+    from app.modules.archivos.service import ruta_de
+
+    huerfanos: list[str] = []
+    for archivo_id in archivo_ids:
+        try:
+            ruta_de(archivo_id).unlink(missing_ok=True)
+        except OSError:
+            huerfanos.append(str(archivo_id))
+    if huerfanos:
+        logger.warning(
+            "eliminacion_archivos_huerfanos",
+            solicitud_id=solicitud_id,
+            archivos=huerfanos,
+        )
+    return registro, huerfanos
+
+
+def listar_eliminadas(
+    db: Session, *, limit: int, offset: int
+) -> tuple[list[SolicitudEliminada], int]:
+    total = db.scalar(select(func.count()).select_from(SolicitudEliminada)) or 0
+    filas = list(
+        db.scalars(
+            select(SolicitudEliminada)
+            .order_by(SolicitudEliminada.eliminado_en.desc(), SolicitudEliminada.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    )
+    return filas, total

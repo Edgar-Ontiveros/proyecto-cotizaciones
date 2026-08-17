@@ -69,6 +69,13 @@ class require_roles:
         return user
 
 
+def ve_fincada(rol: Rol) -> bool:
+    """F12 p.5: el marcado FINCADA es interno del área COMPRAS real —
+    comprador, gerente_compras y admin. Para el lado ventas (vendedor,
+    gerente_sucursal, director_ventas) las claves NO existen en su JSON."""
+    return rol in (Rol.COMPRADOR, Rol.GERENTE_COMPRAS, Rol.ADMIN)
+
+
 def ve_proveedor(rol: Rol) -> bool:
     """Política F10 p.2 (decisión de Edgar): el proveedor por renglón lo ven
     TODOS los roles de gestión — comprador, gerente_compras, admin y ahora

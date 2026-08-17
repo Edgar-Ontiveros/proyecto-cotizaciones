@@ -90,6 +90,11 @@ export interface SolicitudOut {
   referencia_usd: string | null;
   // TC capturado por el COMPRADOR al cotizar (F8e); ausente para vendedor.
   tipo_cambio?: string | null;
+  // F12 p.5: fincado interno del área compras — las claves SOLO llegan a
+  // comprador, gerente_compras y admin (el lado ventas ni las recibe).
+  fincada?: boolean;
+  fincada_por?: number | null;
+  fincada_en?: string | null;
 }
 
 export type Unidad = "PZ" | "KG" | "TON" | "MTS" | "M2";
@@ -232,6 +237,35 @@ export interface SolicitudDetailOut extends SolicitudOut {
   // F10 p.6: pueden ser varios; confirmar exige al menos uno.
   comprobantes: ComprobanteOut[];
   cambios: CambioOut[];
+  // F12 p.5: para el rótulo "Fincada por X el DD/MM" (solo área compras).
+  fincada_por_nombre?: string | null;
+}
+
+// F12 p.4: fila de la bitácora de eliminaciones (solo admin, solo lectura).
+export interface EliminacionOut {
+  id: number;
+  solicitud_id: number;
+  folio: string | null;
+  cliente: string | null;
+  sucursal: string;
+  estado_final: string;
+  monto_confirmado: string | null;
+  vendedor: string;
+  comprador: string | null;
+  num_partidas: number;
+  num_opciones: number;
+  num_comprobantes: number;
+  motivo: string;
+  eliminado_por_id: number;
+  eliminado_por: string;
+  eliminado_en: string;
+}
+
+export interface EliminacionListOut {
+  items: EliminacionOut[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface SolicitudListOut {

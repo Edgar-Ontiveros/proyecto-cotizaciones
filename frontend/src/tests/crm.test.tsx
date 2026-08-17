@@ -59,30 +59,34 @@ describe("mapa del menú por rol", () => {
 });
 
 describe("mapa de acciones del detalle CRM", () => {
-  it("cada rol ve exactamente sus botones (F9-prep: director reasigna vendedor)", () => {
+  it("cada rol ve exactamente sus botones (F12: eliminar SOLO admin)", () => {
     expect(accionesDetalleCrm("admin")).toEqual({
       capturar: true,
       reasignarComprador: true,
       reasignarVendedor: true,
       corregirTC: true,
+      eliminar: true,
     });
     expect(accionesDetalleCrm("gerente_compras")).toEqual({
       capturar: true,
       reasignarComprador: true,
       reasignarVendedor: false,
       corregirTC: false,
+      eliminar: false,
     });
     expect(accionesDetalleCrm("gerente_sucursal")).toEqual({
       capturar: false,
       reasignarComprador: false,
       reasignarVendedor: true,
       corregirTC: false,
+      eliminar: false,
     });
     expect(accionesDetalleCrm("director_ventas")).toEqual({
       capturar: false,
       reasignarComprador: false,
       reasignarVendedor: true, // F9-prep: nuevo — el backend lo permite desde F5
       corregirTC: false,
+      eliminar: false,
     });
   });
 });

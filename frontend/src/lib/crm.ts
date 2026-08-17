@@ -91,6 +91,9 @@ export interface AccionesDetalleCrm {
   reasignarComprador: boolean;
   reasignarVendedor: boolean;
   corregirTC: boolean; // en CONFIRMADA (el comprador corrige el suyo en COTIZADA)
+  // F12 p.4: eliminación DEFINITIVA — exclusiva del admin maestro; ningún
+  // otro rol renderiza siquiera el botón (y el backend responde 404).
+  eliminar: boolean;
 }
 
 export function accionesDetalleCrm(rol: string): AccionesDetalleCrm {
@@ -102,7 +105,20 @@ export function accionesDetalleCrm(rol: string): AccionesDetalleCrm {
     // lo permite desde F5); el gerente, solo dentro de su sucursal.
     reasignarVendedor: esAdmin || rol === "gerente_sucursal" || rol === "director_ventas",
     corregirTC: esAdmin,
+    eliminar: esAdmin,
   };
+}
+
+/** F12 p.4: el botón rojo final del modal de eliminación solo se habilita con
+ * el FOLIO tecleado EXACTO (o el #id si aún no hay folio) y un motivo con
+ * sustancia (mínimo 10 caracteres, igual que el backend). */
+export function habilitaEliminar(
+  folioTecleado: string,
+  motivo: string,
+  solicitud: { folio: string | null; id: number },
+): boolean {
+  const objetivo = solicitud.folio ?? `#${solicitud.id}`;
+  return folioTecleado.trim() === objetivo && motivo.trim().length >= 10;
 }
 
 /** Base de rutas de solicitudes según dónde está montada la vista: las vistas

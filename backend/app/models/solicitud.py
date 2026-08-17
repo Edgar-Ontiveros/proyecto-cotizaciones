@@ -101,6 +101,13 @@ class Solicitud(Base):
     tipo_cambio: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
     motivo_no_confirmada: Mapped[str | None] = mapped_column(Text)
 
+    # F12 p.5: marcado interno FINCADA del lado compras — reversible, solo en
+    # CONFIRMADA. INVISIBLE para el lado ventas (las claves se excluyen de sus
+    # schemas, patrón proveedor); sin notificación ni evento en historial.
+    fincada: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
+    fincada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    fincada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # Hitos (UTC). Solo creado_en es NOT NULL.
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     enviado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

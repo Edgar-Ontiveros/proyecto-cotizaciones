@@ -23,6 +23,9 @@ export interface FiltrosListado {
   es_proyecto?: boolean;
   // F10 p.7b: filtro "con cambio pendiente".
   cambio_pendiente?: boolean;
+  // F12 p.5: Fincadas / Sin fincar (solo lo aplica el backend para el área
+  // compras; para el resto se ignora).
+  fincada?: boolean;
   // F10.2 p.4: la pestaña Confirmadas ordena por fecha de confirmación.
   orden?: string;
   cliente_id?: number;
@@ -106,6 +109,22 @@ export function useLeerTodas() {
   return useMutation({
     mutationFn: () => api<{ actualizadas: number }>("/notificaciones/leer-todas", { method: "POST" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["notificaciones"] }),
+  });
+}
+
+/** F12 p.5: marca/desmarca FINCADA (interno del área compras, reversible). */
+export function useMarcarFincada(solicitudId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fincada: boolean) =>
+      api<SolicitudOut>(`/solicitudes/${solicitudId}/fincada`, {
+        method: "PATCH",
+        body: { fincada },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["solicitud", solicitudId] });
+      void qc.invalidateQueries({ queryKey: ["solicitudes"] });
+    },
   });
 }
 

@@ -28,7 +28,7 @@ import {
 } from "../../components/compartidos";
 import { SeccionComprobante } from "../../components/Comprobante";
 import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
-import { VistaPedido } from "../../components/Pedido";
+import { SeccionFincada, VistaPedido } from "../../components/Pedido";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { baseSolicitudes, proveedoresGanadora } from "../../lib/crm";
@@ -369,7 +369,14 @@ export function DetalleSolicitud() {
         estado={solicitud.estado}
       />
       <BloqueTiempos tiempos={solicitud.tiempos} />
-      {pedidoEmbebido && <VistaPedido solicitud={solicitud} />}
+      {pedidoEmbebido && (
+        <>
+          {/* F12 p.5: fincado interno — SeccionFincada se auto-esconde para
+              los roles de ventas (no reciben la clave). */}
+          <SeccionFincada solicitud={solicitud} />
+          <VistaPedido solicitud={solicitud} />
+        </>
+      )}
       <HistorialComentarios solicitud={solicitud} />
       {/* Hoja de impresión (F10 p.5): invisible en pantalla; al imprimir es
           lo ÚNICO visible (impresion.css). */}

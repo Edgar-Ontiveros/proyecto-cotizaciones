@@ -40,6 +40,19 @@ TIPO_PROYECTO_SUCURSAL = "proyecto_sucursal"
 TIPO_CAMBIO_SOLICITADO = "cambio_solicitado"
 TIPO_CAMBIO_APROBADO = "cambio_aprobado"
 TIPO_CAMBIO_RECHAZADO = "cambio_rechazado"
+# F12 p.2: desenlace de una COTIZADA hacia el comprador ASIGNADO — confirmada
+# (crítica: dispara la orden de compra) o no concretada. Sin montos: el dinero
+# no viaja en campanas.
+TIPO_PEDIDO_CONFIRMADO = "pedido_confirmado"
+TIPO_NO_CONFIRMADA = "no_confirmada"
+
+# Redacción humana del motivo de NO_CONFIRMADA (catálogo fijo de §3).
+_MOTIVOS_NO_CONFIRMADA = {
+    "PRECIO": "precio",
+    "TIEMPO_ENTREGA": "tiempo de entrega",
+    "CLIENTE_DESISTIO": "el cliente desistió",
+    "OTRO": "otro motivo",
+}
 
 
 def _agregar(
@@ -89,6 +102,29 @@ def notificar_transicion(db: Session, solicitud: Solicitud, de: Estado, a: Estad
             solicitud.vendedor_id,
             TIPO_COTIZADA,
             f"Tu solicitud {folio} fue cotizada",
+            solicitud.id,
+        )
+    elif a == Estado.CONFIRMADA and solicitud.comprador_id is not None:
+        # F12 p.2a: el comprador ASIGNADO debe enterarse — el pedido confirmado
+        # dispara SU orden de compra. Folio sí, monto no (campana).
+        _agregar(
+            db,
+            solicitud.comprador_id,
+            TIPO_PEDIDO_CONFIRMADO,
+            f"El pedido {folio} fue CONFIRMADO: genera la orden de compra",
+            solicitud.id,
+        )
+    elif a == Estado.NO_CONFIRMADA and solicitud.comprador_id is not None:
+        # F12 p.2b: el otro desenlace de una COTIZADA también se avisa al
+        # comprador asignado (antes nadie se enteraba).
+        motivo = _MOTIVOS_NO_CONFIRMADA.get(
+            solicitud.motivo_no_confirmada or "", "sin motivo registrado"
+        )
+        _agregar(
+            db,
+            solicitud.comprador_id,
+            TIPO_NO_CONFIRMADA,
+            f"La solicitud {folio} no se concretó ({motivo})",
             solicitud.id,
         )
 

@@ -6,6 +6,7 @@ from app.models.catalogos import DiaFestivo, FamiliaMotivo, MotivoRechazo
 from app.models.cliente import Cliente
 from app.models.comentario import Comentario
 from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
+from app.models.eliminacion import SolicitudEliminada
 from app.models.historial import HistorialEstado
 from app.models.notificacion import Notificacion
 from app.models.refresh_token import RefreshToken
@@ -38,6 +39,7 @@ __all__ = [
     "SchedulerHeartbeat",
     "Solicitud",
     "SolicitudCambio",
+    "SolicitudEliminada",
     "SolicitudPartida",
     "Sucursal",
     "Usuario",

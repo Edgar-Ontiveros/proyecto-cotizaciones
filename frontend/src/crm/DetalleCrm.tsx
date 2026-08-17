@@ -3,7 +3,17 @@
  * acciones CRM: capturar cotización (compras), reasignar y corregir TC
  * (admin). */
 
-import { Button, Group, NumberInput, Select, Stack, Text } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  Group,
+  NumberInput,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+} from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
@@ -12,12 +22,13 @@ import { useNavigate, useParams } from "react-router";
 import { useSolicitud } from "../api/hooks";
 import {
   useCorregirTipoCambio,
+  useEliminarSolicitud,
   useReasignarComprador,
   useReasignarVendedor,
   useUsuarios,
 } from "../api/crmHooks";
 import { useAuth } from "../auth/AuthContext";
-import { accionesDetalleCrm } from "../lib/crm";
+import { accionesDetalleCrm, habilitaEliminar } from "../lib/crm";
 import { dinero } from "../lib/format";
 import type { SolicitudDetailOut } from "../lib/types";
 import { DetalleSolicitud } from "../views/vendedor/DetalleSolicitud";
@@ -132,6 +143,65 @@ function ModalCorregirTC({
   );
 }
 
+/** F12 p.4: eliminación DEFINITIVA (solo admin maestro). Dos pasos dentro del
+ * modal: teclear el FOLIO exacto + motivo obligatorio ANTES de que el botón
+ * rojo final se habilite. Irreversible: solo queda la bitácora. */
+function ModalEliminar({
+  solicitud,
+  onEliminada,
+}: {
+  solicitud: SolicitudDetailOut;
+  onEliminada: () => void;
+}) {
+  const [folioTecleado, setFolioTecleado] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const eliminar = useEliminarSolicitud(solicitud.id);
+  const objetivo = solicitud.folio ?? `#${solicitud.id}`;
+  const habilitado = habilitaEliminar(folioTecleado, motivo, solicitud);
+  return (
+    <Stack gap="sm">
+      <Alert color="red" title="Esta acción NO tiene vuelta atrás">
+        Se borrarán la solicitud <b>{objetivo}</b>, sus partidas, cotizaciones, cambios,
+        comentarios, historial y comprobantes (incluidos los archivos). Solo quedará el registro
+        en la bitácora de eliminaciones. El folio no se reutiliza.
+      </Alert>
+      <TextInput
+        label={`Teclea el folio exacto (${objetivo}) para continuar`}
+        value={folioTecleado}
+        onChange={(e) => setFolioTecleado(e.currentTarget.value)}
+        placeholder={objetivo}
+        data-testid="folio-eliminar"
+      />
+      <Textarea
+        label="Motivo de la eliminación (obligatorio, mínimo 10 caracteres)"
+        value={motivo}
+        onChange={(e) => setMotivo(e.currentTarget.value)}
+        minRows={2}
+        data-testid="motivo-eliminar"
+      />
+      <Button
+        color="red"
+        disabled={!habilitado}
+        loading={eliminar.isPending}
+        data-testid="boton-eliminar-definitivo"
+        onClick={() => {
+          eliminar.mutate(motivo.trim(), {
+            onSuccess: () => {
+              notifications.show({
+                message: `${objetivo} eliminada definitivamente (quedó en la bitácora)`,
+                color: "red",
+              });
+              onEliminada();
+            },
+          });
+        }}
+      >
+        Eliminar definitivamente
+      </Button>
+    </Stack>
+  );
+}
+
 function AccionesCrm() {
   const { id } = useParams();
   const solicitudId = Number(id);
@@ -191,6 +261,29 @@ function AccionesCrm() {
         }
       >
         Corregir TC
+      </Button>
+    ),
+    acciones.eliminar && (
+      <Button
+        key="eliminar"
+        variant="outline"
+        color="red"
+        onClick={() =>
+          modals.open({
+            title: "Eliminación definitiva",
+            children: (
+              <ModalEliminar
+                solicitud={solicitud}
+                onEliminada={() => {
+                  modals.closeAll();
+                  navigate("/crm/solicitudes");
+                }}
+              />
+            ),
+          })
+        }
+      >
+        Eliminar definitivamente
       </Button>
     ),
   ].filter(Boolean);

@@ -7,6 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_BASE, ApiError, getAccessToken, refrescarToken } from "../lib/api";
 import { api } from "../lib/api";
 import type {
+  EliminacionListOut,
+  EliminacionOut,
   FestivoOut,
   FiltrosCatalogoOut,
   GrupoOut,
@@ -301,6 +303,28 @@ export function useCorregirTipoCambio(id: number) {
         body: { tipo_cambio: tipoCambio },
       }),
     onSuccess: () => invalidar(id),
+  });
+}
+
+// ------------------------------------------- eliminación definitiva (F12 p.4)
+
+export function useEliminadas(params: Params) {
+  return useQuery({
+    queryKey: ["eliminadas", params],
+    queryFn: () => api<EliminacionListOut>("/solicitudes/eliminadas", { params }),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useEliminarSolicitud(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (motivo: string) =>
+      api<EliminacionOut>(`/solicitudes/${id}`, { method: "DELETE", body: { motivo } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["solicitudes"] });
+      void qc.invalidateQueries({ queryKey: ["eliminadas"] });
+    },
   });
 }
 

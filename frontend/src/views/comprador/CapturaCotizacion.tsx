@@ -42,8 +42,9 @@ import {
 } from "../../api/hooks";
 import { useAuth } from "../../auth/AuthContext";
 import { BannerCambioComprador } from "../../components/Cambios";
+import { SeccionComprobante } from "../../components/Comprobante";
 import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
-import { VistaPedido } from "../../components/Pedido";
+import { SeccionFincada, VistaPedido } from "../../components/Pedido";
 import { BadgeEstado, SemaforoBanda } from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
@@ -789,7 +790,21 @@ export function CapturaCotizacion() {
       )}
 
       {!capturable && solicitud.opciones.length > 0 && (
-        <VistaPedido solicitud={solicitud} />
+        <>
+          {/* F12 p.5: fincado interno del área compras, sobre el pedido. */}
+          <SeccionFincada solicitud={solicitud} />
+          <VistaPedido solicitud={solicitud} />
+        </>
+      )}
+      {/* F12 p.1: el comprador asignado SÍ puede descargar los comprobantes
+          (el backend lo autoriza desde F8g) — la card faltaba en su vista de
+          pedido; es la MISMA que ven gcompras/admin en el CRM. */}
+      {!capturable && (
+        <SeccionComprobante
+          solicitudId={solicitud.id}
+          comprobantes={solicitud.comprobantes}
+          estado={solicitud.estado}
+        />
       )}
 
       <HistorialComentarios solicitud={solicitud} />

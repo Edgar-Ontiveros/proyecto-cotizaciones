@@ -40,6 +40,55 @@ class RechazarIn(BaseModel):
     comentario: str | None = None
 
 
+class FincadaIn(BaseModel):
+    """F12 p.5: marcado interno del lado compras (reversible)."""
+
+    fincada: bool
+
+
+class EliminarIn(BaseModel):
+    """F12 p.4: la eliminación definitiva exige un motivo con sustancia."""
+
+    motivo: str = Field(min_length=10, max_length=2000)
+
+
+class EliminacionOut(BaseModel):
+    """Fila de la bitácora de eliminaciones (solo lectura, solo admin)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    solicitud_id: int
+    folio: str | None
+    cliente: str | None
+    sucursal: str
+    estado_final: str
+    monto_confirmado: Decimal | None
+    vendedor: str
+    comprador: str | None
+    num_partidas: int
+    num_opciones: int
+    num_comprobantes: int
+    motivo: str
+    eliminado_por_id: int
+    eliminado_por: str
+    eliminado_en: datetime
+
+
+class EliminacionResultadoOut(EliminacionOut):
+    """Respuesta del DELETE: la fila de bitácora + archivos que no pudieron
+    borrarse del disco (huérfanos a limpiar a mano; normalmente vacío)."""
+
+    archivos_huerfanos: list[str] = []
+
+
+class EliminacionListOut(BaseModel):
+    items: list[EliminacionOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class PartidaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -104,6 +153,16 @@ class SolicitudConsolidadoOut(SolicitudOut):
     tipo_cambio: Decimal | None
 
 
+class SolicitudComprasOut(SolicitudConsolidadoOut):
+    """F12 p.5 — SOLO comprador, gerente_compras y admin (patrón proveedor):
+    agrega el marcado interno FINCADA. Para el lado ventas (vendedor,
+    gerente_sucursal, director_ventas) estas claves NO EXISTEN en el JSON."""
+
+    fincada: bool = False
+    fincada_por: int | None = None
+    fincada_en: datetime | None = None
+
+
 class HistorialOut(BaseModel):
     id: int
     de: Estado | None
@@ -162,15 +221,37 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
 
 
 class SolicitudDetailCompradorOut(SolicitudDetailVentasOut):
-    """Detalle del área COMPRAS y admin: consolidado + proveedor."""
+    """Detalle con consolidado + proveedor (desde F10 p.2 lo reciben TODOS los
+    roles de gestión; los gerentes de ventas se quedan en esta vista)."""
 
     opciones: list[OpcionCompradorOut]  # type: ignore[assignment]
 
 
+class SolicitudDetailComprasOut(SolicitudDetailCompradorOut):
+    """F12 p.5 — detalle EXCLUSIVO de comprador, gerente_compras y admin:
+    además del consolidado, el marcado interno FINCADA (con el nombre de quien
+    lo movió para el "Fincada por X el DD/MM")."""
+
+    fincada: bool = False
+    fincada_por: int | None = None
+    fincada_en: datetime | None = None
+    fincada_por_nombre: str | None = None
+
+
 class SolicitudListOut(BaseModel):
-    """Listado para todos MENOS vendedor (items con consolidado)."""
+    """Listado de gerente_sucursal y director_ventas (consolidado, sin
+    fincado)."""
 
     items: list[SolicitudConsolidadoOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class SolicitudListComprasOut(BaseModel):
+    """Listado de comprador, gerente_compras y admin (consolidado + fincado)."""
+
+    items: list[SolicitudComprasOut]
     total: int
     limit: int
     offset: int

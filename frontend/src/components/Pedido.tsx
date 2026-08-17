@@ -9,10 +9,89 @@
  * el Comparador y en los schemas del backend). */
 
 import { Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
+import { useMarcarFincada } from "../api/hooks";
+import { useAuth } from "../auth/AuthContext";
+import { ApiError } from "../lib/api";
 import { dinero, fecha } from "../lib/format";
 import type { OpcionOut, SolicitudDetailOut } from "../lib/types";
+
+// F12 p.5: el fincado es interno del área compras — los mismos roles a los
+// que el backend manda las claves (el resto ni siquiera las recibe).
+const ROLES_FINCADA = ["comprador", "gerente_compras", "admin"];
+
+/** Marcado interno FINCADA (F12 p.5): switch reversible sobre un pedido
+ * CONFIRMADO, en TEAL propio (distinto del verde ganadora y el morado
+ * proyecto). Sin notificaciones ni historial: el rastro visible es
+ * "Fincada por X el DD/MM". */
+export function SeccionFincada({ solicitud }: { solicitud: SolicitudDetailOut }) {
+  const { usuario } = useAuth();
+  const marcar = useMarcarFincada(solicitud.id);
+  if (
+    usuario === null ||
+    !ROLES_FINCADA.includes(usuario.rol) ||
+    solicitud.estado !== "CONFIRMADA" ||
+    solicitud.fincada === undefined
+  ) {
+    return null;
+  }
+  const fincada = solicitud.fincada;
+  return (
+    <Paper
+      withBorder
+      p="sm"
+      data-testid="seccion-fincada"
+      style={
+        fincada
+          ? {
+              borderColor: "var(--mantine-color-teal-6)",
+              backgroundColor: "var(--mantine-color-teal-0)",
+            }
+          : undefined
+      }
+    >
+      <Group justify="space-between" wrap="nowrap">
+        <div>
+          <Group gap="xs">
+            {fincada && (
+              <Badge color="teal" variant="filled">
+                FINCADA
+              </Badge>
+            )}
+            <Text size="sm" fw={600}>
+              {fincada ? "Pedido fincado" : "Pedido sin fincar"}
+            </Text>
+          </Group>
+          {solicitud.fincada_por_nombre != null && solicitud.fincada_en != null && (
+            <Text size="xs" c="dimmed">
+              {fincada ? "Fincada" : "Movida"} por {solicitud.fincada_por_nombre} el{" "}
+              {fecha(solicitud.fincada_en)}
+            </Text>
+          )}
+        </div>
+        <Button
+          variant={fincada ? "light" : "filled"}
+          color="teal"
+          loading={marcar.isPending}
+          onClick={() =>
+            marcar.mutate(!fincada, {
+              onError: (e: unknown) => {
+                notifications.show({
+                  message: e instanceof ApiError ? e.detail : "No se pudo actualizar el fincado",
+                  color: "red",
+                });
+              },
+            })
+          }
+        >
+          {fincada ? "Quitar FINCADA" : "Marcar como FINCADA"}
+        </Button>
+      </Group>
+    </Paper>
+  );
+}
 
 function TablaRenglones({ opcion: o }: { opcion: OpcionOut }) {
   return (

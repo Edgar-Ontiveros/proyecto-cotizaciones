@@ -12,7 +12,8 @@ export type SeccionCrm =
   | "sucursales"
   | "territorios"
   | "reasignaciones"
-  | "catalogos";
+  | "catalogos"
+  | "eliminaciones";
 
 export type RolCrm = Extract<
   Rol,
@@ -42,6 +43,8 @@ export const MENU_CRM: ItemMenuCrm[] = [
   { seccion: "territorios", titulo: "Territorios", ruta: "/crm/territorios" },
   { seccion: "reasignaciones", titulo: "Reasignaciones", ruta: "/crm/reasignaciones" },
   { seccion: "catalogos", titulo: "Catálogos", ruta: "/crm/catalogos" },
+  // F12 p.4: bitácora de eliminaciones — solo admin.
+  { seccion: "eliminaciones", titulo: "Eliminaciones", ruta: "/crm/eliminaciones" },
 ];
 
 /** Qué ve cada rol (especificación §2):
@@ -62,6 +65,7 @@ export const SECCIONES_POR_ROL: Record<RolCrm, SeccionCrm[]> = {
     "territorios",
     "reasignaciones",
     "catalogos",
+    "eliminaciones",
   ],
   director_ventas: ["dashboard", "comparativas", "solicitudes", "usuarios", "reasignaciones"],
   gerente_compras: [
