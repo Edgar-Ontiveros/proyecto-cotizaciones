@@ -16,7 +16,7 @@ jobs:
       id-token: write              # OBLIGATORIO: sin esto no hay token OIDC
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configurar credenciales AWS vía OIDC
         uses: aws-actions/configure-aws-credentials@v4

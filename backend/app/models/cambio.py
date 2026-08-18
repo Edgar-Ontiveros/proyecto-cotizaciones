@@ -24,6 +24,17 @@ class EstadoCambio(StrEnum):
     RETIRADO = "RETIRADO"
 
 
+class TipoCambioRenglon(StrEnum):
+    """F13: qué le hace este renglón a la partida.
+    - MODIFICACION: partida existente cambia cantidad, unidad y/o descripción.
+    - ALTA: partida NUEVA (sin partida_id; el precio lo define compras al aprobar).
+    - BAJA: partida existente marcada para eliminarse al aprobar."""
+
+    MODIFICACION = "MODIFICACION"
+    ALTA = "ALTA"
+    BAJA = "BAJA"
+
+
 class SolicitudCambio(Base):
     __tablename__ = "solicitudes_cambio"
     __table_args__ = (
@@ -55,18 +66,49 @@ class SolicitudCambio(Base):
 
 
 class CambioPartida(Base):
-    """Snapshot antes/después de UNA partida dentro de un cambio. Inmutable:
-    se escribe al solicitar y jamás se toca (la aprobación aplica los valores
-    nuevos a las partidas reales, no a este registro)."""
+    """Snapshot antes/después de UN renglón de cambio (F13). Inmutable: se
+    escribe al solicitar y jamás se toca (la aprobación aplica los valores
+    nuevos a las partidas reales, no a este registro). El snapshot es
+    AUTOSUFICIENTE: num_partida y las descripciones se guardan como texto, y la
+    FK a la partida es ON DELETE SET NULL, de modo que aprobar una BAJA borra
+    la partida sin perder la evidencia del cambio.
+
+    Por tipo de renglón:
+    - MODIFICACION: partida_id + anterior/nueva de cantidad, unidad y (opcional)
+      descripción — el "nuevo" solo se llena en los campos que realmente cambian.
+    - ALTA: partida_id NULL; cantidad_nueva/unidad_nueva/descripcion_nueva con lo
+      propuesto; sin "anterior".
+    - BAJA: partida_id (hasta que la partida muere → NULL); anterior con el
+      snapshot; sin "nueva".
+
+    Filas pre-F13: tipo_renglon = MODIFICACION (server_default), num_partida y
+    descripciones NULL — el service cae al lookup vivo por partida_id para ellas.
+    """
 
     __tablename__ = "cambio_partidas"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cambio_id: Mapped[int] = mapped_column(ForeignKey("solicitudes_cambio.id"))
-    partida_id: Mapped[int] = mapped_column(ForeignKey("solicitud_partidas.id"))
-    cantidad_anterior: Mapped[Decimal] = mapped_column(Numeric(14, 3))
-    cantidad_nueva: Mapped[Decimal] = mapped_column(Numeric(14, 3))
-    unidad_anterior: Mapped[str]
-    unidad_nueva: Mapped[str]
+    tipo_renglon: Mapped[TipoCambioRenglon] = mapped_column(
+        Enum(
+            TipoCambioRenglon,
+            name="tipo_cambio_renglon",
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        default=TipoCambioRenglon.MODIFICACION,
+        server_default=text("'MODIFICACION'"),
+    )
+    # ON DELETE SET NULL: la BAJA aprobada borra la partida y deja esto en NULL.
+    partida_id: Mapped[int | None] = mapped_column(
+        ForeignKey("solicitud_partidas.id", ondelete="SET NULL")
+    )
+    # Snapshot de identidad (autosuficiente ante la baja física).
+    num_partida: Mapped[int | None]
+    descripcion_anterior: Mapped[str | None] = mapped_column(Text)
+    descripcion_nueva: Mapped[str | None] = mapped_column(Text)
+    cantidad_anterior: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
+    cantidad_nueva: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
+    unidad_anterior: Mapped[str | None]
+    unidad_nueva: Mapped[str | None]
 
     cambio: Mapped[SolicitudCambio] = relationship(back_populates="partidas")

@@ -307,7 +307,7 @@ def guardar_opcion(
     if solicitud.cambio_pendiente:
         raise AppError(
             409,
-            "Hay un cambio de cantidad/unidad pendiente: resuélvelo antes de corregir",
+            "Hay un cambio de partidas pendiente: resuélvelo antes de corregir",
             "cambio_pendiente",
         )
     correccion = solicitud.estado == Estado.COTIZADA
@@ -446,7 +446,7 @@ def eliminar_opcion(db: Session, solicitud_id: int, letra: Letra, user: Usuario)
     if solicitud.cambio_pendiente:
         raise AppError(
             409,
-            "Hay un cambio de cantidad/unidad pendiente: resuélvelo antes de corregir",
+            "Hay un cambio de partidas pendiente: resuélvelo antes de corregir",
             "cambio_pendiente",
         )
     opcion = _opcion_o_none(db, solicitud.id, letra)
@@ -533,8 +533,7 @@ def seleccionar(db: Session, solicitud_id: int, letra: Letra, user: Usuario) -> 
     if solicitud.cambio_pendiente:
         raise AppError(
             422,
-            "Hay un cambio de cantidad/unidad pendiente de aprobación: "
-            "resuélvelo antes de confirmar",
+            "Hay un cambio de partidas pendiente de aprobación: resuélvelo antes de confirmar",
             "cambio_pendiente",
         )
     # F8g (regla de la TRANSICIÓN, no del rol): sin comprobante del cliente

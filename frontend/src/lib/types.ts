@@ -197,17 +197,24 @@ export interface ComprobanteOut {
   creado_en: string;
 }
 
-// F8h: cambios de cantidad/unidad post-cotización.
+// F8h/F13: cambios de partidas post-cotización.
 export type EstadoCambio = "PENDIENTE" | "APROBADO" | "RECHAZADO" | "RETIRADO";
 
+// F13: qué le hace el renglón a la partida.
+export type TipoRenglonCambio = "MODIFICACION" | "ALTA" | "BAJA";
+
 export interface CambioPartidaOut {
-  partida_id: number;
-  num_partida: number;
+  // id del renglón de cambio; referencia un ALTA al capturar su precio (F13).
+  id: number;
+  tipo: TipoRenglonCambio;
+  partida_id: number | null;
+  num_partida: number | null;
   descripcion: string;
-  cantidad_anterior: string;
-  cantidad_nueva: string;
-  unidad_anterior: string;
-  unidad_nueva: string;
+  descripcion_nueva: string | null;
+  cantidad_anterior: string | null;
+  cantidad_nueva: string | null;
+  unidad_anterior: string | null;
+  unidad_nueva: string | null;
 }
 
 export interface CambioOut {

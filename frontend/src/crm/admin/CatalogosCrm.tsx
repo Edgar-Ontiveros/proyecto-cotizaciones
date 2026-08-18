@@ -48,10 +48,10 @@ function Motivos() {
       <Group align="flex-end" gap="sm" mb="sm">
         <Select label="Familia" data={FAMILIAS} value={familia} onChange={setFamilia} w={200} />
         <TextInput
-          label="Texto"
+          label="Motivo (lo que verá el comprador)"
           value={texto}
           onChange={(e) => setTexto(e.currentTarget.value)}
-          w={300}
+          w={320}
         />
         <Button
           disabled={familia === null || texto.trim() === ""}
@@ -75,7 +75,7 @@ function Motivos() {
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Familia</Table.Th>
-            <Table.Th>Texto</Table.Th>
+            <Table.Th>Motivo (lo que verá el comprador)</Table.Th>
             <Table.Th>Estatus</Table.Th>
             <Table.Th />
           </Table.Tr>

@@ -279,6 +279,12 @@ def test_matriz_notificaciones(client, db, entorno, auth_headers, con_comprobant
     )
     assert r.status_code == 200, r.text
 
+    # S4 — cancelación de una EN_PROCESO: avisa al comprador que la trabajaba
+    # (F13 p.7a). Desde otros estados no la había tomado, así que no notifica.
+    s4 = _enviada(client, entorno, auth_headers)
+    assert client.post(f"{BASE}/{s4}/tomar", headers=headers_c).status_code == 200
+    assert client.post(f"{BASE}/{s4}/cancelar", headers=headers_v).status_code == 200
+
     # Seguridad: reuso de refresh → todos los admins (service directo).
     notificaciones.notificar_reuso_refresh(db, entorno.vendedor)
     db.commit()
@@ -311,6 +317,7 @@ def test_matriz_notificaciones(client, db, entorno, auth_headers, con_comprobant
         "cambio_rechazado": {"vendedor"},  # el solicitante
         "pedido_confirmado": {"comprador"},  # F12: el hueco crítico, reparado
         "no_confirmada": {"comprador"},  # F12: hueco reparado
+        "cancelada": {"comprador"},  # F13 p.7a: cancelar una EN_PROCESO avisa al comprador
         "banda_amarilla": {"comprador"},
         "banda_roja": {"comprador", "admin", "admin2"},
         "reasignacion": {"otro_comprador", "otro_vendedor"},  # el destino

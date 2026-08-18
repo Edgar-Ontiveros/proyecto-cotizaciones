@@ -127,7 +127,7 @@ def editar(db: Session, solicitud_id: int, data: SolicitudCreate, user: Usuario)
     if solicitud.cambio_pendiente:
         raise AppError(
             409,
-            "Hay un cambio de cantidad/unidad pendiente: resuélvelo antes de editar",
+            "Hay un cambio de partidas pendiente: resuélvelo antes de editar",
             "cambio_pendiente",
         )
     if solicitud.estado not in ESTADOS_EDITABLES:

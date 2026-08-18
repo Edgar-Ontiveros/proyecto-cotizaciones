@@ -16,6 +16,7 @@ import type {
   SolicitudDetailOut,
   SolicitudListOut,
   SolicitudOut,
+  TipoRenglonCambio,
 } from "../lib/types";
 
 export interface FiltrosListado {
@@ -265,12 +266,15 @@ export function useNoConfirmar(id: number) {
   });
 }
 
-// ------------------------------------------------------ cambios (F8h, §4.8b)
+// ------------------------------------------------ cambios (F8h/F13, §4.8b)
 
+// F13: un renglón de la solicitud de cambio, discriminado por `tipo`.
 export interface CambioPartidaBody {
-  partida_id: number;
-  cantidad_nueva: string | null;
-  unidad_nueva: string | null;
+  tipo: TipoRenglonCambio;
+  partida_id?: number | null; // MODIFICACION/BAJA
+  cantidad_nueva?: string | null; // MODIFICACION/ALTA
+  unidad_nueva?: string | null; // MODIFICACION/ALTA
+  descripcion_nueva?: string | null; // MODIFICACION (opcional) / ALTA
 }
 
 export interface AjusteBody {
@@ -278,6 +282,21 @@ export interface AjusteBody {
   partida_id: number;
   precio_unitario?: string;
   tiempo_entrega?: string;
+}
+
+// F13: captura de compras para una partida NUEVA (ALTA) en UNA opción.
+export interface NuevoRenglonBody {
+  cambio_partida_id: number;
+  opcion_letra: string;
+  moneda: string | null;
+  precio_unitario: string | null;
+  tiempo_entrega: string | null;
+  proveedor: string | null;
+  no_encontrada: boolean;
+  es_alternativa: boolean;
+  alternativa_descripcion: string | null;
+  con_observacion: boolean;
+  observacion: string | null;
 }
 
 export function useSolicitarCambio(id: number) {
@@ -306,17 +325,20 @@ export function useAprobarCambio(solicitudId: number) {
       cambioId,
       comentario,
       ajustes,
+      nuevos,
       tipoCambio,
     }: {
       cambioId: number;
       comentario: string | null;
       ajustes: AjusteBody[];
+      // F13: captura de renglones de partidas nuevas (ALTA) por opción.
+      nuevos?: NuevoRenglonBody[];
       // F10.3: TC capturado al AUTORIZAR (422 tipo_cambio_requerido).
       tipoCambio?: string;
     }) =>
       api<CambioOut>(`/cambios/${cambioId}/aprobar`, {
         method: "POST",
-        body: { comentario, ajustes, tipo_cambio: tipoCambio },
+        body: { comentario, ajustes, nuevos: nuevos ?? [], tipo_cambio: tipoCambio },
       }),
     onSuccess: () => invalidar(solicitudId),
   });

@@ -45,6 +45,9 @@ TIPO_CAMBIO_RECHAZADO = "cambio_rechazado"
 # no viaja en campanas.
 TIPO_PEDIDO_CONFIRMADO = "pedido_confirmado"
 TIPO_NO_CONFIRMADA = "no_confirmada"
+# F13 p.7a: cancelación de una EN_PROCESO — el comprador la estaba trabajando
+# (hueco detectado en F12: nadie le avisaba que dejara de capturar).
+TIPO_CANCELADA = "cancelada"
 
 # Redacción humana del motivo de NO_CONFIRMADA (catálogo fijo de §3).
 _MOTIVOS_NO_CONFIRMADA = {
@@ -127,6 +130,16 @@ def notificar_transicion(db: Session, solicitud: Solicitud, de: Estado, a: Estad
             f"La solicitud {folio} no se concretó ({motivo})",
             solicitud.id,
         )
+    elif a == Estado.CANCELADA and de == Estado.EN_PROCESO and solicitud.comprador_id is not None:
+        # F13 p.7a: el comprador estaba capturando — avísale que se canceló para
+        # que deje de trabajarla (desde otros estados no la había tomado).
+        _agregar(
+            db,
+            solicitud.comprador_id,
+            TIPO_CANCELADA,
+            f"La solicitud {folio} fue cancelada por ventas: puedes dejar de capturarla",
+            solicitud.id,
+        )
 
 
 def _notificar_proyecto(db: Session, solicitud: Solicitud, es_reenvio: bool) -> None:
@@ -207,8 +220,7 @@ def notificar_cambio_solicitado(db: Session, solicitud: Solicitud) -> None:
     TODOS los gerentes de compras activos — en la práctica son ellos quienes
     ejecutan el lado compras (F8c.1) y no se enteraban."""
     mensaje = (
-        f"La solicitud {_folio_de(solicitud)} tiene un cambio de cantidad/unidad "
-        "pendiente de aprobación"
+        f"La solicitud {_folio_de(solicitud)} tiene un cambio de partidas pendiente de aprobación"
     )
     destinos = set(gerentes_compras_activos_ids(db))
     if solicitud.comprador_id is not None:
