@@ -233,8 +233,10 @@ export interface CambioOut {
 
 export interface SolicitudDetailOut extends SolicitudOut {
   // F10 p.5: identidad para la hoja de impresión (todo rol con acceso).
+  // F14 p.2: comprador_nombre para el encabezado de Cotización/Pedido.
   vendedor_nombre: string | null;
   sucursal_nombre: string | null;
+  comprador_nombre: string | null;
   partidas: PartidaOut[];
   opciones: OpcionOut[];
   historial: HistorialOut[];
@@ -407,12 +409,17 @@ export interface SinDesenlaceOut {
 }
 
 export interface ConversionOut {
+  // F14 p.1: por CICLOS del periodo — cotizadas = denominador (recotizada
+  // cuenta una); confirmadas = de ESAS, las hoy confirmadas.
+  cotizadas: number;
   confirmadas: number;
   no_confirmadas: number;
-  tasa: number | null;
+  tasa: number | null; // confirmadas / cotizadas; null con denominador 0
   sin_desenlace: SinDesenlaceOut;
 }
 
+// F14 §0b: las claves de dinero consolidado NO EXISTEN en el JSON del rol
+// vendedor (patrón proveedor, §4.9) — por eso son opcionales aquí.
 export interface ResumenOut {
   solicitudes_periodo: number;
   ciclos_cerrados: number;
@@ -421,8 +428,8 @@ export interface ResumenOut {
   distribucion_bandas: Record<string, number>;
   rojas_ahora: number;
   embudo: Record<string, number>;
-  dinero_confirmado: Record<string, string>;
-  dinero_confirmado_desglose: Record<string, string>;
+  dinero_confirmado?: Record<string, string>;
+  dinero_confirmado_desglose?: Record<string, string>;
   dinero_referencia: Record<string, string>;
   conversion: ConversionOut;
 }
@@ -435,7 +442,7 @@ export interface GrupoOut {
   mediana_horas_habiles: number | null;
   pct_banda_esperada: number | null;
   distribucion_bandas: Record<string, number>;
-  dinero_confirmado: Record<string, string>;
+  dinero_confirmado?: Record<string, string>;
   carga_abierta: number | null;
   cotizadas: number | null;
   confirmadas: number | null;
@@ -448,7 +455,7 @@ export interface SemanaOut {
   semana: string; // lunes de la semana (YYYY-MM-DD)
   creadas: number;
   confirmadas: number;
-  dinero_confirmado_mxn: string;
+  dinero_confirmado_mxn?: string;
 }
 
 export interface SerieOut {

@@ -1,15 +1,26 @@
 /** Tablas comparativas del CRM (F8d): tabs por dimensión con visibilidad por
- * rol (crm/menu.COMPARATIVAS_POR_ROL) y orden client-side. */
+ * rol (crm/menu.COMPARATIVAS_POR_ROL) y orden client-side sobre TODO el
+ * conjunto del periodo (las tablas no paginan: el backend entrega el set
+ * completo). F14: orden numérico en Confirmado (MXN) y V/A/R (rojas), y
+ * export a Excel de la sub-pestaña activa. */
 
-import { Stack, Table, Tabs, Text, Title } from "@mantine/core";
+import { Button, Group, Stack, Table, Tabs, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { DataTable, type DataTableSortStatus } from "mantine-datatable";
 import { useMemo, useState } from "react";
 
-import { useMateriales, useNoEncontrados, useTabla } from "../api/crmHooks";
+import { descargarExportComparativas, useMateriales, useNoEncontrados, useTabla } from "../api/crmHooks";
 import { useAuth } from "../auth/AuthContext";
-import { type PresetFechas, queryFiltrosDashboard } from "../lib/crm";
+import {
+  type FilaComparativa,
+  type PresetFechas,
+  aFilaComparativa,
+  ordenarComparativa,
+  queryFiltrosDashboard,
+} from "../lib/crm";
+import { ApiError } from "../lib/api";
 import { dinero, horas, pct } from "../lib/format";
-import type { GrupoOut, MaterialOut } from "../lib/types";
+import type { MaterialOut } from "../lib/types";
 import { COMPARATIVAS_POR_ROL, type TabComparativa, esRolCrm } from "./menu";
 
 const TITULOS: Record<TabComparativa, string> = {
@@ -21,105 +32,140 @@ const TITULOS: Record<TabComparativa, string> = {
   "no-encontrados": "No encontrados",
 };
 
-function dineroMXN(mapa: Record<string, string>): string {
-  const v = mapa["MXN"];
-  return v !== undefined && Number(v) !== 0 ? dinero(v, "MXN") : "—";
-}
-
-function ordenar<T>(filas: T[], estado: DataTableSortStatus<T>): T[] {
-  const { columnAccessor, direction } = estado;
-  const copia = [...filas].sort((a, b) => {
-    const va = (a as Record<string, unknown>)[columnAccessor as string];
-    const vb = (b as Record<string, unknown>)[columnAccessor as string];
-    if (va === null || va === undefined) return 1;
-    if (vb === null || vb === undefined) return -1;
-    if (typeof va === "number" && typeof vb === "number") return va - vb;
-    return String(va).localeCompare(String(vb));
-  });
-  return direction === "desc" ? copia.reverse() : copia;
-}
-
-function TablaGrupos({ dimension, params }: { dimension: string; params: Record<string, string | number | undefined> }) {
+function TablaGrupos({
+  dimension,
+  params,
+}: {
+  dimension: string;
+  params: Record<string, string | number | undefined>;
+}) {
   const { data, isFetching } = useTabla(dimension, params, true);
-  const [orden, setOrden] = useState<DataTableSortStatus<GrupoOut>>({
+  const [orden, setOrden] = useState<DataTableSortStatus<FilaComparativa>>({
     columnAccessor: "volumen",
     direction: "desc",
   });
-  const filas = useMemo(() => ordenar(data ?? [], orden), [data, orden]);
+  const [exportando, setExportando] = useState(false);
+  const filas = useMemo(
+    () =>
+      ordenarComparativa(
+        (data ?? []).map(aFilaComparativa),
+        orden.columnAccessor as string,
+        orden.direction,
+      ),
+    [data, orden],
+  );
+  // F14 p.3: V/A/R es columna de ALARMA — al elegirla, el primer orden es
+  // rojas DESCENDENTE (lo urgente arriba); el segundo clic la invierte.
+  const cambiarOrden = (nuevo: DataTableSortStatus<FilaComparativa>) => {
+    if (nuevo.columnAccessor === "rojas" && orden.columnAccessor !== "rojas") {
+      setOrden({ ...nuevo, direction: "desc" });
+      return;
+    }
+    setOrden(nuevo);
+  };
+  // F14 p.4: exporta la sub-pestaña ACTIVA con periodo, filtros y orden
+  // vigentes (el backend replica el mismo comparador sobre todo el set).
+  const exportar = () => {
+    setExportando(true);
+    descargarExportComparativas({
+      ...params,
+      dimension,
+      orden: String(orden.columnAccessor),
+      direccion: orden.direction,
+    })
+      .catch((e: unknown) =>
+        notifications.show({
+          message: e instanceof ApiError ? e.detail : "No se pudo exportar",
+          color: "red",
+        }),
+      )
+      .finally(() => setExportando(false));
+  };
   const esComprador = dimension === "comprador";
   const esCliente = dimension === "cliente";
   return (
-    <DataTable<GrupoOut>
-      withTableBorder
-      highlightOnHover
-      minHeight={180}
-      records={filas}
-      fetching={isFetching}
-      sortStatus={orden}
-      onSortStatusChange={setOrden}
-      idAccessor="id"
-      noRecordsText="Sin datos en el periodo"
-      columns={[
-        { accessor: "nombre", title: "Nombre", sortable: true },
-        { accessor: "volumen", title: "Volumen", sortable: true },
-        { accessor: "ciclos_cerrados", title: "Ciclos cerrados", sortable: true },
-        {
-          accessor: "mediana_horas_habiles",
-          title: "Mediana (h)",
-          sortable: true,
-          render: (g) => horas(g.mediana_horas_habiles),
-        },
-        {
-          accessor: "pct_banda_esperada",
-          title: "% esperada",
-          sortable: true,
-          render: (g) => pct(g.pct_banda_esperada),
-        },
-        {
-          accessor: "distribucion_bandas",
-          title: "V / A / R",
-          render: (g) =>
-            `${g.distribucion_bandas["ESPERADA"] ?? 0} / ${g.distribucion_bandas["NORMAL"] ?? 0} / ${g.distribucion_bandas["LENTA"] ?? 0}`,
-        },
-        {
-          accessor: "dinero_confirmado",
-          title: "Confirmado (MXN)",
-          render: (g) => dineroMXN(g.dinero_confirmado),
-        },
-        ...(esComprador
-          ? [
-              {
-                accessor: "carga_abierta",
-                title: "Carga abierta",
-                sortable: true,
-                render: (g: GrupoOut) => g.carga_abierta ?? "—",
-              },
-            ]
-          : []),
-        ...(esCliente
-          ? [
-              {
-                accessor: "cotizadas",
-                title: "Cotizadas",
-                sortable: true,
-                render: (g: GrupoOut) => g.cotizadas ?? "—",
-              },
-              {
-                accessor: "confirmadas",
-                title: "Confirmadas",
-                sortable: true,
-                render: (g: GrupoOut) => g.confirmadas ?? "—",
-              },
-              {
-                accessor: "ratio_confirmacion",
-                title: "Ratio confirmación",
-                sortable: true,
-                render: (g: GrupoOut) => pct(g.ratio_confirmacion),
-              },
-            ]
-          : []),
-      ]}
-    />
+    <Stack gap="xs">
+      <Group justify="flex-end">
+        <Button variant="light" size="compact-sm" loading={exportando} onClick={exportar}>
+          Exportar a Excel
+        </Button>
+      </Group>
+      <DataTable<FilaComparativa>
+        withTableBorder
+        highlightOnHover
+        minHeight={180}
+        records={filas}
+        fetching={isFetching}
+        sortStatus={orden}
+        onSortStatusChange={cambiarOrden}
+        idAccessor="id"
+        noRecordsText="Sin datos en el periodo"
+        columns={[
+          { accessor: "nombre", title: "Nombre", sortable: true },
+          { accessor: "volumen", title: "Volumen", sortable: true },
+          { accessor: "ciclos_cerrados", title: "Ciclos cerrados", sortable: true },
+          {
+            accessor: "mediana_horas_habiles",
+            title: "Mediana (h)",
+            sortable: true,
+            render: (g) => horas(g.mediana_horas_habiles),
+          },
+          {
+            accessor: "pct_banda_esperada",
+            title: "% esperada",
+            sortable: true,
+            render: (g) => pct(g.pct_banda_esperada),
+          },
+          {
+            // F14 p.3: la flecha ordena por ROJAS (desc primero).
+            accessor: "rojas",
+            title: "V / A / R",
+            sortable: true,
+            render: (g) =>
+              `${g.distribucion_bandas["ESPERADA"] ?? 0} / ${g.distribucion_bandas["NORMAL"] ?? 0} / ${g.distribucion_bandas["LENTA"] ?? 0}`,
+          },
+          {
+            // F14 p.3: orden NUMÉRICO por el consolidado; vacíos al final.
+            accessor: "confirmado_mxn",
+            title: "Confirmado (MXN)",
+            sortable: true,
+            render: (g) => (g.confirmado_mxn !== null ? dinero(g.confirmado_mxn, "MXN") : "—"),
+          },
+          ...(esComprador
+            ? [
+                {
+                  accessor: "carga_abierta",
+                  title: "Carga abierta",
+                  sortable: true,
+                  render: (g: FilaComparativa) => g.carga_abierta ?? "—",
+                },
+              ]
+            : []),
+          ...(esCliente
+            ? [
+                {
+                  accessor: "cotizadas",
+                  title: "Cotizadas",
+                  sortable: true,
+                  render: (g: FilaComparativa) => g.cotizadas ?? "—",
+                },
+                {
+                  accessor: "confirmadas",
+                  title: "Confirmadas",
+                  sortable: true,
+                  render: (g: FilaComparativa) => g.confirmadas ?? "—",
+                },
+                {
+                  accessor: "ratio_confirmacion",
+                  title: "Ratio confirmación",
+                  sortable: true,
+                  render: (g: FilaComparativa) => pct(g.ratio_confirmacion),
+                },
+              ]
+            : []),
+        ]}
+      />
+    </Stack>
   );
 }
 

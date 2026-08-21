@@ -27,7 +27,7 @@ import {
   SemaforoBanda,
 } from "../../components/compartidos";
 import { SeccionComprobante } from "../../components/Comprobante";
-import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
+import { ControlesImpresion } from "../../components/Impresion";
 import { SeccionFincada, VistaPedido } from "../../components/Pedido";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
@@ -266,8 +266,9 @@ export function DetalleSolicitud() {
           )}
         </Group>
         <Group>
-          {/* F10 p.5: imprimir — comprador, gerente_compras y admin. */}
-          {usuario !== null && ROLES_IMPRIMEN.includes(usuario.rol) && <BotonImprimir />}
+          {/* F10 p.5 + F14 p.2: hoja de solicitud (área compras) y documentos
+              por estatus (todo rol con acceso; inactivo antes de COTIZADA). */}
+          <ControlesImpresion solicitud={solicitud} />
           {puedeEditar && (
             <Button variant="light" onClick={() => navigate(`${base}/solicitudes/${solicitud.id}/editar`)}>
               Editar
@@ -378,11 +379,8 @@ export function DetalleSolicitud() {
         </>
       )}
       <HistorialComentarios solicitud={solicitud} />
-      {/* Hoja de impresión (F10 p.5): invisible en pantalla; al imprimir es
-          lo ÚNICO visible (impresion.css). */}
-      {usuario !== null && ROLES_IMPRIMEN.includes(usuario.rol) && (
-        <HojaImpresion solicitud={solicitud} />
-      )}
+      {/* Las hojas de impresión viven DENTRO de ControlesImpresion (F14):
+          solo la activa existe en el DOM y es lo único visible al imprimir. */}
     </Stack>
   );
 }

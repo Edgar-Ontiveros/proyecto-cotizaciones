@@ -13,11 +13,14 @@ from app.modules.metricas import service
 from app.modules.metricas.schemas import (
     FiltrosOut,
     GrupoOut,
+    GrupoVendedorOut,
     MaterialesOut,
     MiPanelOut,
     NoEncontradosOut,
     ResumenOut,
+    ResumenVendedorOut,
     SerieOut,
+    SerieVendedorOut,
     TiemposEtapaOut,
 )
 from app.modules.metricas.service import Dimension, Filtros
@@ -53,13 +56,22 @@ def filtros_query(
     )
 
 
-@router.get("/resumen", response_model=ResumenOut)
+# F14 §0b (patrón proveedor, §4.9): para el VENDEDOR, dinero_confirmado /
+# _desglose / _mxn NO EXISTEN en el JSON — se degrada al schema base ANTES de
+# serializar (response_model=None: FastAPI no re-valida ni mezcla vistas).
+# Comprador, gerentes, director y admin reciben la vista completa.
+
+
+@router.get("/resumen", response_model=None)
 def resumen(
     f: Filtros = Depends(filtros_query),
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
-    return service.resumen(db, user, f)
+) -> ResumenOut | ResumenVendedorOut:
+    completo = service.resumen(db, user, f)
+    if user.rol == Rol.VENDEDOR:
+        return ResumenVendedorOut.model_validate(completo.model_dump())
+    return completo
 
 
 def _tabla(dimension: Dimension, guard: Any = get_current_user):
@@ -67,29 +79,33 @@ def _tabla(dimension: Dimension, guard: Any = get_current_user):
         f: Filtros = Depends(filtros_query),
         user: Usuario = Depends(guard),
         db: Session = Depends(get_db),
-    ) -> list[GrupoOut]:
-        return service.tabla_por(db, user, f, dimension)
+    ) -> list[GrupoOut] | list[GrupoVendedorOut]:
+        grupos = service.tabla_por(db, user, f, dimension)
+        if user.rol == Rol.VENDEDOR:
+            return [GrupoVendedorOut.model_validate(g.model_dump()) for g in grupos]
+        return grupos
 
     return endpoint
 
 
-router.get("/por-comprador", response_model=list[GrupoOut])(_tabla("comprador", compras_required))
-router.get("/por-sucursal", response_model=list[GrupoOut])(_tabla("sucursal"))
-router.get("/por-vendedor", response_model=list[GrupoOut])(
-    _tabla("vendedor", ventas_gerencial_required)
-)
-router.get("/por-cliente", response_model=list[GrupoOut])(_tabla("cliente"))
+router.get("/por-comprador", response_model=None)(_tabla("comprador", compras_required))
+router.get("/por-sucursal", response_model=None)(_tabla("sucursal"))
+router.get("/por-vendedor", response_model=None)(_tabla("vendedor", ventas_gerencial_required))
+router.get("/por-cliente", response_model=None)(_tabla("cliente"))
 
 
-@router.get("/serie", response_model=SerieOut)
+@router.get("/serie", response_model=None)
 def serie(
     f: Filtros = Depends(filtros_query),
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> SerieOut | SerieVendedorOut:
     """Tendencia semanal para el dashboard (F8d): mismos filtros y scoping
     que /resumen."""
-    return service.serie_semanal(db, user, f)
+    completo = service.serie_semanal(db, user, f)
+    if user.rol == Rol.VENDEDOR:
+        return SerieVendedorOut.model_validate(completo.model_dump())
+    return completo
 
 
 @router.get("/tiempos-etapa", response_model=TiemposEtapaOut)

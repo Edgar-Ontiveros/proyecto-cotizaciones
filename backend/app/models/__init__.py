@@ -8,6 +8,7 @@ from app.models.comentario import Comentario
 from app.models.cotizacion import CotizacionOpcion, Letra, Moneda, OpcionPartida
 from app.models.eliminacion import SolicitudEliminada
 from app.models.historial import HistorialEstado
+from app.models.impresion import DocumentoImpresion, Impresion
 from app.models.notificacion import Notificacion
 from app.models.refresh_token import RefreshToken
 from app.models.scheduler_heartbeat import SchedulerHeartbeat
@@ -23,11 +24,13 @@ __all__ = [
     "CompradorSucursal",
     "CotizacionOpcion",
     "DiaFestivo",
+    "DocumentoImpresion",
     "Estado",
     "EstadoCambio",
     "FamiliaMotivo",
     "FolioCounter",
     "HistorialEstado",
+    "Impresion",
     "Letra",
     "Moneda",
     "MotivoRechazo",

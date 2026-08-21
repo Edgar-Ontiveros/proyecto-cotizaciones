@@ -3,7 +3,7 @@
  * (/metricas/filtros). Variantes por perfil: carga por comprador y % no
  * encontrados SOLO para compras global y admin. */
 
-import { Card, Group, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Card, Group, SimpleGrid, Stack, Text, Tooltip } from "@mantine/core";
 import { useState } from "react";
 
 import {
@@ -28,8 +28,18 @@ import {
   GraficaTiemposEtapa,
 } from "./graficas";
 
-function Indicador({ titulo, valor, sub }: { titulo: string; valor: string; sub?: string }) {
-  return (
+function Indicador({
+  titulo,
+  valor,
+  sub,
+  tooltip,
+}: {
+  titulo: string;
+  valor: string;
+  sub?: string;
+  tooltip?: string;
+}) {
+  const carta = (
     <Card withBorder p="sm">
       <Text size="xs" c="dimmed">
         {titulo}
@@ -44,7 +54,21 @@ function Indicador({ titulo, valor, sub }: { titulo: string; valor: string; sub?
       )}
     </Card>
   );
+  if (!tooltip) return carta;
+  return (
+    <Tooltip label={tooltip} multiline w={320} withArrow>
+      {carta}
+    </Tooltip>
+  );
 }
+
+// F14 p.1: fórmula exacta del KPI, visible al pasar el cursor.
+const FORMULA_CONVERSION =
+  "Conversión = (confirmadas ÷ cotizadas) × 100, por ciclos del periodo: " +
+  "el denominador son las solicitudes efectivamente COTIZADAS en el periodo " +
+  "(una recotizada cuenta UNA vez); excluye canceladas antes de cotizar, " +
+  "cotizaciones con todo no encontrado y solicitudes eliminadas. El " +
+  "numerador son, de esas, las hoy CONFIRMADAS.";
 
 function dineroPorMoneda(mapa: Record<string, string>): string {
   const partes = Object.entries(mapa)
@@ -54,8 +78,10 @@ function dineroPorMoneda(mapa: Record<string, string>): string {
 }
 
 function Cards({ resumen }: { resumen: ResumenOut }) {
-  const confirmadoMXN = resumen.dinero_confirmado["MXN"];
-  const desglose = dineroPorMoneda(resumen.dinero_confirmado_desglose);
+  // F14 §0b: claves opcionales — para el vendedor NO EXISTEN en el JSON.
+  const confirmadoMXN = resumen.dinero_confirmado?.["MXN"];
+  const desglose = dineroPorMoneda(resumen.dinero_confirmado_desglose ?? {});
+  const conv = resumen.conversion;
   return (
     <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }}>
       <Indicador titulo="Solicitudes del periodo" valor={String(resumen.solicitudes_periodo)} />
@@ -66,10 +92,16 @@ function Cards({ resumen }: { resumen: ResumenOut }) {
       />
       <Indicador titulo="Mediana (h hábiles)" valor={horas(resumen.mediana_horas_habiles)} />
       <Indicador titulo="Rojas AHORA" valor={String(resumen.rojas_ahora)} sub="foto del momento" />
+      {/* F14 p.1: "62.5% — 25 de 40 cotizadas"; denominador 0 → "—". */}
       <Indicador
         titulo="Conversión"
-        valor={pct(resumen.conversion.tasa)}
-        sub={`${resumen.conversion.confirmadas} conf. · ${resumen.conversion.no_confirmadas} no conf.`}
+        valor={pct(conv.tasa)}
+        sub={
+          conv.cotizadas > 0
+            ? `${conv.confirmadas} de ${conv.cotizadas} cotizadas`
+            : "sin cotizadas en el periodo"
+        }
+        tooltip={FORMULA_CONVERSION}
       />
       <Indicador
         titulo="Confirmado (MXN)"

@@ -23,6 +23,8 @@ from app.modules.solicitudes.schemas import (
     EliminacionResultadoOut,
     EliminarIn,
     FincadaIn,
+    ImpresionIn,
+    ImpresionOut,
     RechazarIn,
     SolicitudCreate,
     SolicitudDetailCompradorOut,
@@ -237,11 +239,12 @@ def detalle_solicitud(
     comprobantes = [
         a_comprobante_out(db, a) for a in archivos_service.comprobantes_de(db, solicitud.id)
     ]
-    vendedor_nombre, sucursal_nombre = service.nombres_detalle(db, solicitud)
+    vendedor_nombre, sucursal_nombre, comprador_nombre = service.nombres_detalle(db, solicitud)
     datos = dict(
         **base.model_dump(),
         vendedor_nombre=vendedor_nombre,
         sucursal_nombre=sucursal_nombre,
+        comprador_nombre=comprador_nombre,
         ciclos=ciclos,
         partidas=service.partidas_de(db, solicitud.id),
         historial=service.historial_de(db, solicitud.id, user),
@@ -329,6 +332,23 @@ def cancelar_solicitud(
 ):
     service.obtener_scoped(db, solicitud_id, user)
     return _a_out(db, ejecutar_transicion(db, solicitud_id, Estado.CANCELADA, user), user)
+
+
+@router.post(
+    "/{solicitud_id}/impresiones",
+    response_model=ImpresionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def registrar_impresion(
+    solicitud_id: int,
+    body: ImpresionIn,
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ImpresionOut:
+    """F14 p.2: bitácora de impresión — la UI lo invoca al disparar la
+    impresión del documento (Cotización / Pedido confirmado)."""
+    fila = service.registrar_impresion(db, solicitud_id, user, body.documento)
+    return ImpresionOut.model_validate(fila)
 
 
 @router.patch("/{solicitud_id}/fincada", response_model=None)

@@ -40,10 +40,9 @@ import {
   useRechazar,
   useSolicitud,
 } from "../../api/hooks";
-import { useAuth } from "../../auth/AuthContext";
 import { BannerCambioComprador } from "../../components/Cambios";
 import { SeccionComprobante } from "../../components/Comprobante";
-import { BotonImprimir, HojaImpresion, ROLES_IMPRIMEN } from "../../components/Impresion";
+import { ControlesImpresion } from "../../components/Impresion";
 import { SeccionFincada, VistaPedido } from "../../components/Pedido";
 import { BadgeEstado, SemaforoBanda } from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
@@ -548,10 +547,6 @@ export function CapturaCotizacion() {
   const { id } = useParams();
   const solicitudId = Number(id);
   const { data: solicitud } = useSolicitud(solicitudId);
-  const { usuario } = useAuth();
-  // F10.1 p.1: imprimir en LA pantalla del comprador (captura y pedido);
-  // gcompras/admin también la usan vía /crm. El lado ventas, sin botón.
-  const puedeImprimir = usuario !== null && ROLES_IMPRIMEN.includes(usuario.rol);
   const tomar = useAccionSolicitud("tomar");
   const cotizar = useCotizar(solicitudId);
   const eliminarOpcion = useEliminarOpcion(solicitudId);
@@ -675,7 +670,9 @@ export function CapturaCotizacion() {
           )}
         </Group>
         <Group>
-          {puedeImprimir && <BotonImprimir />}
+          {/* F10.1 p.1 + F14 p.2: hoja de solicitud (compras) y documentos
+              por estatus, con bitácora al invocar. */}
+          <ControlesImpresion solicitud={solicitud} />
           {solicitud.estado === "ENVIADA" && (
             <Button variant="light" onClick={() => tomar.mutate(solicitud.id)}>
               Tomar
@@ -808,9 +805,7 @@ export function CapturaCotizacion() {
       )}
 
       <HistorialComentarios solicitud={solicitud} />
-      {/* Hoja de impresión (F10.1 p.1): lo SOLICITADO, como quedó; invisible
-          en pantalla, lo único visible al imprimir (impresion.css). */}
-      {puedeImprimir && <HojaImpresion solicitud={solicitud} />}
+      {/* Las hojas de impresión viven DENTRO de ControlesImpresion (F14). */}
     </Stack>
   );
 }

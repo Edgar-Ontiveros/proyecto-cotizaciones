@@ -66,13 +66,29 @@ class SinDesenlaceOut(BaseModel):
 
 
 class ConversionOut(BaseModel):
+    """KPI de conversión (F14 p.1) — por CICLOS del periodo:
+
+    - `cotizadas` (denominador): solicitudes DISTINTAS con transición real
+      →COTIZADA dentro del periodo (recotizada N veces cuenta UNA), excluyendo
+      las "todo no encontrado" (cotizaciones sin ni un renglón conseguible).
+      Las canceladas antes de cotizar nunca entran (no tienen →COTIZADA); las
+      duplicadas eliminadas definitivamente (F12) desaparecen de la BD.
+    - `confirmadas` (numerador): de ESAS, las que HOY están en CONFIRMADA.
+    - `tasa` = confirmadas / cotizadas; None con denominador 0 (UI: "—").
+    """
+
+    cotizadas: int
     confirmadas: int
-    no_confirmadas: int
-    tasa: float | None  # confirmadas / (confirmadas + no_confirmadas)
+    no_confirmadas: int  # desenlace →NO_CONFIRMADA dentro del periodo
+    tasa: float | None  # confirmadas / cotizadas (None si cotizadas == 0)
     sin_desenlace: SinDesenlaceOut
 
 
-class ResumenOut(BaseModel):
+class ResumenVendedorOut(BaseModel):
+    """Vista BASE = la del VENDEDOR (F14 §0b, patrón proveedor / §4.9):
+    dinero_confirmado y su desglose NO EXISTEN en su JSON. La REFERENCIA sí
+    (subtotales por moneda, sin TC — es lo que ya ve por solicitud)."""
+
     solicitudes_periodo: int  # creadas en el periodo
     ciclos_cerrados: int
     mediana_horas_habiles: float | None
@@ -80,18 +96,23 @@ class ResumenOut(BaseModel):
     distribucion_bandas: dict[str, int]
     rojas_ahora: int  # foto del momento, independiente del periodo
     embudo: dict[str, int]  # estado actual → conteo (creadas en el periodo)
-    # F8c: dinero CONFIRMADO = UNA serie consolidada MXN (TC fijado al
-    # confirmar); el desglose original por moneda queda como dato secundario.
-    # El de REFERENCIA sigue por moneda separada (aún no hay TC).
-    dinero_confirmado: dict[str, Decimal]
-    dinero_confirmado_desglose: dict[str, Decimal]
     dinero_referencia: dict[str, Decimal]
     conversion: ConversionOut
 
 
-class GrupoOut(BaseModel):
-    """Fila de las tablas por-comprador / por-sucursal / por-vendedor /
-    por-cliente."""
+class ResumenOut(ResumenVendedorOut):
+    """Todos los roles MENOS vendedor (§4.9: comprador, gerentes, director y
+    admin sí ven consolidados). F8c: dinero CONFIRMADO = UNA serie consolidada
+    MXN (TC fijado al confirmar); el desglose original por moneda queda como
+    dato secundario."""
+
+    dinero_confirmado: dict[str, Decimal]
+    dinero_confirmado_desglose: dict[str, Decimal]
+
+
+class GrupoVendedorOut(BaseModel):
+    """Fila de las tablas por-sucursal / por-cliente para el VENDEDOR
+    (F14 §0b): SIN dinero_confirmado — la clave no existe en su JSON."""
 
     id: int
     nombre: str
@@ -100,7 +121,6 @@ class GrupoOut(BaseModel):
     mediana_horas_habiles: float | None
     pct_banda_esperada: float | None
     distribucion_bandas: dict[str, int]
-    dinero_confirmado: dict[str, Decimal]
     # Solo en por-comprador (foto del momento):
     carga_abierta: int | None = None
     # Solo en por-cliente (resp. 57 — cotizan mucho, confirman poco):
@@ -111,14 +131,31 @@ class GrupoOut(BaseModel):
     ratio_confirmacion: float | None = None
 
 
-class SemanaOut(BaseModel):
-    """Punto de la serie semanal (F8d): `semana` es su LUNES (semana UTC,
-    mismo criterio que los límites del periodo)."""
+class GrupoOut(GrupoVendedorOut):
+    """Fila completa (roles no-vendedor) de las tablas por-comprador /
+    por-sucursal / por-vendedor / por-cliente."""
+
+    dinero_confirmado: dict[str, Decimal]
+
+
+class SemanaVendedorOut(BaseModel):
+    """Punto de la serie semanal para el VENDEDOR (F14 §0b): sin la serie
+    consolidada MXN. `semana` es su LUNES (semana UTC, mismo criterio que los
+    límites del periodo)."""
 
     semana: date
     creadas: int
     confirmadas: int
+
+
+class SemanaOut(SemanaVendedorOut):
+    """Punto completo (roles no-vendedor): agrega el consolidado MXN."""
+
     dinero_confirmado_mxn: Decimal
+
+
+class SerieVendedorOut(BaseModel):
+    semanas: list[SemanaVendedorOut]
 
 
 class SerieOut(BaseModel):

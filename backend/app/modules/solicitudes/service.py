@@ -15,6 +15,7 @@ from app.models.comentario import Comentario
 from app.models.cotizacion import CotizacionOpcion, OpcionPartida
 from app.models.eliminacion import SolicitudEliminada
 from app.models.historial import HistorialEstado
+from app.models.impresion import DocumentoImpresion, Impresion
 from app.models.notificacion import Notificacion
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
 from app.models.usuario import Rol, Usuario
@@ -372,14 +373,57 @@ def cliente_nombre_de(db: Session, solicitud: Solicitud) -> str | None:
     return db.scalar(select(Cliente.nombre_normalizado).where(Cliente.id == solicitud.cliente_id))
 
 
-def nombres_detalle(db: Session, solicitud: Solicitud) -> tuple[str | None, str | None]:
-    """(vendedor_nombre, sucursal_nombre) SOLO para el detalle (F10 p.5: la
-    hoja de impresión los necesita). El listado no los carga — sería N+1."""
+def nombres_detalle(db: Session, solicitud: Solicitud) -> tuple[str | None, str | None, str | None]:
+    """(vendedor_nombre, sucursal_nombre, comprador_nombre) SOLO para el
+    detalle (F10 p.5 y F14 p.2: las hojas de impresión los necesitan). El
+    listado no los carga — sería N+1."""
     from app.models.sucursal import Sucursal
 
     vendedor = db.scalar(select(Usuario.nombre).where(Usuario.id == solicitud.vendedor_id))
     sucursal = db.scalar(select(Sucursal.nombre).where(Sucursal.id == solicitud.sucursal_id))
-    return vendedor, sucursal
+    comprador = (
+        db.scalar(select(Usuario.nombre).where(Usuario.id == solicitud.comprador_id))
+        if solicitud.comprador_id is not None
+        else None
+    )
+    return vendedor, sucursal, comprador
+
+
+# F14 p.2: qué documento existe en qué estado — la Cotización nace en
+# COTIZADA y sigue REIMPRIMIBLE en CONFIRMADA (respaldo del historial); el
+# Pedido confirmado SOLO en CONFIRMADA.
+_ESTADOS_POR_DOCUMENTO = {
+    DocumentoImpresion.COTIZACION: {Estado.COTIZADA, Estado.CONFIRMADA},
+    DocumentoImpresion.PEDIDO_CONFIRMADO: {Estado.CONFIRMADA},
+}
+
+
+def registrar_impresion(
+    db: Session, solicitud_id: int, user: Usuario, documento: DocumentoImpresion
+) -> Impresion:
+    """Bitácora de impresión (F14 p.2): qué documento, quién y cuándo. El
+    acceso a la solicitud es el mismo del detalle (scoping por rol)."""
+    solicitud = obtener_scoped(db, solicitud_id, user)
+    if solicitud.estado not in _ESTADOS_POR_DOCUMENTO[documento]:
+        raise AppError(
+            422,
+            "El documento no está disponible en el estado actual: la Cotización "
+            "existe desde COTIZADA y el Pedido confirmado solo en CONFIRMADA",
+            "impresion_no_disponible",
+        )
+    fila = Impresion(
+        solicitud_id=solicitud.id,
+        folio=solicitud.folio,
+        documento=documento.value,
+        estado=solicitud.estado.value,
+        usuario_id=user.id,
+        usuario=user.nombre,
+        rol=user.rol.value,
+    )
+    db.add(fila)
+    db.commit()
+    db.refresh(fila)
+    return fila
 
 
 # Roles del lado VENTAS a los que se les redacta el comentario de los
@@ -496,12 +540,7 @@ def eliminar_definitivo(
         raise AppError(404, "Solicitud no encontrada", "solicitud_no_encontrada")
 
     # Snapshot ANTES de borrar nada (nombres como texto, sin FKs).
-    vendedor_nombre, sucursal_nombre = nombres_detalle(db, solicitud)
-    comprador_nombre = (
-        db.scalar(select(Usuario.nombre).where(Usuario.id == solicitud.comprador_id))
-        if solicitud.comprador_id is not None
-        else None
-    )
+    vendedor_nombre, sucursal_nombre, comprador_nombre = nombres_detalle(db, solicitud)
     archivo_ids = list(db.scalars(select(Archivo.id).where(Archivo.solicitud_id == solicitud.id)))
     registro = SolicitudEliminada(
         solicitud_id=solicitud.id,

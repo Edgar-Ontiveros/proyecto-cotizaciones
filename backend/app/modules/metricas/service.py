@@ -274,13 +274,56 @@ def _sub_desenlace_no_confirmada() -> Any:
     )
 
 
+def _cotizadas_en_periodo(db: Session, user: Usuario, f: Filtros) -> set[int]:
+    """Denominador de la conversión (F14 p.1): solicitudes DISTINTAS con
+    transición REAL →COTIZADA (de != a: las correcciones del comprador emiten
+    eventos de==a y no cuentan; la reversión del admin sí re-cotiza) cuyo
+    timestamp cae en el periodo. Una recotizada N veces aporta UN elemento.
+
+    Exclusiones (señales exactas):
+    - canceladas antes de cotizar: sin evento →COTIZADA → jamás entran.
+    - "no encontradas": cotizaciones donde TODOS los renglones capturados
+      quedaron no_encontrada=True (no hubo nada cotizable que confirmar).
+    - duplicadas: la eliminación definitiva (F12) las saca de la BD — y por
+      tanto del denominador — junto con su historial.
+    """
+    ini, fin = _limites(f)
+    stmt = (
+        select(HistorialEstado.solicitud_id)
+        .join(Solicitud, HistorialEstado.solicitud_id == Solicitud.id)
+        .where(
+            HistorialEstado.a == Estado.COTIZADA,
+            or_(HistorialEstado.de.is_(None), HistorialEstado.de != HistorialEstado.a),
+            *_en_periodo(HistorialEstado.timestamp, ini, fin),
+        )
+        .distinct()
+    )
+    ids = set(db.scalars(_filtrar(stmt, user, f)))
+    if not ids:
+        return ids
+    todo_no_encontrado = (
+        select(CotizacionOpcion.solicitud_id)
+        .join(OpcionPartida, OpcionPartida.opcion_id == CotizacionOpcion.id)
+        .where(CotizacionOpcion.solicitud_id.in_(ids))
+        .group_by(CotizacionOpcion.solicitud_id)
+        .having(func.count(OpcionPartida.id).filter(~OpcionPartida.no_encontrada) == 0)
+    )
+    return ids - set(db.scalars(todo_no_encontrado))
+
+
 def _conversion(db: Session, user: Usuario, f: Filtros, ahora: datetime) -> ConversionOut:
     ini, fin = _limites(f)
-    confirmadas = db.scalar(
-        _filtrar(select(func.count()).select_from(Solicitud), user, f).where(
-            Solicitud.estado == Estado.CONFIRMADA,
-            *_en_periodo(Solicitud.confirmado_en, ini, fin),
+    # F14 p.1: numerador = del propio denominador, las HOY en CONFIRMADA (una
+    # cotizada del periodo que se confirma después SIGUE contando aquí).
+    cotizadas_ids = _cotizadas_en_periodo(db, user, f)
+    confirmadas = (
+        db.scalar(
+            select(func.count())
+            .select_from(Solicitud)
+            .where(Solicitud.id.in_(cotizadas_ids), Solicitud.estado == Estado.CONFIRMADA)
         )
+        if cotizadas_ids
+        else 0
     )
     sub = _sub_desenlace_no_confirmada()
     no_confirmadas = db.scalar(
@@ -291,7 +334,6 @@ def _conversion(db: Session, user: Usuario, f: Filtros, ahora: datetime) -> Conv
         ).where(Solicitud.estado == Estado.NO_CONFIRMADA, *_en_periodo(sub.c.ts, ini, fin))
     )
     confirmadas, no_confirmadas = confirmadas or 0, no_confirmadas or 0
-    total = confirmadas + no_confirmadas
     fechas = db.scalars(
         _filtrar(select(Solicitud.cotizado_en), user, f).where(
             Solicitud.estado == Estado.COTIZADA,
@@ -300,9 +342,11 @@ def _conversion(db: Session, user: Usuario, f: Filtros, ahora: datetime) -> Conv
     ).all()
     dias = [(ahora - ts).days for ts in fechas if ts is not None]
     return ConversionOut(
+        cotizadas=len(cotizadas_ids),
         confirmadas=confirmadas,
         no_confirmadas=no_confirmadas,
-        tasa=round(confirmadas / total, 4) if total else None,
+        # Denominador 0 → None (la UI muestra "—", jamás 0% ni error).
+        tasa=round(confirmadas / len(cotizadas_ids), 4) if cotizadas_ids else None,
         sin_desenlace=SinDesenlaceOut(
             total=len(dias),
             antiguedad_promedio_dias=round(sum(dias) / len(dias), 1) if dias else None,

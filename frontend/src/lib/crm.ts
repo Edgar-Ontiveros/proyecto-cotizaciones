@@ -2,6 +2,8 @@
 
 import dayjs from "dayjs";
 
+import type { Estado, GrupoOut } from "./types";
+
 export type PresetFechas = "mes" | "30d" | "trimestre";
 
 export interface FiltrosDashboard {
@@ -158,4 +160,62 @@ export function paramsPestanaComprador(
   }
   if (tab === "confirmadas") return { estado: "CONFIRMADA", orden: "confirmado_en" };
   return {};
+}
+
+// ------------------------------- F14 p.3: orden de las tablas comparativas
+
+/** Fila de comparativas con los campos ordenables DERIVADOS: el dinero como
+ * número (null = vacío "—") y las rojas del V/A/R. */
+export interface FilaComparativa extends GrupoOut {
+  confirmado_mxn: number | null;
+  rojas: number;
+}
+
+export function aFilaComparativa(g: GrupoOut): FilaComparativa {
+  // Mismo criterio que la celda: sin serie MXN o en cero → vacío ("—").
+  const mxn = g.dinero_confirmado?.["MXN"];
+  return {
+    ...g,
+    confirmado_mxn: mxn !== undefined && Number(mxn) !== 0 ? Number(mxn) : null,
+    rojas: g.distribucion_bandas["LENTA"] ?? 0,
+  };
+}
+
+/** Orden de comparativas (F14 p.3): NUMÉRICO para números (569,939.56 sobre
+ * 78,928.45), los vacíos (null/undefined) SIEMPRE al final en ambas
+ * direcciones, desempate estable por nombre. */
+export function ordenarComparativa<T extends { nombre: string }>(
+  filas: T[],
+  accessor: string,
+  direction: "asc" | "desc",
+): T[] {
+  const valorDe = (f: T): unknown => (f as Record<string, unknown>)[accessor];
+  const comparar = (a: T, b: T): number => {
+    const va = valorDe(a);
+    const vb = valorDe(b);
+    const vaVacio = va === null || va === undefined;
+    const vbVacio = vb === null || vb === undefined;
+    if (vaVacio && vbVacio) return a.nombre.localeCompare(b.nombre);
+    if (vaVacio) return 1; // vacíos al final, SIN importar la dirección
+    if (vbVacio) return -1;
+    let orden: number;
+    if (typeof va === "number" && typeof vb === "number") orden = va - vb;
+    else orden = String(va).localeCompare(String(vb));
+    if (direction === "desc") orden = -orden;
+    return orden !== 0 ? orden : a.nombre.localeCompare(b.nombre);
+  };
+  return [...filas].sort(comparar);
+}
+
+// ----------------------------------- F14 p.2: impresión por estatus vigente
+
+export type DocumentoImpresion = "COTIZACION" | "PEDIDO_CONFIRMADO";
+
+/** El sistema elige el documento por el estatus, sin que el usuario escoja:
+ * COTIZADA → Cotización; CONFIRMADA → Pedido confirmado; antes → null (el
+ * botón vive deshabilitado con tooltip). */
+export function documentoPorEstado(estado: Estado): DocumentoImpresion | null {
+  if (estado === "COTIZADA") return "COTIZACION";
+  if (estado === "CONFIRMADA") return "PEDIDO_CONFIRMADO";
+  return null;
 }

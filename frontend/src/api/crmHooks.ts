@@ -392,12 +392,12 @@ export function useEliminarFestivo() {
 
 /** Descarga el Excel con los filtros ACTUALES. No pasa por api<T> (es un
  * blob), pero respeta el token en memoria y reintenta una vez tras refresh. */
-export async function descargarExport(params: Params): Promise<void> {
+async function descargarXlsx(path: string, params: Params, nombre?: string): Promise<void> {
   const query = new URLSearchParams();
   for (const [clave, valor] of Object.entries(params)) {
     if (valor !== undefined && valor !== null && valor !== "") query.append(clave, String(valor));
   }
-  const url = `${API_BASE}/solicitudes/export${query.size ? `?${query.toString()}` : ""}`;
+  const url = `${API_BASE}${path}${query.size ? `?${query.toString()}` : ""}`;
   const pedir = () =>
     fetch(url, {
       headers: getAccessToken() ? { Authorization: `Bearer ${getAccessToken()!}` } : {},
@@ -416,10 +416,24 @@ export async function descargarExport(params: Params): Promise<void> {
       cuerpo.code ?? "export_error",
     );
   }
+  // Sin nombre fijo, se respeta el del servidor (Content-Disposition).
+  const disposition = respuesta.headers.get("content-disposition") ?? "";
+  const delServidor = /filename="([^"]+)"/.exec(disposition)?.[1];
   const blob = await respuesta.blob();
   const enlace = document.createElement("a");
   enlace.href = URL.createObjectURL(blob);
-  enlace.download = "solicitudes.xlsx";
+  enlace.download = nombre ?? delServidor ?? "export.xlsx";
   enlace.click();
   URL.revokeObjectURL(enlace.href);
+}
+
+export function descargarExport(params: Params): Promise<void> {
+  return descargarXlsx("/solicitudes/export", params, "solicitudes.xlsx");
+}
+
+/** F14 p.4: export de UNA sub-pestaña de comparativas con periodo, filtros y
+ * orden vigentes. El nombre Comparativas_[Pestaña]_[AAAA-MM]_[fecha].xlsx lo
+ * arma el backend y se respeta. */
+export function descargarExportComparativas(params: Params): Promise<void> {
+  return descargarXlsx("/metricas/export-comparativas", params);
 }

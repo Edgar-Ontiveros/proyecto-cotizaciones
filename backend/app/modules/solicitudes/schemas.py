@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.horario_habil import Banda
 from app.models.cotizacion import Moneda
+from app.models.impresion import DocumentoImpresion
 from app.models.solicitud import Estado, Prioridad, UnidadCatalogo
 from app.modules.archivos.schemas import ComprobanteOut
 from app.modules.cambios.schemas import CambioOut
@@ -44,6 +45,26 @@ class FincadaIn(BaseModel):
     """F12 p.5: marcado interno del lado compras (reversible)."""
 
     fincada: bool
+
+
+class ImpresionIn(BaseModel):
+    """F14 p.2: registro en bitácora al invocar la impresión desde la UI."""
+
+    documento: DocumentoImpresion
+
+
+class ImpresionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    solicitud_id: int
+    folio: str | None
+    documento: str
+    estado: str
+    usuario_id: int
+    usuario: str
+    rol: str
+    creado_en: datetime
 
 
 class EliminarIn(BaseModel):
@@ -187,8 +208,11 @@ class SolicitudDetailOut(SolicitudOut):
     """Detalle del VENDEDOR: sin proveedor y sin consolidado (F8e)."""
 
     # F10 p.5: identidad para la hoja de impresión (todo rol con acceso).
+    # F14 p.2: comprador_nombre — encabezado de Cotización/Pedido (no es
+    # dinero: lo ve todo rol con acceso).
     vendedor_nombre: str | None = None
     sucursal_nombre: str | None = None
+    comprador_nombre: str | None = None
     partidas: list[PartidaOut]
     opciones: list[OpcionOut]
     historial: list[HistorialOut]
@@ -210,6 +234,7 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
 
     vendedor_nombre: str | None = None
     sucursal_nombre: str | None = None
+    comprador_nombre: str | None = None
     partidas: list[PartidaOut]
     opciones: list[OpcionConsolidadoOut]
     historial: list[HistorialOut]

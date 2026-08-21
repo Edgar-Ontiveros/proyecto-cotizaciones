@@ -71,9 +71,14 @@ export function GraficaSerie({ semanas }: { semanas: SemanaOut[] }) {
             formatter={(valor, nombre) => [String(valor), nombre]}
             labelFormatter={(_, punto) => {
               const p = punto[0]?.payload as SemanaOut | undefined;
-              return p
-                ? `Semana del ${p.semana} · confirmado ${dinero(p.dinero_confirmado_mxn, "MXN")}`
-                : "";
+              if (!p) return "";
+              // F14 §0b: la clave no existe para el vendedor (sin CRM hoy,
+              // pero el dato manda) — solo se anexa si viene.
+              const confirmado =
+                p.dinero_confirmado_mxn !== undefined
+                  ? ` · confirmado ${dinero(p.dinero_confirmado_mxn, "MXN")}`
+                  : "";
+              return `Semana del ${p.semana}${confirmado}`;
             }}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />

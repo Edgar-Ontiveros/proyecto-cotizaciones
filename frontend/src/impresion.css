@@ -32,6 +32,25 @@
     margin: 0 0 12px;
   }
 
+  /* F14 p.2: encabezado institucional y secciones del documento. */
+  .hoja-impresion .hoja-empresa {
+    font-size: 13px;
+    margin: 0 0 4px;
+    border-bottom: 2px solid #444;
+    padding-bottom: 4px;
+  }
+
+  .hoja-impresion h2 {
+    font-size: 13px;
+    margin: 12px 0 6px;
+  }
+
+  .hoja-impresion .hoja-totales {
+    font-size: 12px;
+    text-align: right;
+    margin: 4px 0 8px;
+  }
+
   .hoja-impresion table {
     width: 100%;
     border-collapse: collapse;

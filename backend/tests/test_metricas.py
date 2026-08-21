@@ -281,6 +281,10 @@ def test_dinero_por_moneda_jamas_mezclado(client, db, entorno, auth_headers):
 
 
 def test_conversion_y_sin_desenlace(client, db, entorno, auth_headers):
+    """F14 p.1: la conversión cuenta por CICLOS — el denominador son las
+    transiciones reales →COTIZADA del periodo, el numerador las de ESAS hoy
+    en CONFIRMADA. A mano: cotizadas = {confirmada, no_confirmada, abierta}
+    = 3; confirmadas = 1 → tasa = 1/3 = 0.3333."""
     _sintetica(
         db,
         entorno,
@@ -288,22 +292,32 @@ def test_conversion_y_sin_desenlace(client, db, entorno, auth_headers):
         monto_confirmado=Decimal("100.00"),
         moneda_confirmada=Moneda.MXN,
         confirmado_en=_utc(2026, 3, 10, 12),
+        eventos=[(Estado.EN_PROCESO, Estado.COTIZADA, _utc(2026, 3, 9, 12))],
     )
     _sintetica(
         db,
         entorno,
         estado=Estado.NO_CONFIRMADA,
         motivo_no_confirmada="PRECIO",
-        eventos=[(Estado.COTIZADA, Estado.NO_CONFIRMADA, _utc(2026, 3, 11, 12))],
+        eventos=[
+            (Estado.EN_PROCESO, Estado.COTIZADA, _utc(2026, 3, 10, 12)),
+            (Estado.COTIZADA, Estado.NO_CONFIRMADA, _utc(2026, 3, 11, 12)),
+        ],
     )
     cotizado_en = datetime.now(UTC) - timedelta(days=5)
-    _sintetica(db, entorno, estado=Estado.COTIZADA, cotizado_en=cotizado_en)
+    _sintetica(
+        db,
+        entorno,
+        estado=Estado.COTIZADA,
+        cotizado_en=cotizado_en,
+        eventos=[(Estado.EN_PROCESO, Estado.COTIZADA, cotizado_en)],
+    )
 
     params = {"desde": "2026-03-01", "hasta": date.today().isoformat()}
     body = client.get(RESUMEN, params=params, headers=auth_headers(entorno.admin)).json()
     conv = body["conversion"]
-    assert (conv["confirmadas"], conv["no_confirmadas"]) == (1, 1)
-    assert conv["tasa"] == 0.5
+    assert (conv["cotizadas"], conv["confirmadas"], conv["no_confirmadas"]) == (3, 1, 1)
+    assert conv["tasa"] == 0.3333
     assert conv["sin_desenlace"]["total"] == 1
     assert conv["sin_desenlace"]["antiguedad_maxima_dias"] == 5
 
@@ -491,6 +505,7 @@ def test_vendedor_solo_lo_suyo_en_resumen(client, db, entorno, auth_headers):
         monto_confirmado=Decimal("100.00"),
         moneda_confirmada=Moneda.MXN,
         confirmado_en=_utc(2026, 3, 10, 12),
+        creado_en=_utc(2026, 3, 9, 12),
     )
     _sintetica(
         db,
@@ -500,9 +515,16 @@ def test_vendedor_solo_lo_suyo_en_resumen(client, db, entorno, auth_headers):
         monto_confirmado=Decimal("900.00"),
         moneda_confirmada=Moneda.MXN,
         confirmado_en=_utc(2026, 3, 10, 12),
+        creado_en=_utc(2026, 3, 9, 12),
     )
+    # F14 §0b (§4.9): el vendedor YA NO recibe dinero_confirmado — el scoping
+    # "solo lo suyo" se verifica con el embudo; el consolidado escopeado se
+    # verifica con el gerente de la sucursal (que sí lo ve).
     body = client.get(RESUMEN, params=MARZO, headers=auth_headers(entorno.vendedor)).json()
-    assert body["dinero_confirmado"] == {"MXN": "100.00"}
+    assert "dinero_confirmado" not in body
+    assert body["embudo"] == {"CONFIRMADA": 1}  # la del otro vendedor no está
+    body = client.get(RESUMEN, params=MARZO, headers=auth_headers(entorno.gerente_cuu)).json()
+    assert body["dinero_confirmado"] == {"MXN": "1000.00"}  # 100 + 900, su sucursal
 
 
 def test_mi_panel_solo_del_comprador(client, db, entorno, auth_headers):
