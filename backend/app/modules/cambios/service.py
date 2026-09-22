@@ -18,6 +18,14 @@ existentes. Reglas duras conservadas de F8h:
   algo queda incompleto → rollback + 422 y nada cambia. "Recotizar" ES aprobar
   con ajustes (no hay tercera vía).
 - Rechazar: comentario obligatorio; partidas y opciones intactas.
+- Recotización completa (F15 p.3): al aprobar, compras puede fijar el valor
+  FINAL de cantidad, unidad y descripción de cada partida MODIFICADA
+  (`partidas`, a nivel partida → todas las opciones), además de precio y
+  tiempo por renglón (`ajustes`). Una unidad final distinta a la del renglón
+  invalida su precio (debe capturarse); importes, subtotales y consolidado se
+  recalculan con lo capturado. Si compras se aparta de lo pedido, el snapshot
+  lo registra en `*_ajustada` y la notificación al solicitante lo dice
+  explícito ("aprobado con ajustes de cantidad/descripción").
 - Auto-retiro: si la solicitud pasa a NO_CONFIRMADA o CANCELADA con un cambio
   PENDIENTE, queda RETIRADO y el evento lo menciona.
 """
@@ -35,6 +43,7 @@ from app.models.solicitud import Estado, Solicitud, SolicitudPartida
 from app.models.usuario import Rol, Usuario
 from app.modules.cambios.schemas import (
     AjusteIn,
+    AjustePartidaIn,
     AprobarIn,
     CambioCreate,
     CambioOut,
@@ -60,6 +69,8 @@ from app.modules.solicitudes.state_machine import (
 )
 
 _MOD = TipoCambioRenglon.MODIFICACION
+# Orden fijo con que se enuncian los campos ajustados por compras (F15 p.3).
+_ORDEN_CAMPOS = ("cantidad", "unidad", "descripción")
 _ALTA = TipoCambioRenglon.ALTA
 _BAJA = TipoCambioRenglon.BAJA
 
@@ -117,6 +128,13 @@ def _resumen_renglon(cp: CambioPartida) -> str:
     )
     if cp.descripcion_nueva:
         texto += " (nueva descripción)"
+    # F15 p.3: lo que compras fijó al aprobar, cuando se apartó de lo pedido.
+    if cp.cantidad_ajustada is not None or cp.unidad_ajustada is not None:
+        cantidad = cp.cantidad_ajustada if cp.cantidad_ajustada is not None else cp.cantidad_nueva
+        unidad = cp.unidad_ajustada or cp.unidad_nueva
+        texto += f" (compras ajustó a {_fmt(cantidad)} {unidad})"
+    if cp.descripcion_ajustada:
+        texto += " (descripción ajustada por compras)"
     return texto
 
 
@@ -379,6 +397,20 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
             raise AppError(422, "Ajuste duplicado para el mismo renglón", "ajuste_invalido")
         ajustes[clave] = propuesto
 
+    # F15 p.3: ajuste FINAL a nivel partida (solo partidas MODIFICADAS).
+    ajustes_partida: dict[int, AjustePartidaIn] = {}
+    for ap in data.partidas:
+        if ap.partida_id not in mod_ids:
+            raise AppError(
+                422,
+                f"Ajuste de partida inválido: la partida {ap.partida_id} no es una "
+                "modificación del cambio",
+                "ajuste_invalido",
+            )
+        if ap.partida_id in ajustes_partida:
+            raise AppError(422, "Ajuste duplicado para la misma partida", "ajuste_invalido")
+        ajustes_partida[ap.partida_id] = ap
+
     nuevos: dict[tuple[int, str], NuevoRenglonIn] = {}
     for n in data.nuevos:
         if n.opcion_letra not in letras or n.cambio_partida_id not in alta_ids:
@@ -394,17 +426,34 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
         nuevos[clave_n] = n
 
     # ------------------------------ mutaciones (atómicas) ------------------------------
-    # 1) MODIFICACION → partidas existentes.
+    # 1) MODIFICACION → partidas existentes. Valor FINAL = lo pedido por
+    # ventas, salvo que compras lo ajuste (F15 p.3); el ajuste queda en el
+    # snapshot SOLO cuando difiere de lo pedido.
+    finales: dict[int, tuple[Decimal, str]] = {}
+    campos_ajustados: list[str] = []
     for cp in modificaciones:
         if cp.partida_id is None:
             continue
         partida = partidas[cp.partida_id]
-        if cp.cantidad_nueva is not None:
-            partida.cantidad = cp.cantidad_nueva
-        if cp.unidad_nueva is not None:
-            partida.unidad = cp.unidad_nueva
-        if cp.descripcion_nueva:
-            partida.descripcion = cp.descripcion_nueva
+        cantidad_final = cp.cantidad_nueva if cp.cantidad_nueva is not None else partida.cantidad
+        unidad_final = cp.unidad_nueva if cp.unidad_nueva is not None else partida.unidad
+        descripcion_final = cp.descripcion_nueva or partida.descripcion
+        final = ajustes_partida.get(cp.partida_id)
+        if final is not None:
+            if final.cantidad is not None and final.cantidad != cantidad_final:
+                cp.cantidad_ajustada = cantidad_final = final.cantidad
+                campos_ajustados.append("cantidad")
+            if final.unidad is not None and final.unidad != unidad_final:
+                cp.unidad_ajustada = unidad_final = final.unidad
+                campos_ajustados.append("unidad")
+            desc = (final.descripcion or "").strip()
+            if desc and desc != descripcion_final:
+                cp.descripcion_ajustada = descripcion_final = desc
+                campos_ajustados.append("descripción")
+        partida.cantidad = cantidad_final
+        partida.unidad = unidad_final
+        partida.descripcion = descripcion_final
+        finales[cp.partida_id] = (cantidad_final, unidad_final)
 
     # 2) ALTA → crea la partida (num consecutivo) y su renglón en TODAS las opciones.
     max_num = max((p.num_partida for p in partidas.values()), default=0)
@@ -452,8 +501,10 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
             if renglon is None:
                 continue
             ajuste = ajustes.get((opcion.letra.value, cp.partida_id))
-            cantidad = cp.cantidad_nueva if cp.cantidad_nueva is not None else renglon.cantidad
-            unidad = cp.unidad_nueva if cp.unidad_nueva is not None else renglon.unidad
+            # Propaga el valor FINAL de la partida (pedido por ventas o
+            # ajustado por compras); el ajuste POR RENGLÓN (F8h) aún puede
+            # apartarse en una opción concreta.
+            cantidad, unidad = finales.get(cp.partida_id, (renglon.cantidad, renglon.unidad))
             if ajuste is not None:
                 if ajuste.cantidad is not None:
                     cantidad = ajuste.cantidad
@@ -532,7 +583,12 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
         detalle += " (con ajuste de precio)"
     registrar_evento(db, solicitud, user, f"Cambio aprobado: {detalle}")
     notificaciones.notificar_cambio_resuelto(
-        db, solicitud, cambio, aprobado=True, precio_ajustado=hubo_ajuste
+        db,
+        solicitud,
+        cambio,
+        aprobado=True,
+        precio_ajustado=hubo_ajuste,
+        campos_ajustados=sorted(set(campos_ajustados), key=_ORDEN_CAMPOS.index),
     )
     db.commit()
     return cambio
@@ -592,6 +648,9 @@ def _partida_out(cp: CambioPartida, info_partida: dict[int, tuple[int, str]]) ->
         cantidad_nueva=cp.cantidad_nueva,
         unidad_anterior=cp.unidad_anterior,
         unidad_nueva=cp.unidad_nueva,
+        cantidad_ajustada=cp.cantidad_ajustada,
+        unidad_ajustada=cp.unidad_ajustada,
+        descripcion_ajustada=cp.descripcion_ajustada,
     )
 
 

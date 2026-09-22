@@ -7,6 +7,11 @@
  * - BannerCambioComprador: diff campo por campo (modificadas en ámbar, nuevas
  *   en verde, eliminadas tachadas en rojo) + captura obligatoria del precio de
  *   los renglones nuevos y ajuste de los afectados; Aprobar / Rechazar.
+ *   F15 p.3 (recotización completa): compras fija el valor FINAL de cantidad,
+ *   unidad y descripción de cada partida modificada (a nivel partida) además
+ *   de precio y entrega por opción; una unidad final distinta a la del renglón
+ *   vacía su precio (debe capturarse). Lo que se aparta de lo pedido viaja en
+ *   `partidas` y el backend lo registra en el snapshot.
  * Cantidades/unidades/descripciones no son dinero; los precios solo aparecen
  * del lado que ya los ve (las opciones del rol).
  */
@@ -34,18 +39,24 @@ import {
   useRetirarCambio,
   useSolicitarCambio,
   type AjusteBody,
+  type AjustePartidaBody,
   type NuevoRenglonBody,
 } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
 import {
   altaConDatos,
+  armarAjustesPartida,
   construirCambio,
   filaModificada,
+  filaPartidaFinal,
   nuevoRenglonBody,
   renglonFormVacio,
+  textoAjusteCompras,
+  unidadInvalidaPrecio,
   type FilaAltaEditor,
   type FilaPartidaEditor,
+  type FilaPartidaFinal,
 } from "../lib/cambios";
 import { fechaHora } from "../lib/format";
 import { aplicarNoEncontrada, armarAjustes, validarRenglonLocal, type RenglonForm } from "../lib/renglon";
@@ -91,6 +102,12 @@ function DiffLinea({ p }: { p: CambioPartidaOut }) {
         <Text span size="xs" c="dimmed">
           {" "}
           · nueva descr.: “{p.descripcion_nueva}”
+        </Text>
+      ) : null}
+      {textoAjusteCompras(p) ? (
+        <Text span size="xs" c="grape">
+          {" "}
+          · {textoAjusteCompras(p)}
         </Text>
       ) : null}
     </Text>
@@ -516,7 +533,13 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
   const aprobar = useAprobarCambio(solicitud.id);
   const rechazar = useRechazarCambio(solicitud.id);
   const [error, setError] = useState<string | null>(null);
-  const [filas, setFilas] = useState<FilaAjuste[] | null>(null);
+  // F15 p.3: valor FINAL de cada partida modificada (cantidad/unidad/descr.).
+  const [finales, setFinales] = useState<FilaPartidaFinal[] | null>(null);
+  // Precio/tiempo capturados por (letra de opción + partida).
+  const [capturas, setCapturas] = useState<Record<
+    string,
+    { precio: string; tiempo: string }
+  > | null>(null);
   // Captura de partidas nuevas: por (cambio_partida_id + letra de opción).
   const [nuevos, setNuevos] = useState<Record<string, RenglonForm> | null>(null);
 
@@ -527,33 +550,45 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
   const altas = useMemo(() => pendiente?.partidas.filter((p) => p.tipo === "ALTA") ?? [], [pendiente]);
   const bajas = useMemo(() => pendiente?.partidas.filter((p) => p.tipo === "BAJA") ?? [], [pendiente]);
 
+  const finalesIniciales: FilaPartidaFinal[] = useMemo(
+    () =>
+      modificaciones
+        .map(filaPartidaFinal)
+        .filter((f): f is FilaPartidaFinal => f !== null),
+    [modificaciones],
+  );
+  const editorFinales = finales ?? finalesIniciales;
+
   // Filas de ajuste: cada opción × cada partida MODIFICADA con renglón vivo.
-  const filasIniciales: FilaAjuste[] = useMemo(
+  // "Después" es el valor FINAL de compras; si su unidad difiere de la del
+  // renglón, el precio anterior queda inválido y arranca vacío.
+  const editor: FilaAjuste[] = useMemo(
     () =>
       solicitud.opciones.flatMap((o: OpcionOut) =>
-        modificaciones.flatMap((p) => {
-          const renglon = o.renglones.find((x) => x.partida_id === p.partida_id);
-          if (!renglon || renglon.no_encontrada || p.partida_id === null) return [];
-          const unidadCambia = (p.unidad_nueva ?? renglon.unidad) !== renglon.unidad;
+        editorFinales.flatMap((f) => {
+          const renglon = o.renglones.find((x) => x.partida_id === f.partida_id);
+          if (!renglon || renglon.no_encontrada) return [];
+          const unidadCambia = unidadInvalidaPrecio(f.unidad, renglon.unidad);
+          const captura = capturas?.[`${o.letra}-${f.partida_id}`];
           return [
             {
               letra: o.letra,
-              partida_id: p.partida_id,
-              num: p.num_partida,
-              descripcion: p.descripcion,
+              partida_id: f.partida_id,
+              num: f.num,
+              descripcion: f.descripcion,
               moneda: renglon.moneda,
-              cantidadNueva: p.cantidad_nueva,
-              unidadNueva: p.unidad_nueva,
+              cantidadNueva: f.cantidad,
+              unidadNueva: f.unidad,
               precioActual: renglon.precio_unitario,
               tiempoActual: renglon.tiempo_entrega ?? "",
               unidadCambia,
-              precio: unidadCambia ? "" : (renglon.precio_unitario ?? ""),
-              tiempo: renglon.tiempo_entrega ?? "",
+              precio: captura?.precio ?? (unidadCambia ? "" : (renglon.precio_unitario ?? "")),
+              tiempo: captura?.tiempo ?? renglon.tiempo_entrega ?? "",
             },
           ];
         }),
       ),
-    [solicitud.opciones, modificaciones],
+    [solicitud.opciones, editorFinales, capturas],
   );
 
   // Formularios de captura de renglones nuevos (uno por alta × opción).
@@ -569,12 +604,40 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
 
   if (!pendiente) return null;
 
-  const editor = filas ?? filasIniciales;
-  const capturas = nuevos ?? nuevosIniciales;
-  const setCampo = (i: number, campo: "precio" | "tiempo", valor: string) =>
-    setFilas(editor.map((f, j) => (j === i ? { ...f, [campo]: valor } : f)));
+  const capturasNuevos = nuevos ?? nuevosIniciales;
+  const setCampo = (i: number, campo: "precio" | "tiempo", valor: string) => {
+    const f = editor[i];
+    if (!f) return;
+    setCapturas({
+      ...(capturas ?? {}),
+      [`${f.letra}-${f.partida_id}`]: { precio: f.precio, tiempo: f.tiempo, [campo]: valor },
+    });
+  };
+  const setFinal = (
+    partidaId: number,
+    campo: "descripcion" | "cantidad" | "unidad",
+    valor: string,
+  ) => {
+    setFinales(
+      editorFinales.map((f) => (f.partida_id === partidaId ? { ...f, [campo]: valor } : f)),
+    );
+    if (campo !== "unidad") return;
+    // La unidad final cambia: el precio anterior del renglón queda inválido en
+    // cada opción (se vacía); si vuelve a la unidad cotizada, se restaura.
+    const siguientes = { ...(capturas ?? {}) };
+    for (const o of solicitud.opciones) {
+      const renglon = o.renglones.find((x) => x.partida_id === partidaId);
+      if (!renglon) continue;
+      const clave = `${o.letra}-${partidaId}`;
+      siguientes[clave] = {
+        precio: unidadInvalidaPrecio(valor, renglon.unidad) ? "" : (renglon.precio_unitario ?? ""),
+        tiempo: siguientes[clave]?.tiempo ?? renglon.tiempo_entrega ?? "",
+      };
+    }
+    setCapturas(siguientes);
+  };
   const setCaptura = (clave: string, r: RenglonForm) =>
-    setNuevos({ ...capturas, [clave]: r });
+    setNuevos({ ...capturasNuevos, [clave]: r });
 
   const importeAjuste = (f: FilaAjuste) => {
     const precio = Number(f.precio);
@@ -584,6 +647,12 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
 
   const ejecutarAprobar = () => {
     setError(null);
+    // F15 p.3: valor final de las partidas (solo viaja lo que difiere).
+    const { partidas: partidasBody, error: errorFinales } = armarAjustesPartida(editorFinales);
+    if (errorFinales) {
+      setError(errorFinales);
+      return;
+    }
     for (const f of editor) {
       if (f.unidadCambia && !(Number(f.precio.trim()) > 0)) {
         setError(`Opción ${f.letra}, partida ${f.num}: la unidad cambia — captura el precio nuevo`);
@@ -594,7 +663,7 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
     const nuevosBody: NuevoRenglonBody[] = [];
     for (const alta of altas) {
       for (const o of solicitud.opciones) {
-        const form = capturas[`${alta.id}-${o.letra}`] ?? renglonFormVacio();
+        const form = capturasNuevos[`${alta.id}-${o.letra}`] ?? renglonFormVacio();
         const err = validarRenglonLocal(form);
         if (err) {
           setError(`Opción ${o.letra}, ${alta.descripcion}: ${err}`);
@@ -611,9 +680,17 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
       }
     }
     const ajustes: AjusteBody[] = armarAjustes(editor);
+    const partidasFinales: AjustePartidaBody[] = partidasBody;
     const mutar = (tipoCambio?: string) =>
       aprobar.mutate(
-        { cambioId: pendiente.id, comentario: null, ajustes, nuevos: nuevosBody, tipoCambio },
+        {
+          cambioId: pendiente.id,
+          comentario: null,
+          ajustes,
+          partidas: partidasFinales,
+          nuevos: nuevosBody,
+          tipoCambio,
+        },
         {
           onSuccess: () => notifications.show({ message: "Cambio aprobado", color: "green" }),
           onError: (e) => {
@@ -682,10 +759,77 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
           </Text>
         </div>
 
+        {editorFinales.length > 0 && (
+          <div>
+            <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
+              Valor final de las partidas modificadas (recotización)
+            </Text>
+            <Text size="xs" c="dimmed" mb={4}>
+              Arranca en lo que pidió ventas; si ajustas cantidad, unidad o descripción, el
+              vendedor lo verá explícito en su notificación. Cambiar la unidad invalida el
+              precio anterior: deberás capturarlo abajo en cada opción.
+            </Text>
+            <Table withTableBorder withColumnBorders fz="xs">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={60}>Partida</Table.Th>
+                  <Table.Th w={140}>Pidió ventas</Table.Th>
+                  <Table.Th>Descripción final</Table.Th>
+                  <Table.Th w={110}>Cantidad final</Table.Th>
+                  <Table.Th w={100}>Unidad final</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {editorFinales.map((f) => {
+                  const seAparta =
+                    Number(f.cantidad) !== Number(f.cantidadPedida) ||
+                    f.unidad !== f.unidadPedida ||
+                    f.descripcion.trim() !== f.descripcionPedida.trim();
+                  return (
+                    <Table.Tr
+                      key={f.partida_id}
+                      bg={seAparta ? "var(--mantine-color-grape-0)" : undefined}
+                    >
+                      <Table.Td>{f.num}</Table.Td>
+                      <Table.Td>
+                        {f.cantidadPedida} {f.unidadPedida}
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          size="xs"
+                          value={f.descripcion}
+                          onChange={(e) => setFinal(f.partida_id, "descripcion", e.currentTarget.value)}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          size="xs"
+                          value={f.cantidad}
+                          error={!(Number(f.cantidad) > 0)}
+                          onChange={(e) => setFinal(f.partida_id, "cantidad", e.currentTarget.value)}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Select
+                          size="xs"
+                          data={UNIDADES}
+                          allowDeselect={false}
+                          value={f.unidad}
+                          onChange={(v) => setFinal(f.partida_id, "unidad", v ?? f.unidad)}
+                        />
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </div>
+        )}
+
         {editor.length > 0 && (
           <div>
             <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
-              Renglones afectados (modificaciones)
+              Renglones afectados (precio y entrega por opción)
             </Text>
             <Table withTableBorder withColumnBorders fz="xs">
               <Table.Thead>
@@ -764,7 +908,7 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
                         {alta.descripcion} · {alta.cantidad_nueva} {alta.unidad_nueva}
                       </Text>
                       <RenglonNuevoEditor
-                        form={capturas[`${alta.id}-${o.letra}`] ?? renglonFormVacio()}
+                        form={capturasNuevos[`${alta.id}-${o.letra}`] ?? renglonFormVacio()}
                         onChange={(r) => setCaptura(`${alta.id}-${o.letra}`, r)}
                       />
                     </Group>

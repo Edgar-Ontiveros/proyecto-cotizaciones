@@ -9,6 +9,7 @@ Las alertas de banda del scheduler son distintas: llevan `dedup` y se
 insertan con ON CONFLICT DO NOTHING para que el job sea idempotente.
 """
 
+from collections.abc import Sequence
 from typing import Any, cast
 
 from sqlalchemy import func, select, update
@@ -48,6 +49,15 @@ TIPO_NO_CONFIRMADA = "no_confirmada"
 # F13 p.7a: cancelación de una EN_PROCESO — el comprador la estaba trabajando
 # (hueco detectado en F12: nadie le avisaba que dejara de capturar).
 TIPO_CANCELADA = "cancelada"
+# F15 p.2: comentario nuevo en la solicitud — cruza de ÁREA: lo que comenta
+# ventas llega al comprador ASIGNADO; lo que comenta compras llega al vendedor
+# DUEÑO. Quien comenta jamás se notifica a sí mismo.
+TIPO_COMENTARIO_NUEVO = "comentario_nuevo"
+
+_ROLES_COMPRAS = frozenset({Rol.COMPRADOR, Rol.GERENTE_COMPRAS})
+_ROLES_VENTAS = frozenset({Rol.VENDEDOR, Rol.GERENTE_SUCURSAL, Rol.DIRECTOR_VENTAS})
+_EXTRACTO_PALABRAS = 8
+_EXTRACTO_MAX = 60
 
 # Redacción humana del motivo de NO_CONFIRMADA (catálogo fijo de §3).
 _MOTIVOS_NO_CONFIRMADA = {
@@ -230,13 +240,21 @@ def notificar_cambio_solicitado(db: Session, solicitud: Solicitud) -> None:
 
 
 def notificar_cambio_resuelto(
-    db: Session, solicitud: Solicitud, cambio: Any, aprobado: bool, precio_ajustado: bool
+    db: Session,
+    solicitud: Solicitud,
+    cambio: Any,
+    aprobado: bool,
+    precio_ajustado: bool,
+    campos_ajustados: Sequence[str] = (),
 ) -> None:
     """F8h: desenlace al SOLICITANTE (quien pidió el cambio, no necesariamente
-    el vendedor dueño)."""
+    el vendedor dueño). F15 p.3: si compras se apartó de lo pedido en
+    cantidad/unidad/descripción, el mensaje lo dice explícito."""
     folio = _folio_de(solicitud)
     if aprobado:
         mensaje = f"Tu cambio en la solicitud {folio} fue aprobado"
+        if campos_ajustados:
+            mensaje += " con ajustes de " + "/".join(campos_ajustados)
         if precio_ajustado:
             mensaje += " (el comprador ajustó el precio)"
     else:
@@ -248,6 +266,42 @@ def notificar_cambio_resuelto(
         mensaje,
         solicitud.id,
     )
+
+
+def _extracto(texto: str) -> str:
+    """Primeras palabras del comentario para la campana (sin el texto entero)."""
+    palabras = texto.split()
+    corto = " ".join(palabras[:_EXTRACTO_PALABRAS])
+    if len(corto) > _EXTRACTO_MAX:
+        corto = corto[:_EXTRACTO_MAX].rstrip()
+    if corto != texto.strip():
+        corto += "…"
+    return corto
+
+
+def destinatarios_comentario(solicitud: Solicitud, autor: Usuario) -> set[int]:
+    """F15 p.2 — a quién avisa un comentario, por ÁREA del autor:
+    - ventas (vendedor, gerente_sucursal, director_ventas) → comprador ASIGNADO;
+    - compras (comprador, gerente_compras) → vendedor DUEÑO;
+    - admin (sin área) → ambos involucrados.
+    Nunca al propio autor."""
+    destinos: set[int] = set()
+    es_admin = autor.rol == Rol.ADMIN
+    if (autor.rol in _ROLES_VENTAS or es_admin) and solicitud.comprador_id is not None:
+        destinos.add(solicitud.comprador_id)
+    if autor.rol in _ROLES_COMPRAS or es_admin:
+        destinos.add(solicitud.vendedor_id)
+    destinos.discard(autor.id)
+    return destinos
+
+
+def notificar_comentario(db: Session, solicitud: Solicitud, autor: Usuario, texto: str) -> None:
+    """Comentario nuevo (F15 p.2): folio + primeras palabras; el clic de la
+    campana navega al detalle (lleva solicitud_id). En la transacción del
+    comentario, sin commit propio."""
+    mensaje = f"{autor.nombre} comentó en {_folio_de(solicitud)}: “{_extracto(texto)}”"
+    for usuario_id in sorted(destinatarios_comentario(solicitud, autor)):
+        _agregar(db, usuario_id, TIPO_COMENTARIO_NUEVO, mensaje, solicitud.id)
 
 
 def notificar_reuso_refresh(db: Session, afectado: Usuario) -> None:

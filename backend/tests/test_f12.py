@@ -227,6 +227,11 @@ def test_matriz_notificaciones(client, db, entorno, auth_headers, con_comprobant
     _capturar_a(client, entorno, auth_headers, s1)
     assert client.post(f"{BASE}/{s1}/cotizar", headers=headers_c, json={}).status_code == 200
     _capturar_a(client, entorno, auth_headers, s1, precio="110.00")  # corrección
+    # F15 p.2: comentarios cruzan de área (vendedor → comprador; comprador →
+    # vendedor); el autor nunca se notifica a sí mismo.
+    for headers, texto in ((headers_v, "¿Tienen otro proveedor?"), (headers_c, "Sí, lo busco")):
+        r = client.post(f"{BASE}/{s1}/comentarios", headers=headers, json={"texto": texto})
+        assert r.status_code == 201, r.text
 
     partida_id = client.get(f"{BASE}/{s1}", headers=headers_c).json()["partidas"][0]["id"]
 
@@ -318,6 +323,7 @@ def test_matriz_notificaciones(client, db, entorno, auth_headers, con_comprobant
         "pedido_confirmado": {"comprador"},  # F12: el hueco crítico, reparado
         "no_confirmada": {"comprador"},  # F12: hueco reparado
         "cancelada": {"comprador"},  # F13 p.7a: cancelar una EN_PROCESO avisa al comprador
+        "comentario_nuevo": {"comprador", "vendedor"},  # F15 p.2: al OTRO lado, nunca al autor
         "banda_amarilla": {"comprador"},
         "banda_roja": {"comprador", "admin", "admin2"},
         "reasignacion": {"otro_comprador", "otro_vendedor"},  # el destino

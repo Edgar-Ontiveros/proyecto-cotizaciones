@@ -44,6 +44,18 @@ class AjusteIn(BaseModel):
     unidad: UnidadCatalogo | None = None
 
 
+class AjustePartidaIn(BaseModel):
+    """F15 p.3 — recotización completa: valor FINAL de compras para una partida
+    que se MODIFICA (aplica a la partida y se propaga a TODAS las opciones).
+    Lo que no venga conserva lo que pidió ventas. Si la unidad final difiere de
+    la del renglón, su precio queda inválido y debe capturarse en `ajustes`."""
+
+    partida_id: int
+    cantidad: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=3)
+    unidad: UnidadCatalogo | None = None
+    descripcion: str | None = None
+
+
 class NuevoRenglonIn(BaseModel):
     """F13: captura del comprador al aprobar para una partida NUEVA (ALTA) en
     UNA opción. Mismos campos del renglón rico (F8b); referencia la ALTA por el
@@ -67,6 +79,9 @@ class AprobarIn(BaseModel):
     comentario: str | None = None
     # Ajustes de renglones de partidas MODIFICADAS (como F8h).
     ajustes: list[AjusteIn] = []
+    # F15 p.3: ajuste FINAL de cantidad/unidad/descripción de las partidas
+    # modificadas (a nivel partida, todas las opciones).
+    partidas: list[AjustePartidaIn] = []
     # F13: captura de renglones de partidas NUEVAS (ALTA) por opción.
     nuevos: list[NuevoRenglonIn] = []
     # F10.3 (FASE B): si la aprobación deja USD sin TC (renglón nuevo en USD o
@@ -97,6 +112,11 @@ class CambioPartidaOut(BaseModel):
     cantidad_nueva: Decimal | None
     unidad_anterior: str | None
     unidad_nueva: str | None
+    # F15 p.3: lo que compras fijó al aprobar cuando difiere de lo pedido
+    # (null = respetó lo solicitado). Solo MODIFICACION.
+    cantidad_ajustada: Decimal | None = None
+    unidad_ajustada: str | None = None
+    descripcion_ajustada: str | None = None
 
 
 class CambioOut(BaseModel):

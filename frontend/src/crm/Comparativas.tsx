@@ -2,7 +2,10 @@
  * rol (crm/menu.COMPARATIVAS_POR_ROL) y orden client-side sobre TODO el
  * conjunto del periodo (las tablas no paginan: el backend entrega el set
  * completo). F14: orden numérico en Confirmado (MXN) y V/A/R (rojas), y
- * export a Excel de la sub-pestaña activa. */
+ * export a Excel de la sub-pestaña activa. F15 p.1: el periodo es el RANGO DE
+ * FECHAS del listado de Solicitudes (mismo control, `RangoFechas`); sin rango
+ * elegido sigue siendo el mes en curso. Las 6 pestañas y el export usan los
+ * MISMOS params (lib/crm.periodoComparativas). */
 
 import { Button, Group, Stack, Table, Tabs, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -11,12 +14,12 @@ import { useMemo, useState } from "react";
 
 import { descargarExportComparativas, useMateriales, useNoEncontrados, useTabla } from "../api/crmHooks";
 import { useAuth } from "../auth/AuthContext";
+import { RangoFechas, type RangoFechasValor } from "../components/filtrosListado";
 import {
   type FilaComparativa,
-  type PresetFechas,
   aFilaComparativa,
   ordenarComparativa,
-  queryFiltrosDashboard,
+  periodoComparativas,
 } from "../lib/crm";
 import { ApiError } from "../lib/api";
 import { dinero, horas, pct } from "../lib/format";
@@ -239,14 +242,19 @@ function TablaNoEncontrados({ params }: { params: Record<string, string | number
 
 export function Comparativas() {
   const { usuario } = useAuth();
-  const [preset] = useState<PresetFechas>("mes");
-  const params = queryFiltrosDashboard({ preset });
+  // F15 p.1: rango libre (mismo selector del listado); vacío = mes en curso.
+  const [rango, setRango] = useState<RangoFechasValor>([null, null]);
+  const periodo = periodoComparativas(rango);
+  const params = periodo.params;
   if (!usuario || !esRolCrm(usuario.rol)) return null;
   const tabs = COMPARATIVAS_POR_ROL[usuario.rol];
 
   return (
     <Stack>
-      <Title order={3}>Comparativas · mes en curso</Title>
+      <Group justify="space-between" align="center">
+        <Title order={3}>Comparativas · {periodo.titulo}</Title>
+        <RangoFechas value={rango} onChange={setRango} />
+      </Group>
       <Tabs defaultValue={tabs[0]}>
         <Tabs.List>
           {tabs.map((t) => (

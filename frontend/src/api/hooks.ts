@@ -284,6 +284,15 @@ export interface AjusteBody {
   tiempo_entrega?: string;
 }
 
+// F15 p.3: valor FINAL de compras para una partida MODIFICADA (a nivel
+// partida: aplica a todas las opciones). Solo viaja lo que difiere de lo pedido.
+export interface AjustePartidaBody {
+  partida_id: number;
+  cantidad?: string;
+  unidad?: string;
+  descripcion?: string;
+}
+
 // F13: captura de compras para una partida NUEVA (ALTA) en UNA opción.
 export interface NuevoRenglonBody {
   cambio_partida_id: number;
@@ -325,12 +334,15 @@ export function useAprobarCambio(solicitudId: number) {
       cambioId,
       comentario,
       ajustes,
+      partidas,
       nuevos,
       tipoCambio,
     }: {
       cambioId: number;
       comentario: string | null;
       ajustes: AjusteBody[];
+      // F15 p.3: ajuste final de cantidad/unidad/descripción por partida.
+      partidas?: AjustePartidaBody[];
       // F13: captura de renglones de partidas nuevas (ALTA) por opción.
       nuevos?: NuevoRenglonBody[];
       // F10.3: TC capturado al AUTORIZAR (422 tipo_cambio_requerido).
@@ -338,7 +350,13 @@ export function useAprobarCambio(solicitudId: number) {
     }) =>
       api<CambioOut>(`/cambios/${cambioId}/aprobar`, {
         method: "POST",
-        body: { comentario, ajustes, nuevos: nuevos ?? [], tipo_cambio: tipoCambio },
+        body: {
+          comentario,
+          ajustes,
+          partidas: partidas ?? [],
+          nuevos: nuevos ?? [],
+          tipo_cambio: tipoCambio,
+        },
       }),
     onSuccess: () => invalidar(solicitudId),
   });

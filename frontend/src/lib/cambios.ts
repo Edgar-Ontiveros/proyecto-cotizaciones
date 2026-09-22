@@ -2,9 +2,9 @@
  * - Lado ventas: arma el body de la solicitud (MODIFICACION/ALTA/BAJA).
  * - Lado compras: arma un renglón nuevo (ALTA) a partir del RenglonForm. */
 
-import type { CambioPartidaBody, NuevoRenglonBody } from "../api/hooks";
+import type { AjustePartidaBody, CambioPartidaBody, NuevoRenglonBody } from "../api/hooks";
 import type { RenglonForm } from "./renglon";
-import type { Unidad } from "./types";
+import type { CambioPartidaOut, Unidad } from "./types";
 
 export interface FilaPartidaEditor {
   partida_id: number;
@@ -132,4 +132,88 @@ export function renglonFormVacio(): RenglonForm {
     conObservacion: false,
     observacion: "",
   };
+}
+
+// ------------------------------- F15 p.3: recotización completa (lado compras)
+
+/** Valor FINAL que compras fija para una partida MODIFICADA. Arranca en lo
+ * que pidió ventas; el comprador puede apartarse en cantidad, unidad y
+ * descripción. */
+export interface FilaPartidaFinal {
+  partida_id: number;
+  num: number | null;
+  /** Lo pedido por ventas (referencia del diff). */
+  cantidadPedida: string;
+  unidadPedida: Unidad;
+  descripcionPedida: string;
+  /** Lo que fija compras (editable). */
+  cantidad: string;
+  unidad: Unidad;
+  descripcion: string;
+}
+
+/** Fila inicial a partir del renglón MODIFICACION del snapshot: lo pedido por
+ * ventas (o lo anterior, si ese campo no cambió). */
+export function filaPartidaFinal(p: CambioPartidaOut): FilaPartidaFinal | null {
+  if (p.tipo !== "MODIFICACION" || p.partida_id === null) return null;
+  const cantidad = p.cantidad_nueva ?? p.cantidad_anterior ?? "";
+  const unidad = (p.unidad_nueva ?? p.unidad_anterior ?? "PZ") as Unidad;
+  const descripcion = p.descripcion_nueva ?? p.descripcion;
+  return {
+    partida_id: p.partida_id,
+    num: p.num_partida,
+    cantidadPedida: cantidad,
+    unidadPedida: unidad,
+    descripcionPedida: descripcion,
+    cantidad,
+    unidad,
+    descripcion,
+  };
+}
+
+/** Body `partidas` de la aprobación: SOLO los campos en que compras se aparta
+ * de lo pedido (el backend registra el ajuste en el snapshot y lo dice en la
+ * notificación). Devuelve error si una cantidad final no es > 0 o la
+ * descripción quedó vacía. */
+export function armarAjustesPartida(filas: FilaPartidaFinal[]): {
+  partidas: AjustePartidaBody[];
+  error: string | null;
+} {
+  const partidas: AjustePartidaBody[] = [];
+  for (const f of filas) {
+    const cantidad = f.cantidad.trim();
+    const descripcion = f.descripcion.trim();
+    if (!(Number(cantidad) > 0)) {
+      return { partidas: [], error: `Partida ${f.num ?? ""}: la cantidad debe ser mayor a 0` };
+    }
+    if (!descripcion) {
+      return { partidas: [], error: `Partida ${f.num ?? ""}: la descripción no puede quedar vacía` };
+    }
+    const ajuste: AjustePartidaBody = { partida_id: f.partida_id };
+    if (Number(cantidad) !== Number(f.cantidadPedida)) ajuste.cantidad = cantidad;
+    if (f.unidad !== f.unidadPedida) ajuste.unidad = f.unidad;
+    if (descripcion !== f.descripcionPedida.trim()) ajuste.descripcion = descripcion;
+    if (ajuste.cantidad !== undefined || ajuste.unidad !== undefined || ajuste.descripcion !== undefined) {
+      partidas.push(ajuste);
+    }
+  }
+  return { partidas, error: null };
+}
+
+/** Regla de la unidad: si la unidad FINAL difiere de la del renglón cotizado,
+ * el precio anterior queda inválido y el comprador debe capturarlo. */
+export function unidadInvalidaPrecio(unidadFinal: string, unidadRenglon: string): boolean {
+  return unidadFinal !== unidadRenglon;
+}
+
+/** Texto del ajuste de compras para el diff (null = respetó lo pedido). */
+export function textoAjusteCompras(p: CambioPartidaOut): string | null {
+  const partes: string[] = [];
+  if (p.cantidad_ajustada !== null || p.unidad_ajustada !== null) {
+    partes.push(
+      `compras ajustó a ${p.cantidad_ajustada ?? p.cantidad_nueva} ${p.unidad_ajustada ?? p.unidad_nueva}`,
+    );
+  }
+  if (p.descripcion_ajustada) partes.push(`descripción final: “${p.descripcion_ajustada}”`);
+  return partes.length > 0 ? partes.join(" · ") : null;
 }

@@ -55,7 +55,12 @@ from app.modules.metricas.schemas import (
     SinDesenlaceOut,
     TiemposEtapaOut,
 )
-from app.modules.metricas.tiempos import ESTADOS_COMPRAS, ESTADOS_VENTAS, cargar_tiempos
+from app.modules.metricas.tiempos import (
+    ESTADOS_COMPRAS,
+    ESTADOS_RESPUESTA_VENTAS,
+    ESTADOS_VENTAS,
+    cargar_tiempos,
+)
 
 Dimension = Literal["comprador", "sucursal", "vendedor", "cliente"]
 
@@ -715,7 +720,18 @@ def tiempos_etapa(db: Session, user: Usuario, f: Filtros) -> TiemposEtapaOut:
     ventas (F8f). Universo: solicitudes CREADAS en el periodo (mismo criterio
     que el embudo). Solo alimentan las estadísticas los segmentos CERRADOS
     (una estancia vigente aún no terminó); la observación es la SUMA por
-    solicitud de sus segmentos cerrados en el estado o grupo."""
+    solicitud de sus segmentos cerrados en el estado o grupo.
+
+    F15 p.4 — universo del agregado VENTAS: una solicitud entra SOLO si ventas
+    ya cerró un turno de RESPUESTA (segmento cerrado en COTIZADA o RECHAZADA).
+    Causa raíz del "mediana 0.0 h": en producción "Guardar y enviar" cierra el
+    BORRADOR en segundos, así que TODA solicitud enviada aportaba una
+    observación ≈ 0 h aunque ventas no hubiera tenido nada que responder; con
+    más de la mitad del universo en cero la mediana era 0.0 mientras el
+    promedio lo sostenían las pocas COTIZADAS resueltas. Promedio y mediana
+    salen del MISMO conjunto; el valor sigue siendo la suma de los segmentos
+    cerrados en ESTADOS_VENTAS (idéntico al "Tiempo ventas" del detalle y del
+    export). El desglose por_estado NO cambia."""
     f = con_scoping(user, f)
     ini, fin = _limites(f)
     ids = list(
@@ -738,7 +754,7 @@ def tiempos_etapa(db: Session, user: Usuario, f: Filtros) -> TiemposEtapaOut:
             por_estado[estado.value].append(horas)
         if any(e in ESTADOS_COMPRAS for e in sumas):
             compras.append(sum(h for e, h in sumas.items() if e in ESTADOS_COMPRAS))
-        if any(e in ESTADOS_VENTAS for e in sumas):
+        if any(e in ESTADOS_RESPUESTA_VENTAS for e in sumas):
             ventas.append(sum(h for e, h in sumas.items() if e in ESTADOS_VENTAS))
     return TiemposEtapaOut(
         por_estado={estado: _estadistica(obs) for estado, obs in por_estado.items()},

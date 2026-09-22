@@ -35,6 +35,41 @@ export function queryFiltrosDashboard(
   };
 }
 
+/** F15 p.1 — periodo de Comparativas: sin rango elegido, "mes en curso"
+ * (preset del dashboard); con rango, desde/hasta tal cual (un extremo vacío
+ * queda abierto). `titulo` es lo que muestra el encabezado: deja de decir
+ * "mes en curso" en cuanto el rango cambia. */
+export interface PeriodoComparativas {
+  params: Record<string, string | number | undefined>;
+  titulo: string;
+  personalizado: boolean;
+}
+
+function fechaCorta(iso: string): string {
+  return dayjs(iso).format("DD/MMM/YYYY");
+}
+
+export function periodoComparativas(
+  rango: [string | null, string | null],
+  hoy: string = dayjs().format("YYYY-MM-DD"),
+): PeriodoComparativas {
+  const [inicio, fin] = rango;
+  if (!inicio && !fin) {
+    return {
+      params: queryFiltrosDashboard({ preset: "mes" }, hoy),
+      titulo: "mes en curso",
+      personalizado: false,
+    };
+  }
+  const desde = inicio ? dayjs(inicio).format("YYYY-MM-DD") : undefined;
+  const hasta = fin ? dayjs(fin).format("YYYY-MM-DD") : undefined;
+  let titulo: string;
+  if (desde && hasta) titulo = `del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
+  else if (desde) titulo = `desde el ${fechaCorta(desde)}`;
+  else titulo = `hasta el ${fechaCorta(hasta as string)}`;
+  return { params: { desde, hasta }, titulo, personalizado: true };
+}
+
 export interface RequisitosBaja {
   requiereTitularidades: boolean;
   requiereSolicitudes: boolean;

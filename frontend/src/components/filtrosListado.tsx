@@ -13,8 +13,8 @@ export const PAGE = 25;
 export interface FiltrosListadoState {
   pagina: number;
   setPagina: (p: number) => void;
-  rango: [string | null, string | null];
-  setRango: (v: [string | null, string | null]) => void;
+  rango: RangoFechasValor;
+  setRango: (v: RangoFechasValor) => void;
   buscar: string;
   setBuscar: (v: string) => void;
   /** Listo para el query: desde/hasta en YYYY-MM-DD y buscar con debounce. */
@@ -24,12 +24,12 @@ export interface FiltrosListadoState {
 
 export function useFiltrosListado(): FiltrosListadoState {
   const [pagina, setPagina] = useState(1);
-  const [rango, setRangoInterno] = useState<[string | null, string | null]>([null, null]);
+  const [rango, setRangoInterno] = useState<RangoFechasValor>([null, null]);
   const [buscar, setBuscarInterno] = useState("");
   const [buscarDebounced] = useDebouncedValue(buscar, 300);
 
   // Cualquier cambio de filtro regresa a la página 1.
-  const setRango = (v: [string | null, string | null]) => {
+  const setRango = (v: RangoFechasValor) => {
     setRangoInterno(v);
     setPagina(1);
   };
@@ -54,17 +54,33 @@ export function useFiltrosListado(): FiltrosListadoState {
   };
 }
 
+export type RangoFechasValor = [string | null, string | null];
+
+/** El selector de RANGO DE FECHAS del listado de Solicitudes — único en el
+ * sistema. F15 p.1: lo reusa Comparativas (sin duplicar el control). */
+export function RangoFechas({
+  value,
+  onChange,
+}: {
+  value: RangoFechasValor;
+  onChange: (v: RangoFechasValor) => void;
+}) {
+  return (
+    <DatePickerInput
+      type="range"
+      placeholder="Rango de fechas"
+      value={value}
+      onChange={onChange}
+      clearable
+      w={240}
+    />
+  );
+}
+
 export function FiltrosRangoBusqueda({ estado }: { estado: FiltrosListadoState }) {
   return (
     <Group mb="sm" gap="sm">
-      <DatePickerInput
-        type="range"
-        placeholder="Rango de fechas"
-        value={estado.rango}
-        onChange={estado.setRango}
-        clearable
-        w={240}
-      />
+      <RangoFechas value={estado.rango} onChange={estado.setRango} />
       <TextInput
         placeholder="Buscar folio o cliente"
         value={estado.buscar}

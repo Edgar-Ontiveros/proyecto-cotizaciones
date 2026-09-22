@@ -328,7 +328,9 @@ def test_metricas_tiempos_etapa(client, db, entorno, auth_headers):
     ENVIADA abierta NO cuenta.
 
     ENVIADA: n=1 (solo A) → prom=med=4. BORRADOR: n=2, obs {2,1} → prom=med=1.5.
-    Compras: n=1 (solo A) → 9. Ventas: n=2, obs {6,1} → prom=med=3.5.
+    Compras: n=1 (solo A) → 9. Ventas (F15 p.4): n=1 — solo A cerró un turno
+    de respuesta (COTIZADA); B solo tiene BORRADOR cerrado y NO entra → obs
+    {6} → prom=med=6.
     """
     _flujo_completo(db, entorno)
     _sintetica(
@@ -360,9 +362,9 @@ def test_metricas_tiempos_etapa(client, db, entorno, auth_headers):
         "mediana_horas_habiles": 9.0,
     }
     assert datos["ventas"] == {
-        "n": 2,
-        "promedio_horas_habiles": 3.5,
-        "mediana_horas_habiles": 3.5,
+        "n": 1,
+        "promedio_horas_habiles": 6.0,
+        "mediana_horas_habiles": 6.0,
     }
 
 

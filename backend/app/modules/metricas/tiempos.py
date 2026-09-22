@@ -48,6 +48,10 @@ from app.modules.metricas.ciclos import festivos_de
 ESTADOS_TERMINALES = frozenset({Estado.CONFIRMADA, Estado.NO_CONFIRMADA, Estado.CANCELADA})
 ESTADOS_COMPRAS = frozenset({Estado.ENVIADA, Estado.EN_PROCESO})
 ESTADOS_VENTAS = frozenset({Estado.BORRADOR, Estado.COTIZADA, Estado.RECHAZADA})
+# F15 p.4: estados donde ventas RESPONDE a compras (la solicitud ya pasó por el
+# comprador). El BORRADOR es tiempo de ventas, pero no una respuesta: en el
+# agregado del dashboard una solicitud cuenta solo si cerró uno de estos.
+ESTADOS_RESPUESTA_VENTAS = frozenset({Estado.COTIZADA, Estado.RECHAZADA})
 
 
 @dataclass(frozen=True)

@@ -83,6 +83,11 @@ class CambioPartida(Base):
 
     Filas pre-F13: tipo_renglon = MODIFICACION (server_default), num_partida y
     descripciones NULL — el service cae al lookup vivo por partida_id para ellas.
+
+    F15 p.3 — recotización completa: al APROBAR, compras puede fijar un valor
+    FINAL distinto al pedido para cantidad, unidad y/o descripción de una
+    MODIFICACION. Ese ajuste queda en `*_ajustada` (NULL = respetó lo pedido);
+    las columnas *_anterior / *_nueva no se tocan jamás.
     """
 
     __tablename__ = "cambio_partidas"
@@ -110,5 +115,9 @@ class CambioPartida(Base):
     cantidad_nueva: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
     unidad_anterior: Mapped[str | None]
     unidad_nueva: Mapped[str | None]
+    # F15 p.3: valor final de compras cuando difiere de lo pedido (solo MODIFICACION).
+    cantidad_ajustada: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
+    unidad_ajustada: Mapped[str | None]
+    descripcion_ajustada: Mapped[str | None] = mapped_column(Text)
 
     cambio: Mapped[SolicitudCambio] = relationship(back_populates="partidas")

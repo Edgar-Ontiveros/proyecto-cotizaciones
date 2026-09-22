@@ -215,6 +215,11 @@ export interface CambioPartidaOut {
   cantidad_nueva: string | null;
   unidad_anterior: string | null;
   unidad_nueva: string | null;
+  // F15 p.3: lo que compras fijó al aprobar cuando difiere de lo pedido
+  // (null = respetó lo solicitado). Solo MODIFICACION.
+  cantidad_ajustada: string | null;
+  unidad_ajustada: string | null;
+  descripcion_ajustada: string | null;
 }
 
 export interface CambioOut {
