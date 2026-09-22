@@ -2,12 +2,14 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.permissions import get_current_user, require_roles, ve_fincada
 from app.models.solicitud import Estado, Prioridad
+from app.models.sucursal import Sucursal
 from app.models.usuario import Rol, Usuario
 from app.modules.archivos import service as archivos_service
 from app.modules.archivos.router import a_comprobante_out
@@ -16,6 +18,7 @@ from app.modules.cotizaciones import service as cotizaciones_service
 from app.modules.metricas import ciclos as ciclos_mod
 from app.modules.metricas import tiempos as tiempos_mod
 from app.modules.metricas.schemas import CicloOut, SegmentoOut, TiemposOut
+from app.modules.pedidos import service as pedidos_service
 from app.modules.solicitudes import service
 from app.modules.solicitudes.schemas import (
     EliminacionListOut,
@@ -244,6 +247,9 @@ def detalle_solicitud(
         **base.model_dump(),
         vendedor_nombre=vendedor_nombre,
         sucursal_nombre=sucursal_nombre,
+        sucursal_serie_sap=db.scalar(
+            select(Sucursal.serie_sap).where(Sucursal.id == solicitud.sucursal_id)
+        ),
         comprador_nombre=comprador_nombre,
         ciclos=ciclos,
         partidas=service.partidas_de(db, solicitud.id),
@@ -252,6 +258,8 @@ def detalle_solicitud(
         tiempos=_tiempos_out(tiempos) if tiempos is not None else None,
         comprobantes=comprobantes,
         cambios=cambios_service.cambios_de(db, solicitud.id),
+        # F16a: OC de SAP serializadas para el rol (ventas sin dinero).
+        ocs=pedidos_service.ocs_out_de(db, solicitud.id, user.rol),
     )
     # F10 p.2: solo el VENDEDOR queda sin proveedor/consolidado; todos los
     # demás roles reciben la vista completa de compras.

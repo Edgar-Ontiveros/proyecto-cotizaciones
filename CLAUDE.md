@@ -18,7 +18,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 
 | Capa | Tecnología |
 |---|---|
-| Backend | Python 3.12 · FastAPI · SQLAlchemy 2.0 (sintaxis 2.0) · Alembic · Pydantic v2 + pydantic-settings · psycopg 3 (sync) · PyJWT · argon2-cffi · structlog · APScheduler (solo proceso scheduler) · openpyxl · boto3 |
+| Backend | Python 3.12 · FastAPI · SQLAlchemy 2.0 (sintaxis 2.0) · Alembic · Pydantic v2 + pydantic-settings · psycopg 3 (sync) · PyJWT · argon2-cffi · structlog · APScheduler (solo proceso scheduler) · openpyxl · boto3 · hdbcli (F16a: SAP HANA, SOLO SELECT) |
 | Base de datos | PostgreSQL 17 |
 | Frontend | React 19 · TypeScript strict · Vite 7 · Mantine 9 · mantine-datatable 9 · TanStack Query 5 · React Router 7 · Recharts 3 · @mantine/form + Zod 4 · dayjs (utc+timezone) |
 | Tooling | uv · ruff (lint+format) · mypy · pytest (+cov) · Vitest + RTL · Docker Compose · GitHub Actions |
@@ -28,6 +28,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
 - NO SQLModel, NO axios (wrapper propio sobre fetch), NO Redis/Celery, NO microservicios, NO localStorage/sessionStorage para tokens.
 - NO archivos adjuntos, con UNA excepción (F8g, req. de dirección): el **comprobante de pedido** — tabla `archivos` + filesystem en `ARCHIVOS_DIR` (default `./var/archivos`, en .gitignore; **F9 debe montarlo como volumen persistente e incluirlo en los backups**). Validación por magic bytes (PDF/JPG/PNG/WebP, 10 MB máx); descarga SIEMPRE autenticada vía endpoint (jamás servir el directorio como estático). Confirmar un pedido exige comprobante vigente (`422 comprobante_requerido`).
 - NO estados materializados que un job "mueva": las bandas de tiempo SIEMPRE se calculan.
+- **SAP (F16a): SOLO LECTURA.** HANA exclusivamente con `SELECT` parametrizados vía `app/integrations/sap/` (interfaz `FuenteOC`: `HanaFuenteOC` real / `FakeFuenteOC` para tests y dev). PROHIBIDO escribir a SAP y prohibido el Service Layer. La app NUNCA depende de HANA para vivir: si no responde → 503 `sap_no_disponible` en lo que lo necesita y `/health` reporta `"sap": "degraded"` sin bajar el status. Los tests jamás tocan HANA (fixture `sap` = Fake); el único test real va marcado `@pytest.mark.hana` y se salta sin `HANA_HOST`. Credenciales solo por entorno (`HANA_*`, en prod desde Secrets Manager `cotiza/prod/hana`), nunca en código. El estatus de una OC se DERIVA siempre (`integrations/sap/estatus.py`), nunca se edita a mano.
 
 ## Estructura del monorepo
 
@@ -36,6 +37,7 @@ Plataforma interna de solicitudes de cotización de pedido especial para Comerci
   /app
     main.py            # FastAPI app (API pura, sin scheduler)
     /core              # config, database, security, permissions, logging, horario_habil
+    /integrations/sap  # F16a: FuenteOC (base), HanaFuenteOC, FakeFuenteOC, estatus derivado, factory
     /models            # SQLAlchemy (un módulo por agregado)
     /modules/<dominio> # router.py, service.py, schemas.py
     /scheduler         # proceso aparte: python -m app.scheduler
@@ -112,6 +114,8 @@ cd backend && uv sync && uv run alembic upgrade head
 uv run python -m app.cli seed                      # datos reales demo (idempotente)
 uv run uvicorn app.main:app --reload               # API :8000
 uv run python -m app.scheduler                     # scheduler (proceso aparte; SCHEDULER_BANDAS_SEGUNDOS para bajar el intervalo en dev)
+# SAP (F16a): FUENTE_OC=fake por default (OC real 31000103 precargada); FUENTE_OC=hana + HANA_HOST/USER/PASSWORD para HANA real (VPN)
+HANA_HOST=… HANA_USER=… HANA_PASSWORD=… uv run pytest -m hana   # integración real (se salta sin HANA_HOST)
 cd frontend && npm install && npm run dev          # Vite :5173 (proxy /api → :8000)
 
 # calidad (obligatorio antes de cerrar cualquier fase)

@@ -17,6 +17,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
 import { dinero, fecha } from "../lib/format";
 import type { OpcionOut, SolicitudDetailOut } from "../lib/types";
+import { abrirModalOC } from "./PedidoSap";
 
 // F12 p.5: el fincado es interno del área compras — los mismos roles a los
 // que el backend manda las claves (el resto ni siquiera las recibe).
@@ -38,6 +39,24 @@ export function SeccionFincada({ solicitud }: { solicitud: SolicitudDetailOut })
     return null;
   }
   const fincada = solicitud.fincada;
+  // F16a §4: fincar EXIGE OC de SAP — sin OC vinculada, el botón abre el
+  // modal Buscar → Vincular → Fincar; con OC, finca directo. Las fincadas
+  // legado (sin OC) siguen válidas y ofrecen agregar la OC.
+  const sinOC = solicitud.ocs.length === 0;
+  const alClic = () => {
+    if (!fincada && sinOC) {
+      abrirModalOC(solicitud, true);
+      return;
+    }
+    marcar.mutate(!fincada, {
+      onError: (e: unknown) => {
+        notifications.show({
+          message: e instanceof ApiError ? e.detail : "No se pudo actualizar el fincado",
+          color: "red",
+        });
+      },
+    });
+  };
   return (
     <Paper
       withBorder
@@ -70,24 +89,32 @@ export function SeccionFincada({ solicitud }: { solicitud: SolicitudDetailOut })
               {fecha(solicitud.fincada_en)}
             </Text>
           )}
+          {fincada && sinOC && (
+            <Text size="xs" c="orange">
+              Sin OC vinculada (fincada antes de la integración con SAP).
+            </Text>
+          )}
         </div>
-        <Button
-          variant={fincada ? "light" : "filled"}
-          color="teal"
-          loading={marcar.isPending}
-          onClick={() =>
-            marcar.mutate(!fincada, {
-              onError: (e: unknown) => {
-                notifications.show({
-                  message: e instanceof ApiError ? e.detail : "No se pudo actualizar el fincado",
-                  color: "red",
-                });
-              },
-            })
-          }
-        >
-          {fincada ? "Quitar FINCADA" : "Marcar como FINCADA"}
-        </Button>
+        <Group gap="xs">
+          {fincada && sinOC && (
+            <Button
+              variant="light"
+              color="teal"
+              data-testid="boton-agregar-oc"
+              onClick={() => abrirModalOC(solicitud, false)}
+            >
+              Agregar OC
+            </Button>
+          )}
+          <Button
+            variant={fincada ? "light" : "filled"}
+            color="teal"
+            loading={marcar.isPending}
+            onClick={alClic}
+          >
+            {fincada ? "Quitar FINCADA" : "Marcar como FINCADA"}
+          </Button>
+        </Group>
       </Group>
     </Paper>
   );

@@ -44,6 +44,7 @@ import { BannerCambioComprador } from "../../components/Cambios";
 import { SeccionComprobante } from "../../components/Comprobante";
 import { ControlesImpresion } from "../../components/Impresion";
 import { SeccionFincada, VistaPedido } from "../../components/Pedido";
+import { SeccionPedidoSap } from "../../components/PedidoSap";
 import { BadgeEstado, SemaforoBanda } from "../../components/compartidos";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
@@ -790,6 +791,7 @@ export function CapturaCotizacion() {
         <>
           {/* F12 p.5: fincado interno del área compras, sobre el pedido. */}
           <SeccionFincada solicitud={solicitud} />
+          <SeccionPedidoSap solicitud={solicitud} />
           <VistaPedido solicitud={solicitud} />
         </>
       )}

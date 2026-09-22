@@ -107,7 +107,22 @@ def db(_database):
 
 
 @pytest.fixture
+def sap(client):
+    """F16a: la fuente de OC del test — un FakeFuenteOC NUEVO por test
+    (precargado con la OC real 31000103). Los tests JAMÁS tocan HANA."""
+    from app.integrations.sap.factory import get_fuente_oc
+
+    fake = app.dependency_overrides[get_fuente_oc]()
+    return fake
+
+
+@pytest.fixture
 def client(db):
+    from app.integrations.sap.factory import get_fuente_oc
+    from app.integrations.sap.fake import FakeFuenteOC
+
+    fake = FakeFuenteOC()
+    app.dependency_overrides[get_fuente_oc] = lambda: fake
     app.dependency_overrides[get_db] = lambda: db
     # base_url https: la cookie de refresh es Secure y el jar la exige.
     with TestClient(app, base_url="https://testserver") as c:

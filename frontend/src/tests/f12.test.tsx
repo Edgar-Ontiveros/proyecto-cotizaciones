@@ -49,6 +49,7 @@ function solicitud(sobre: Partial<SolicitudDetailOut>): SolicitudDetailOut {
     fincada_por: null,
     fincada_en: null,
     fincada_por_nombre: null,
+    ocs: [], // F16a: sin OC vinculada
     ...sobre,
   } as unknown as SolicitudDetailOut;
 }

@@ -1,19 +1,7 @@
 /** Vista principal del comprador: MI PANEL (los números con los que lo
  * evalúan) arriba y su COLA abajo (urgentes primero, luego T descendente). */
 
-import {
-  Alert,
-  Badge,
-  Card,
-  Checkbox,
-  Group,
-  SegmentedControl,
-  SimpleGrid,
-  Stack,
-  Tabs,
-  Text,
-  Title,
-} from "@mantine/core";
+import { Alert, Badge, Button, Card, Checkbox, Group, SegmentedControl, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
 import { DataTable } from "mantine-datatable";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -177,6 +165,11 @@ export function PanelComprador() {
   return (
     <Stack>
       <MiPanel />
+      <Group justify="flex-end">
+        <Button variant="light" size="compact-sm" onClick={() => navigate("/comprador/pedidos")}>
+          Pedidos en SAP
+        </Button>
+      </Group>
       <Tabs value={tab} onChange={(v) => { setTab(v); setPagina(1); }}>
         <Tabs.List>
           <Tabs.Tab value="cola">Cola ({cola.length})</Tabs.Tab>

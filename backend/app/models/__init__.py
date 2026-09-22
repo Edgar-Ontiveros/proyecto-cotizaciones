@@ -10,6 +10,7 @@ from app.models.eliminacion import SolicitudEliminada
 from app.models.historial import HistorialEstado
 from app.models.impresion import DocumentoImpresion, Impresion
 from app.models.notificacion import Notificacion
+from app.models.pedido import SolicitudOC
 from app.models.refresh_token import RefreshToken
 from app.models.scheduler_heartbeat import SchedulerHeartbeat
 from app.models.solicitud import Estado, Prioridad, Solicitud, SolicitudPartida
@@ -43,6 +44,7 @@ __all__ = [
     "Solicitud",
     "SolicitudCambio",
     "SolicitudEliminada",
+    "SolicitudOC",
     "SolicitudPartida",
     "Sucursal",
     "Usuario",

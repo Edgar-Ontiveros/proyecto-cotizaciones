@@ -200,6 +200,8 @@ export interface SucursalBody {
   prefijo_folio: string;
   timezone: string;
   contador_inicial?: number;
+  // F16a: prefijo de la serie de OC en SAP (CH, CN, LE…).
+  serie_sap?: string | null;
 }
 
 export function useCrearSucursal() {

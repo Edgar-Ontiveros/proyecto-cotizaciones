@@ -11,6 +11,7 @@ from app.modules.archivos.schemas import ComprobanteOut
 from app.modules.cambios.schemas import CambioOut
 from app.modules.cotizaciones.schemas import OpcionCompradorOut, OpcionConsolidadoOut, OpcionOut
 from app.modules.metricas.schemas import CicloOut, TiemposOut
+from app.modules.pedidos.schemas import OCComprasOut, OCVentasOut
 
 
 class PartidaIn(BaseModel):
@@ -212,6 +213,8 @@ class SolicitudDetailOut(SolicitudOut):
     # dinero: lo ve todo rol con acceso).
     vendedor_nombre: str | None = None
     sucursal_nombre: str | None = None
+    # F16a: serie SAP de la sucursal (precarga del modal de OC).
+    sucursal_serie_sap: str | None = None
     comprador_nombre: str | None = None
     partidas: list[PartidaOut]
     opciones: list[OpcionOut]
@@ -225,6 +228,8 @@ class SolicitudDetailOut(SolicitudOut):
     comprobantes: list[ComprobanteOut] = []
     # F8h: historial completo de cambios de cantidad/unidad (ambos lados).
     cambios: list[CambioOut] = []
+    # F16a: OC de SAP vinculadas — vista de VENTAS (sin proveedor ni dinero).
+    ocs: list[OCVentasOut] = []
 
 
 class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
@@ -234,6 +239,8 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
 
     vendedor_nombre: str | None = None
     sucursal_nombre: str | None = None
+    # F16a: serie SAP de la sucursal (precarga del modal de OC).
+    sucursal_serie_sap: str | None = None
     comprador_nombre: str | None = None
     partidas: list[PartidaOut]
     opciones: list[OpcionConsolidadoOut]
@@ -243,6 +250,7 @@ class SolicitudDetailVentasOut(SolicitudConsolidadoOut):
     tiempos: TiemposOut | None = None
     comprobantes: list[ComprobanteOut] = []
     cambios: list[CambioOut] = []
+    ocs: list[OCVentasOut] = []
 
 
 class SolicitudDetailCompradorOut(SolicitudDetailVentasOut):
@@ -261,6 +269,8 @@ class SolicitudDetailComprasOut(SolicitudDetailCompradorOut):
     fincada_por: int | None = None
     fincada_en: datetime | None = None
     fincada_por_nombre: str | None = None
+    # F16a: vista COMPRAS de las OC (proveedor, montos, TC, precios de línea).
+    ocs: list[OCComprasOut] = []  # type: ignore[assignment]
 
 
 class SolicitudListOut(BaseModel):

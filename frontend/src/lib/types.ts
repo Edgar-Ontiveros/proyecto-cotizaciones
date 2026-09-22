@@ -253,6 +253,9 @@ export interface SolicitudDetailOut extends SolicitudOut {
   cambios: CambioOut[];
   // F12 p.5: para el rótulo "Fincada por X el DD/MM" (solo área compras).
   fincada_por_nombre?: string | null;
+  // F16a: serie SAP de la sucursal (precarga del modal de OC) y OC vinculadas.
+  sucursal_serie_sap?: string | null;
+  ocs: OCOut[];
 }
 
 // F12 p.4: fila de la bitácora de eliminaciones (solo admin, solo lectura).
@@ -366,6 +369,8 @@ export interface ResetPasswordOut {
 }
 
 export interface SucursalOut {
+  // F16a: prefijo de la serie de OC en SAP (CH, CN, LE…); null = sin mapeo.
+  serie_sap: string | null;
   id: number;
   nombre: string;
   prefijo_folio: string;
@@ -515,4 +520,113 @@ export interface FiltrosCatalogoOut {
   sucursales: OpcionFiltroOut[];
   compradores: OpcionFiltroOut[] | null;
   vendedores: OpcionFiltroOut[] | null;
+}
+
+// ------------------------------------------------ F16a: pedidos en SAP
+
+export type EstatusOC =
+  | "CANCELADA"
+  | "FACTURADA"
+  | "RECIBIDA"
+  | "PARCIALMENTE_RECIBIDA"
+  | "CERRADA_SIN_RECIBIR"
+  | "ABIERTA";
+
+export interface LineaOCOut {
+  num_linea: number;
+  articulo: string | null;
+  descripcion: string | null;
+  cantidad: string;
+  cantidad_abierta: string;
+  almacen: string | null;
+  estatus_linea: string | null;
+  fecha_entrega: string | null;
+  // Solo compras/admin (OCComprasOut): el lado ventas no recibe estas claves.
+  precio?: string | null;
+  importe?: string | null;
+  moneda?: string | null;
+}
+
+export interface EntradaOCOut {
+  doc_num: number;
+  fecha: string | null;
+  cancelada: boolean;
+  donde: string[];
+  cantidad_total: string;
+}
+
+export interface FacturaOCOut {
+  doc_num: number;
+  fecha: string | null;
+  cancelada: boolean;
+  ligada_a: string;
+  // Solo compras/admin.
+  total?: string | null;
+  moneda?: string | null;
+}
+
+/** OC de SAP vinculada. Las claves opcionales SOLO llegan a comprador,
+ * gerente_compras y admin (OCComprasOut); para ventas no existen en el JSON. */
+export interface OCOut {
+  id: number;
+  doc_num: number;
+  serie: string | null;
+  sucursal_sap: string | null;
+  estatus_derivado: EstatusOC;
+  vencida: boolean;
+  fecha_creacion: string | null;
+  fecha_contabilizacion: string | null;
+  fecha_entrega: string | null;
+  donde_oc: string | null;
+  donde_entrada: string | null;
+  ultimo_sync_en: string;
+  ultimo_error: string | null;
+  vinculada_por_nombre: string | null;
+  vinculada_en: string;
+  lineas: LineaOCOut[];
+  entradas: EntradaOCOut[];
+  facturas: FacturaOCOut[];
+  proveedor_codigo?: string | null;
+  proveedor?: string | null;
+  moneda?: string | null;
+  total?: string | null;
+  tipo_cambio?: string | null;
+  comentarios?: string | null;
+  encargado_compras?: string | null;
+}
+
+export interface OCBusquedaOut {
+  doc_entry: number;
+  doc_num: number;
+  serie: string | null;
+  sucursal_sap: string | null;
+  proveedor: string | null;
+  encargado_compras: string | null;
+  fecha_contabilizacion: string | null;
+  fecha_entrega: string | null;
+  moneda: string | null;
+  total: string | null;
+  estatus_derivado: EstatusOC;
+  vencida: boolean;
+  donde_oc: string | null;
+  advertencia_encargado: string | null;
+  ya_vinculada_aqui: boolean;
+}
+
+export interface PedidoItemOut {
+  solicitud_id: number;
+  folio: string | null;
+  cliente_nombre: string | null;
+  estado: Estado;
+  sucursal_id: number;
+  sucursal_nombre: string;
+  fincada: boolean | null;
+  ocs: OCOut[];
+}
+
+export interface PedidosListOut {
+  items: PedidoItemOut[];
+  total: number;
+  limit: number;
+  offset: number;
 }

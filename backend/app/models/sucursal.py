@@ -15,6 +15,10 @@ class Sucursal(Base):
     prefijo_folio: Mapped[str] = mapped_column(unique=True)
     timezone: Mapped[str]  # zona IANA, ej. America/Chihuahua
     activa: Mapped[bool] = mapped_column(server_default=true())
+    # F16a: "sucursal SAP" = prefijo de la SERIE de numeración de las OC en
+    # SAP B1 (NNM1.SeriesName sin el punto final: CH, CN, MA, TIK, JU, HE,
+    # OB, CU, ME, MTY, LE). La empresa no usa sucursales SAP (OBPL vacía).
+    serie_sap: Mapped[str | None]
 
 
 class CompradorSucursal(Base):

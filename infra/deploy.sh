@@ -37,6 +37,17 @@ parametro() {
 }
 db_app_json="$(secreto cotiza/prod/db-app)"
 jwt_secret="$(secreto cotiza/prod/jwt | jq -r .jwt_secret)"
+# F16a: HANA SOLO LECTURA (U_REPORTS2) — host del puente HAProxy, tenant HCP,
+# esquema SBO_COMINOX. El secreto lo crea Edgar con su sesión aws-mfa:
+#   aws secretsmanager create-secret --name cotiza/prod/hana --secret-string \
+#     '{"host":"172.31.22.113","port":"30015","user":"U_REPORTS2","password":"…","schema":"SBO_COMINOX"}'
+# Si falta, el despliegue ABORTA aquí (antes de migraciones, contenedores intactos).
+hana_json="$(secreto cotiza/prod/hana)"
+hana_host="$(jq -r .host <<<"$hana_json")"
+hana_port="$(jq -r '.port // "30015"' <<<"$hana_json")"
+hana_user="$(jq -r .user <<<"$hana_json")"
+hana_password="$(jq -r .password <<<"$hana_json")"
+hana_schema="$(jq -r '.schema // "SBO_COMINOX"' <<<"$hana_json")"
 db_user="$(jq -r .username <<<"$db_app_json")"
 db_pass_enc="$(jq -r '.password|@uri' <<<"$db_app_json")"
 db_host="$(jq -r .host <<<"$db_app_json")"
@@ -57,6 +68,12 @@ DB_MAX_OVERFLOW=$(parametro /cotiza/prod/db_max_overflow)
 SCHEDULER_DB_POOL_SIZE=$(parametro /cotiza/prod/scheduler_db_pool_size)
 SCHEDULER_DB_MAX_OVERFLOW=$(parametro /cotiza/prod/scheduler_db_max_overflow)
 ARCHIVOS_DIR=/data/archivos
+FUENTE_OC=hana
+HANA_HOST=${hana_host}
+HANA_PORT=${hana_port}
+HANA_USER=${hana_user}
+HANA_PASSWORD=${hana_password}
+HANA_SCHEMA=${hana_schema}
 ECR_REGISTRY=${ECR_REGISTRY}
 TAG=${TAG}
 EOF

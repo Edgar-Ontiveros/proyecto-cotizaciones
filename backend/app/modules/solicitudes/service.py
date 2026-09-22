@@ -504,6 +504,17 @@ def marcar_fincada(db: Session, solicitud_id: int, fincada: bool, user: Usuario)
             f"Solo un pedido CONFIRMADO se marca fincado: está en {solicitud.estado.value}",
             "estado_conflicto",
         )
+    if fincada and not solicitud.fincada:
+        # F16a §4: fincar exige al menos una OC de SAP vinculada — NUNCA se
+        # finca a ciegas. Las fincadas legado (sin OC) no se tocan.
+        from app.modules.pedidos.service import tiene_oc_activa
+
+        if not tiene_oc_activa(db, solicitud.id):
+            raise AppError(
+                422,
+                "Para fincar el pedido primero vincula su orden de compra de SAP",
+                "oc_requerida",
+            )
     solicitud.fincada = fincada
     solicitud.fincada_por = user.id
     solicitud.fincada_en = datetime.now(UTC)

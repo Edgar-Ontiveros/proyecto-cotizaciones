@@ -27,6 +27,8 @@ const SolicitudesCrm = lazy(() =>
   import("./crm/SolicitudesCrm").then((m) => ({ default: m.SolicitudesCrm })),
 );
 const DetalleCrm = lazy(() => import("./crm/DetalleCrm").then((m) => ({ default: m.DetalleCrm })));
+// F16a: sección Pedidos (todos los roles).
+const Pedidos = lazy(() => import("./views/pedidos/Pedidos").then((m) => ({ default: m.Pedidos })));
 const UsuariosCrm = lazy(() =>
   import("./crm/admin/UsuariosCrm").then((m) => ({ default: m.UsuariosCrm })),
 );
@@ -68,6 +70,7 @@ export function App() {
           <Route path="/vendedor/solicitudes/:id" element={<DetalleSolicitud />} />
           <Route path="/vendedor/solicitudes/:id/editar" element={<CapturaSolicitud modo="editar" />} />
           <Route path="/vendedor/solicitudes/:id/comparador" element={<Comparador />} />
+          <Route path="/vendedor/pedidos" element={<Pedidos />} />
         </Route>
       </Route>
 
@@ -75,6 +78,14 @@ export function App() {
         <Route element={<Layout />}>
           <Route path="/comprador" element={<PanelComprador />} />
           <Route path="/comprador/solicitudes/:id" element={<CapturaCotizacion />} />
+          <Route path="/comprador/pedidos" element={<Pedidos />} />
+        </Route>
+      </Route>
+
+      {/* F16a: /pedidos para ventas y compras (redirige al mundo del rol). */}
+      <Route element={<RequireRol roles={["vendedor", "comprador"]} />}>
+        <Route element={<Layout />}>
+          <Route path="/pedidos" element={<Pedidos />} />
         </Route>
       </Route>
 
@@ -82,6 +93,7 @@ export function App() {
         <Route element={<CrmLayout />}>
           <Route path="/crm" element={<Dashboard />} />
           <Route path="/crm/comparativas" element={<Comparativas />} />
+          <Route path="/crm/pedidos" element={<Pedidos />} />
           <Route path="/crm/solicitudes" element={<SolicitudesCrm />} />
           <Route path="/crm/nueva" element={<CapturaSolicitud modo="nueva" />} />
           <Route path="/crm/solicitudes/:id" element={<DetalleCrm />} />

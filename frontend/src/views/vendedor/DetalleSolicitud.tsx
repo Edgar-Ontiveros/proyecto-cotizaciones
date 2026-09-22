@@ -29,6 +29,7 @@ import {
 import { SeccionComprobante } from "../../components/Comprobante";
 import { ControlesImpresion } from "../../components/Impresion";
 import { SeccionFincada, VistaPedido } from "../../components/Pedido";
+import { SeccionPedidoSap } from "../../components/PedidoSap";
 import { VolverBoton } from "../../components/Volver";
 import { ApiError } from "../../lib/api";
 import { baseSolicitudes, proveedoresGanadora } from "../../lib/crm";
@@ -378,6 +379,8 @@ export function DetalleSolicitud() {
           <VistaPedido solicitud={solicitud} />
         </>
       )}
+      {/* F16a: card "Pedido en SAP" por OC (todos los roles; dinero solo compras). */}
+      <SeccionPedidoSap solicitud={solicitud} />
       <HistorialComentarios solicitud={solicitud} />
       {/* Las hojas de impresión viven DENTRO de ControlesImpresion (F14):
           solo la activa existe en el DOM y es lo único visible al imprimir. */}

@@ -58,7 +58,10 @@ def crear(db: Session, data: SucursalCreate) -> Sucursal:
     _validar_timezone(data.timezone)
     _check_unicos(db, data.nombre, data.prefijo_folio)
     sucursal = Sucursal(
-        nombre=data.nombre.strip(), prefijo_folio=data.prefijo_folio.strip(), timezone=data.timezone
+        nombre=data.nombre.strip(),
+        prefijo_folio=data.prefijo_folio.strip(),
+        timezone=data.timezone,
+        serie_sap=_serie_sap(data.serie_sap),
     )
     db.add(sucursal)
     db.flush()
@@ -75,10 +78,18 @@ def actualizar(db: Session, sucursal_id: int, data: SucursalUpdate) -> Sucursal:
     _check_unicos(db, cambios.get("nombre"), cambios.get("prefijo_folio"), excluir_id=sucursal.id)
     if cambios.get("activa") is False and sucursal.activa:
         _validar_desactivacion(db, sucursal)
+    if "serie_sap" in cambios:
+        cambios["serie_sap"] = _serie_sap(cambios["serie_sap"])
     for campo, valor in cambios.items():
         setattr(sucursal, campo, valor)
     db.commit()
     return sucursal
+
+
+def _serie_sap(valor: str | None) -> str | None:
+    """Prefijo de serie SAP normalizado (mayúsculas, sin punto); vacío → None."""
+    texto = (valor or "").strip().rstrip(".").strip().upper()
+    return texto or None
 
 
 def _validar_desactivacion(db: Session, sucursal: Sucursal) -> None:

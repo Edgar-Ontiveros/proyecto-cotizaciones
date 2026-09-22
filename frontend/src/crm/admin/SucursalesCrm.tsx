@@ -41,6 +41,7 @@ function FormSucursal({
   const [nombre, setNombre] = useState(existente?.nombre ?? "");
   const [prefijo, setPrefijo] = useState(existente?.prefijo_folio ?? "");
   const [timezone, setTimezone] = useState<string | null>(existente?.timezone ?? null);
+  const [serieSap, setSerieSap] = useState(existente?.serie_sap ?? "");
   const [contador, setContador] = useState<string | number>(0);
   const [activa, setActiva] = useState(existente?.activa ?? true);
   const crear = useCrearSucursal();
@@ -55,6 +56,7 @@ function FormSucursal({
           prefijo_folio: prefijo.trim(),
           timezone: timezone!,
           contador_inicial: Number(contador) || 0,
+          serie_sap: serieSap.trim() || null,
         },
         {
           onSuccess: () => {
@@ -67,7 +69,13 @@ function FormSucursal({
       editar.mutate(
         {
           id: existente.id,
-          body: { nombre: nombre.trim(), prefijo_folio: prefijo.trim(), timezone: timezone!, activa },
+          body: {
+            nombre: nombre.trim(),
+            prefijo_folio: prefijo.trim(),
+            timezone: timezone!,
+            activa,
+            serie_sap: serieSap.trim() || null,
+          },
         },
         {
           onSuccess: () => {
@@ -89,6 +97,12 @@ function FormSucursal({
         onChange={(e) => setPrefijo(e.currentTarget.value.toUpperCase())}
       />
       <Select label="Zona horaria (IANA)" data={ZONAS_MX} value={timezone} onChange={setTimezone} searchable />
+      <TextInput
+        label="Sucursal SAP (serie de OC)"
+        description="Prefijo de la serie de órdenes de compra en SAP: CH, CN, LE… (F16a)"
+        value={serieSap}
+        onChange={(e) => setSerieSap(e.currentTarget.value.toUpperCase())}
+      />
       {existente === null && (
         <NumberInput
           label="Contador inicial"
@@ -177,6 +191,7 @@ export function SucursalesCrm() {
           { accessor: "nombre", title: "Nombre" },
           { accessor: "prefijo_folio", title: "Prefijo" },
           { accessor: "timezone", title: "Zona horaria" },
+          { accessor: "serie_sap", title: "Serie SAP", render: (s) => s.serie_sap ?? "—" },
           {
             accessor: "activa",
             title: "Estatus",

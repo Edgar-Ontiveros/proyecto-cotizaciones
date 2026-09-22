@@ -152,6 +152,17 @@ def _notifs(db, tipo):
     return list(db.scalars(select(Notificacion).where(Notificacion.tipo == tipo)))
 
 
+def _con_oc(client, entorno, auth_headers, sid, doc_num=31000103):
+    """F16a §4: fincar exige OC vinculada — liga la OC real del Fake (serie CH)."""
+    r = client.post(
+        f"{BASE}/{sid}/ocs",
+        headers=auth_headers(entorno.comprador),
+        json={"doc_num": doc_num, "sucursal_sap": "CH"},
+    )
+    assert r.status_code == 201, r.text
+    return sid
+
+
 def test_confirmar_notifica_al_comprador_asignado(
     client, db, entorno, auth_headers, con_comprobante
 ):
@@ -511,6 +522,12 @@ def test_fincada_permisos_y_claves_por_rol(client, entorno, auth_headers, con_co
         listado = client.get(BASE, headers=auth_headers(usuario)).json()["items"]
         assert not any("fincada" in clave for item in listado for clave in item), usuario.rol
 
+    # F16a §4: sin OC vinculada NO se finca (422 oc_requerida); con OC, sí.
+    r = client.patch(
+        f"{BASE}/{sid}/fincada", headers=auth_headers(entorno.comprador), json={"fincada": True}
+    )
+    assert r.status_code == 422 and r.json()["code"] == "oc_requerida", r.text
+    _con_oc(client, entorno, auth_headers, sid)
     # Comprador ASIGNADO marca; comprador ajeno ni ve la solicitud (404).
     r = client.patch(
         f"{BASE}/{sid}/fincada", headers=auth_headers(entorno.comprador), json={"fincada": True}
@@ -542,7 +559,9 @@ def test_fincada_solo_confirmada_y_reversible(client, db, entorno, auth_headers,
     assert r.status_code == 409
     assert r.json()["code"] == "estado_conflicto"
 
-    sid = _confirmada(client, entorno, auth_headers, con_comprobante)
+    sid = _con_oc(
+        client, entorno, auth_headers, _confirmada(client, entorno, auth_headers, con_comprobante)
+    )
     notifs_antes = db.scalar(select(Notificacion.id).order_by(Notificacion.id.desc()).limit(1))
     assert (
         client.patch(
@@ -572,7 +591,9 @@ def test_fincada_solo_confirmada_y_reversible(client, db, entorno, auth_headers,
 
 
 def test_fincada_filtro_y_export_sin_columna(client, entorno, auth_headers, con_comprobante):
-    s1 = _confirmada(client, entorno, auth_headers, con_comprobante)
+    s1 = _con_oc(
+        client, entorno, auth_headers, _confirmada(client, entorno, auth_headers, con_comprobante)
+    )
     s2 = _confirmada(client, entorno, auth_headers, con_comprobante)
     client.patch(
         f"{BASE}/{s1}/fincada", headers=auth_headers(entorno.comprador), json={"fincada": True}

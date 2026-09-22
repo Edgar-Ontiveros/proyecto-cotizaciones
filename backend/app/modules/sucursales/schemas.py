@@ -9,6 +9,8 @@ class SucursalOut(BaseModel):
     prefijo_folio: str
     timezone: str
     activa: bool
+    # F16a: prefijo de la serie de OC en SAP (CH, CN, LE…); None = sin mapeo.
+    serie_sap: str | None = None
 
 
 class SucursalCreate(BaseModel):
@@ -17,6 +19,7 @@ class SucursalCreate(BaseModel):
     timezone: str = Field(min_length=1)  # IANA, validada con zoneinfo
     # Para continuar la numeración actual sin saltos (§4.2).
     contador_inicial: int = Field(default=0, ge=0)
+    serie_sap: str | None = None
 
 
 class SucursalUpdate(BaseModel):
@@ -24,6 +27,7 @@ class SucursalUpdate(BaseModel):
     prefijo_folio: str | None = Field(default=None, min_length=1)
     timezone: str | None = Field(default=None, min_length=1)
     activa: bool | None = None
+    serie_sap: str | None = None
 
 
 class FolioCounterIn(BaseModel):

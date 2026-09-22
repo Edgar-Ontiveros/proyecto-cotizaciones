@@ -27,20 +27,21 @@ from app.models.usuario import Rol, Usuario
 
 PASSWORD_DEFAULT = "Herinox2026!"
 
-# nombre · prefijo_folio provisional · timezone IANA (contador inicial 0;
+# nombre · prefijo_folio provisional · timezone IANA · serie SAP de sus OC
+# (F16a: prefijo de NNM1.SeriesName verificado en HANA; contador inicial 0;
 # prefijos y contadores los edita el admin con los valores reales).
 SUCURSALES = [
-    ("Matriz", "MTZ", "America/Chihuahua"),
-    ("Norte", "CCN", "America/Chihuahua"),
-    ("Manufactura", "MFA", "America/Chihuahua"),
-    ("TIK", "TIK", "America/Chihuahua"),
-    ("Cd. Juárez", "JRZ", "America/Ciudad_Juarez"),
-    ("Hermosillo", "HMO", "America/Hermosillo"),
-    ("Obregón", "OBR", "America/Hermosillo"),
-    ("Culiacán", "CUL", "America/Mazatlan"),
-    ("Mexicali", "MXL", "America/Tijuana"),
-    ("Monterrey", "MTY", "America/Monterrey"),
-    ("León", "LEO", "America/Mexico_City"),
+    ("Matriz", "MTZ", "America/Chihuahua", "CH"),
+    ("Norte", "CCN", "America/Chihuahua", "CN"),
+    ("Manufactura", "MFA", "America/Chihuahua", "MA"),
+    ("TIK", "TIK", "America/Chihuahua", "TIK"),
+    ("Cd. Juárez", "JRZ", "America/Ciudad_Juarez", "JU"),
+    ("Hermosillo", "HMO", "America/Hermosillo", "HE"),
+    ("Obregón", "OBR", "America/Hermosillo", "OB"),
+    ("Culiacán", "CUL", "America/Mazatlan", "CU"),
+    ("Mexicali", "MXL", "America/Tijuana", "ME"),
+    ("Monterrey", "MTY", "America/Monterrey", "MTY"),
+    ("León", "LEO", "America/Mexico_City", "LE"),
 ]
 
 # comprador → sucursales de su territorio (titular en todas).
@@ -541,12 +542,16 @@ def run(db: Session) -> dict[str, int]:
     password_hash = hash_password(PASSWORD_DEFAULT)
 
     sucursales: dict[str, Sucursal] = {}
-    for nombre, prefijo, tz in SUCURSALES:
+    for nombre, prefijo, tz, serie_sap in SUCURSALES:
         sucursal = db.scalar(select(Sucursal).where(Sucursal.nombre == nombre))
         if sucursal is None:
-            sucursal = Sucursal(nombre=nombre, prefijo_folio=prefijo, timezone=tz)
+            sucursal = Sucursal(
+                nombre=nombre, prefijo_folio=prefijo, timezone=tz, serie_sap=serie_sap
+            )
             db.add(sucursal)
             db.flush()
+        if sucursal.serie_sap is None:  # F16a: completa el mapeo sin pisar ediciones
+            sucursal.serie_sap = serie_sap
         if db.get(FolioCounter, sucursal.id) is None:
             db.add(FolioCounter(sucursal_id=sucursal.id, ultimo=0))
         sucursales[nombre] = sucursal

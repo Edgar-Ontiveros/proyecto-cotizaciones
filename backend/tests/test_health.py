@@ -12,6 +12,7 @@ def test_health_ok(client):
     assert body["status"] == "ok"
     assert body["database"] == "ok"
     assert body["scheduler"] == "n/a"
+    assert body["sap"] == "ok"  # F16a: FakeFuenteOC responde al ping
 
 
 def test_health_scheduler_degraded_y_ok(client, db):
@@ -41,4 +42,4 @@ def test_health_503_bd_caida(client):
     finally:
         app.dependency_overrides[get_db] = original
     assert r.status_code == 503
-    assert r.json() == {"status": "error", "database": "down", "scheduler": "n/a"}
+    assert r.json() == {"status": "error", "database": "down", "scheduler": "n/a", "sap": "n/a"}

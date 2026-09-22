@@ -8,6 +8,7 @@ export type SeccionCrm =
   | "dashboard"
   | "comparativas"
   | "solicitudes"
+  | "pedidos"
   | "usuarios"
   | "sucursales"
   | "territorios"
@@ -38,6 +39,8 @@ export const MENU_CRM: ItemMenuCrm[] = [
   { seccion: "dashboard", titulo: "Dashboard", ruta: "/crm" },
   { seccion: "comparativas", titulo: "Comparativas", ruta: "/crm/comparativas" },
   { seccion: "solicitudes", titulo: "Solicitudes", ruta: "/crm/solicitudes" },
+  // F16a: pedidos con OC de SAP — TODOS los roles CRM.
+  { seccion: "pedidos", titulo: "Pedidos", ruta: "/crm/pedidos" },
   { seccion: "usuarios", titulo: "Usuarios", ruta: "/crm/usuarios" },
   { seccion: "sucursales", titulo: "Sucursales", ruta: "/crm/sucursales" },
   { seccion: "territorios", titulo: "Territorios", ruta: "/crm/territorios" },
@@ -60,6 +63,7 @@ export const SECCIONES_POR_ROL: Record<RolCrm, SeccionCrm[]> = {
     "dashboard",
     "comparativas",
     "solicitudes",
+    "pedidos",
     "usuarios",
     "sucursales",
     "territorios",
@@ -67,16 +71,17 @@ export const SECCIONES_POR_ROL: Record<RolCrm, SeccionCrm[]> = {
     "catalogos",
     "eliminaciones",
   ],
-  director_ventas: ["dashboard", "comparativas", "solicitudes", "usuarios", "reasignaciones"],
+  director_ventas: ["dashboard", "comparativas", "solicitudes", "pedidos", "usuarios", "reasignaciones"],
   gerente_compras: [
     "dashboard",
     "comparativas",
     "solicitudes",
+    "pedidos",
     "usuarios",
     "territorios",
     "reasignaciones",
   ],
-  gerente_sucursal: ["dashboard", "comparativas", "solicitudes", "usuarios", "reasignaciones"],
+  gerente_sucursal: ["dashboard", "comparativas", "solicitudes", "pedidos", "usuarios", "reasignaciones"],
 };
 
 /** Tabs de comparativas visibles por rol (§2 y gates del backend). */

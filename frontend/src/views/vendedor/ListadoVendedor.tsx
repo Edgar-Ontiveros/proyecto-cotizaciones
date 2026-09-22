@@ -55,9 +55,14 @@ export function ListadoVendedor() {
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Mis solicitudes</Title>
-        <Button color="acento.6" onClick={() => navigate("/vendedor/nueva")}>
-          Nueva solicitud
-        </Button>
+        <Group gap="xs">
+          <Button variant="light" onClick={() => navigate("/vendedor/pedidos")}>
+            Pedidos en SAP
+          </Button>
+          <Button color="acento.6" onClick={() => navigate("/vendedor/nueva")}>
+            Nueva solicitud
+          </Button>
+        </Group>
       </Group>
       <Group mb="sm" gap="sm">
         <Select

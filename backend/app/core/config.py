@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # compose.prod.yml — abre su propio pool y no atiende requests).
     db_pool_size: int = 5
     db_max_overflow: int = 5
+    # F16a: fuente de órdenes de compra de SAP (SOLO lectura). "fake" para dev
+    # sin VPN y tests; "hana" en producción (HANA_* llegan por Secrets Manager,
+    # prefijo cotiza/prod/hana, renderizadas al .env por deploy.sh).
+    fuente_oc: Literal["fake", "hana"] = "fake"
+    hana_host: str | None = None
+    hana_port: int = 30015
+    hana_user: str | None = None
+    hana_password: str | None = None
+    hana_schema: str = "SBO_COMINOX"
+    hana_timeout_ms: int = 5000
 
 
 @lru_cache

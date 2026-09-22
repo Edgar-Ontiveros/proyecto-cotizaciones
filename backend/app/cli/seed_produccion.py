@@ -146,12 +146,16 @@ def run(db: Session) -> dict[str, int]:
     """Devuelve los conteos. TODOS los usuarios entran con la temporal fija
     Herinox2026! y cambio forzado."""
     sucursales: dict[str, Sucursal] = {}
-    for nombre, prefijo, tz in SUCURSALES:
+    for nombre, prefijo, tz, serie_sap in SUCURSALES:
         sucursal = db.scalar(select(Sucursal).where(Sucursal.nombre == nombre))
         if sucursal is None:
-            sucursal = Sucursal(nombre=nombre, prefijo_folio=prefijo, timezone=tz)
+            sucursal = Sucursal(
+                nombre=nombre, prefijo_folio=prefijo, timezone=tz, serie_sap=serie_sap
+            )
             db.add(sucursal)
             db.flush()
+        if sucursal.serie_sap is None:  # F16a: completa el mapeo sin pisar ediciones
+            sucursal.serie_sap = serie_sap
         if db.get(FolioCounter, sucursal.id) is None:
             # Decisión de Edgar (F9-prep): la numeración arranca LIMPIA.
             db.add(FolioCounter(sucursal_id=sucursal.id, ultimo=0))

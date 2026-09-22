@@ -12,6 +12,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.logging import configure_logging, logger, request_logging_middleware
+from app.integrations.sap.base import FuenteOC
+from app.integrations.sap.factory import get_fuente_oc
 from app.models.scheduler_heartbeat import SchedulerHeartbeat
 from app.modules.archivos.router import router as archivos_router
 from app.modules.auth.router import router as auth_router
@@ -23,6 +25,7 @@ from app.modules.cotizaciones.router import router as cotizaciones_router
 from app.modules.metricas.export import router as export_router
 from app.modules.metricas.router import router as metricas_router
 from app.modules.notificaciones.router import router as notificaciones_router
+from app.modules.pedidos.router import router as pedidos_router
 from app.modules.reasignaciones.router import router as reasignaciones_router
 from app.modules.solicitudes.router import router as solicitudes_router
 from app.modules.sucursales.router import router as sucursales_router
@@ -81,14 +84,22 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 @app.get(f"{API_PREFIX}/health")
-def health(db: Session = Depends(get_db)) -> JSONResponse:
+def health(
+    db: Session = Depends(get_db), fuente: FuenteOC = Depends(get_fuente_oc)
+) -> JSONResponse:
     try:
         db.execute(text("SELECT 1"))
     except Exception:
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "database": "down", "scheduler": "n/a"},
+            content={"status": "error", "database": "down", "scheduler": "n/a", "sap": "n/a"},
         )
+    # F16a: ping barato a SAP (un intento, timeout corto). "degraded" NO baja
+    # el status general: la app nunca depende de HANA para seguir viva.
+    try:
+        sap = "ok" if fuente.ping() else "degraded"
+    except Exception:
+        sap = "degraded"
     # Heartbeat del scheduler (F7): "n/a" solo si nunca ha corrido; con más
     # de 30 minutos sin latir, "degraded".
     ultima = db.scalar(select(SchedulerHeartbeat.ultima_corrida))
@@ -98,7 +109,9 @@ def health(db: Session = Depends(get_db)) -> JSONResponse:
         scheduler = "degraded"
     else:
         scheduler = "ok"
-    return JSONResponse(content={"status": "ok", "database": "ok", "scheduler": scheduler})
+    return JSONResponse(
+        content={"status": "ok", "database": "ok", "scheduler": scheduler, "sap": sap}
+    )
 
 
 app.include_router(auth_router, prefix=API_PREFIX)
@@ -107,8 +120,10 @@ app.include_router(clientes_router, prefix=API_PREFIX)
 # El export va ANTES del router de solicitudes: /solicitudes/export debe
 # ganarle a /solicitudes/{solicitud_id}.
 app.include_router(export_router, prefix=API_PREFIX)
-# Rutas fijas /solicitudes/{id}/comprobante y /cambios antes del genérico.
+# Rutas fijas /solicitudes/{id}/comprobante, /solicitudes/{id}/ocs y /cambios
+# antes del genérico.
 app.include_router(archivos_router, prefix=API_PREFIX)
+app.include_router(pedidos_router, prefix=API_PREFIX)
 app.include_router(cambios_router, prefix=API_PREFIX)
 app.include_router(solicitudes_router, prefix=API_PREFIX)
 app.include_router(cotizaciones_router, prefix=API_PREFIX)

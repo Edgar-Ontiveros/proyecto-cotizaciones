@@ -13,6 +13,9 @@ import type {
   MotivoOut,
   NotificacionListOut,
   NotificacionOut,
+  OCBusquedaOut,
+  OCOut,
+  PedidosListOut,
   SolicitudDetailOut,
   SolicitudListOut,
   SolicitudOut,
@@ -378,5 +381,65 @@ export function useComentar(id: number) {
     mutationFn: (texto: string) =>
       api<unknown>(`/solicitudes/${id}/comentarios`, { method: "POST", body: { texto } }),
     onSuccess: () => invalidar(id),
+  });
+}
+
+// ------------------------------------------------ F16a: pedidos en SAP
+
+export function usePedidos(params: Record<string, string | number | boolean | undefined>) {
+  return useQuery({
+    queryKey: ["pedidos", params],
+    queryFn: () => api<PedidosListOut>("/pedidos", { params }),
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** Búsqueda de la OC ANTES de vincular (tarjeta). Mutación: se dispara con el
+ * botón Buscar; los 422/409/503 los muestra el modal (errorManejado). */
+export function useBuscarOC(solicitudId: number) {
+  return useMutation({
+    meta: { errorManejado: true },
+    mutationFn: (body: { doc_num: number; sucursal_sap: string }) =>
+      api<OCBusquedaOut>(`/solicitudes/${solicitudId}/ocs/buscar`, { params: body }),
+  });
+}
+
+export function useVincularOC(solicitudId: number) {
+  const invalidar = useInvalidarSolicitudes();
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorManejado: true },
+    mutationFn: (body: { doc_num: number; sucursal_sap: string }) =>
+      api<OCOut>(`/solicitudes/${solicitudId}/ocs`, { method: "POST", body }),
+    onSuccess: () => {
+      invalidar(solicitudId);
+      void qc.invalidateQueries({ queryKey: ["pedidos"] });
+    },
+  });
+}
+
+export function useDesvincularOC(solicitudId: number) {
+  const invalidar = useInvalidarSolicitudes();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ocId: number) =>
+      api<{ ok: boolean }>(`/solicitudes/${solicitudId}/ocs/${ocId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      invalidar(solicitudId);
+      void qc.invalidateQueries({ queryKey: ["pedidos"] });
+    },
+  });
+}
+
+export function useSincronizarOCs(solicitudId: number) {
+  const invalidar = useInvalidarSolicitudes();
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorManejado: true },
+    mutationFn: () => api<OCOut[]>(`/solicitudes/${solicitudId}/ocs/sincronizar`, { method: "POST" }),
+    onSuccess: () => {
+      invalidar(solicitudId);
+      void qc.invalidateQueries({ queryKey: ["pedidos"] });
+    },
   });
 }
