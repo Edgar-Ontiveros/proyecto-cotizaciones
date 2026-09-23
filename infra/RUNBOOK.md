@@ -57,6 +57,10 @@ manual (excepcional — las migraciones son aditivas por convención).
 EL REPO (`infra/`) y se copian a la instancia vía el bucket de respaldos
 (la instancia no tiene acceso a GitHub):
 
+**`deploy.sh` se sincroniza solo** (F16a.2): cada run de `deploy.yml` sube
+`infra/deploy.sh` a `s3://<BUCKET>/bootstrap/deploy.sh` y la EC2 lo copia a
+`/opt/cotiza/deploy.sh` antes de ejecutarlo. Los otros tres siguen a mano:
+
 ```bash
 aws s3 cp infra/deploy.sh s3://<BUCKET>/bootstrap/deploy.sh --profile cotiza
 # dentro de la instancia:

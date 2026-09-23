@@ -7,6 +7,9 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: cotiza-api
+  # F16a.2: bucket de respaldos; su carpeta bootstrap/ es la vía del RUNBOOK
+  # para llevar artefactos de infra/ a la EC2 (la instancia no ve GitHub).
+  BOOTSTRAP_BUCKET: cotiza-prod-s3-backups-588301175237
 
 jobs:
   deploy:
@@ -37,12 +40,19 @@ jobs:
           docker build -t $REGISTRY/$ECR_REPOSITORY:$TAG .
           docker push $REGISTRY/$ECR_REPOSITORY:$TAG
 
+      # F16a.2: el deploy.sh de la EC2 se quedó viejo (sin el bloque HANA) y
+      # producción corrió semanas con la fuente Fake. Cada deploy sube el del
+      # repo al bootstrap de S3 y la EC2 lo sincroniza ANTES de ejecutarlo.
+      - name: Publicar deploy.sh del repo en el bootstrap de S3
+        run: |
+          aws s3 cp infra/deploy.sh "s3://$BOOTSTRAP_BUCKET/bootstrap/deploy.sh"
+
       - name: Desplegar en la EC2 vía Session Manager
         run: |
           CMD=$(aws ssm send-command \
             --targets "Key=tag:Project,Values=cotizaciones" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["cd /opt/cotiza && ./deploy.sh ${{ github.sha }}"]' \
+            --parameters 'commands=["set -e","cd /opt/cotiza","aws s3 cp s3://${{ env.BOOTSTRAP_BUCKET }}/bootstrap/deploy.sh /opt/cotiza/deploy.sh","chmod +x /opt/cotiza/deploy.sh","md5sum /opt/cotiza/deploy.sh","./deploy.sh ${{ github.sha }}"]' \
             --comment "Deploy ${{ github.sha }}" \
             --query 'Command.CommandId' --output text)
           aws ssm wait command-executed --command-id "$CMD" \

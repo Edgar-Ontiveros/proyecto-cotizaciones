@@ -1,5 +1,7 @@
 """FastAPI app (API pura, sin scheduler)."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, FastAPI, Request
@@ -9,11 +11,12 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.logging import configure_logging, logger, request_logging_middleware
 from app.integrations.sap.base import FuenteOC
-from app.integrations.sap.factory import get_fuente_oc
+from app.integrations.sap.factory import get_fuente_oc, nombre_fuente, validar_fuente_oc
 from app.models.scheduler_heartbeat import SchedulerHeartbeat
 from app.modules.archivos.router import router as archivos_router
 from app.modules.auth.router import router as auth_router
@@ -43,7 +46,17 @@ _HTTP_CODES = {
 
 configure_logging()
 
-app = FastAPI(title="Cotizaciones Herinox", version="0.1.0", docs_url=f"{API_PREFIX}/docs")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # F16a.2: en producción la app se niega a arrancar con la fuente Fake de SAP.
+    validar_fuente_oc(get_settings())
+    yield
+
+
+app = FastAPI(
+    title="Cotizaciones Herinox", version="0.1.0", docs_url=f"{API_PREFIX}/docs", lifespan=lifespan
+)
 
 app.middleware("http")(request_logging_middleware)
 
@@ -110,7 +123,13 @@ def health(
     else:
         scheduler = "ok"
     return JSONResponse(
-        content={"status": "ok", "database": "ok", "scheduler": scheduler, "sap": sap}
+        content={
+            "status": "ok",
+            "database": "ok",
+            "scheduler": scheduler,
+            "sap": sap,
+            "sap_fuente": nombre_fuente(fuente),  # F16a.2: "hana" | "fake"
+        }
     )
 
 
