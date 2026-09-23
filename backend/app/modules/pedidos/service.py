@@ -5,6 +5,11 @@ listado. SAP es SOLO lectura; aquí nunca se escribe hacia HANA.
   arma la tarjeta. 422 `oc_no_encontrada` (dice qué sucursal buscó y, si la OC
   existe en otra serie, cuál), 409 `oc_ya_vinculada` a OTRA solicitud (con su
   folio), 503 `sap_no_disponible` si HANA no responde.
+- F16a.1: si OPOR no tiene la OC se consulta su BORRADOR (ODRF + OWDD) para
+  responder un 422 ACCIONABLE: `oc_aprobada_sin_anadir`,
+  `oc_pendiente_autorizacion`, `oc_rechazada`, `oc_borrador_convertido`; sin
+  borrador, el `oc_no_encontrada` de siempre. NINGUNO crea vínculo: PROHIBIDO
+  vincular contra borradores (su DocNum no está garantizado hasta el Añadir).
 - `vincular`: mismo camino + guarda snapshot + evento `oc_vinculada`. Solo
   lado compras (comprador asignado, gerente_compras, admin) y solo CONFIRMADA.
 - `desvincular`: apaga `activa` + evento `oc_desvinculada`. No borra.
@@ -27,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.core.permissions import scope_solicitudes_query, ve_fincada
 from app.integrations.sap.base import (
+    BorradorOC,
     CadenaOC,
     EncabezadoOC,
     FuenteOC,
@@ -168,6 +174,52 @@ def _aplicar_lectura(
 # ------------------------------------------------------------ búsqueda
 
 
+def _error_borrador(borrador: BorradorOC, doc_num: int) -> AppError:
+    """422 accionable según la situación del borrador en SAP (F16a.1)."""
+    if borrador.autorizacion == "N":
+        return AppError(
+            422,
+            f"La OC {doc_num} fue rechazada en la autorización de SAP; no se puede vincular.",
+            "oc_rechazada",
+        )
+    if not borrador.abierto:
+        return AppError(
+            422,
+            f"El borrador {doc_num} ya se añadió en SAP con OTRO número; "
+            "verifica el número final de la OC en SAP y vuelve a buscarla aquí.",
+            "oc_borrador_convertido",
+        )
+    if borrador.autorizacion == "Y":
+        return AppError(
+            422,
+            f"La OC {doc_num} ya está autorizada en SAP pero aún no se ha añadido: "
+            "ábrela desde el borrador aprobado, dale 'Añadir' y vuelve a buscarla aquí.",
+            "oc_aprobada_sin_anadir",
+        )
+    return AppError(
+        422,
+        f"La OC {doc_num} sigue pendiente de autorización en SAP; "
+        "cuando la autoricen y la añadan, vuelve a buscarla aquí.",
+        "oc_pendiente_autorizacion",
+    )
+
+
+def _error_oc_ausente(fuente: FuenteOC, doc_num: int, sucursal_sap: str) -> AppError:
+    """OPOR no tiene la OC: explica por qué (borrador) o `oc_no_encontrada`."""
+    try:
+        borrador = fuente.buscar_borrador(doc_num)
+    except SapNoDisponible as exc:
+        raise sap_no_disponible(exc) from exc
+    if borrador is not None:
+        return _error_borrador(borrador, doc_num)
+    return AppError(
+        422,
+        f"No se encontró la OC {doc_num} en la sucursal SAP "
+        f"{normalizar_sucursal_sap(sucursal_sap)}",
+        "oc_no_encontrada",
+    )
+
+
 def _validar_sucursal(encabezado: EncabezadoOC, sucursal_sap: str, doc_num: int) -> None:
     pedida = normalizar_sucursal_sap(sucursal_sap)
     if encabezado.sucursal_sap != pedida:
@@ -237,12 +289,7 @@ def buscar(
     solicitud = _autorizar_compras(db, solicitud_id, user)
     lectura = _leer_completa(fuente, doc_num)
     if lectura is None:
-        raise AppError(
-            422,
-            f"No se encontró la OC {doc_num} en la sucursal SAP "
-            f"{normalizar_sucursal_sap(sucursal_sap)}",
-            "oc_no_encontrada",
-        )
+        raise _error_oc_ausente(fuente, doc_num, sucursal_sap)
     encabezado, lineas, cadena = lectura
     _validar_sucursal(encabezado, sucursal_sap, doc_num)
     ajena = _vinculo_activo_ajeno(db, encabezado.doc_entry, solicitud.id)
@@ -293,12 +340,7 @@ def vincular(
     solicitud = _autorizar_compras(db, solicitud_id, user)
     lectura = _leer_completa(fuente, doc_num)
     if lectura is None:
-        raise AppError(
-            422,
-            f"No se encontró la OC {doc_num} en la sucursal SAP "
-            f"{normalizar_sucursal_sap(sucursal_sap)}",
-            "oc_no_encontrada",
-        )
+        raise _error_oc_ausente(fuente, doc_num, sucursal_sap)
     encabezado, lineas, cadena = lectura
     _validar_sucursal(encabezado, sucursal_sap, doc_num)
     ajena = _vinculo_activo_ajeno(db, encabezado.doc_entry, solicitud.id)

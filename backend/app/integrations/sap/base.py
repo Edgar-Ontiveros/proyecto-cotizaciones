@@ -15,6 +15,11 @@ Hallazgos del login real (§0, 2026-09-22, tenant HCP / SBO_COMINOX):
 - El "encargado de compras" es OSLP.SlpName vía OPOR.SlpCode (OwnerCode va
   NULL): la OC 31000103 tiene SlpCode 44 = JAHNA MICHELLE MONARREZ RASCON.
 - DocTotal está en moneda local (MXN); DocTotalFC en la moneda del documento.
+- F16a.1 (SQL del 2026-09-23): con procedimiento de autorización una OC nace
+  como BORRADOR (ODRF, ObjType '22') que se aprueba (OWDD.Status 'Y') y entra
+  a OPOR solo cuando el comprador la "Añade" en SAP; en esa ventana OPOR no
+  tiene la fila. PROHIBIDO vincular contra borradores (Edgar): su DocNum no
+  está garantizado hasta el Añadir. El borrador solo sirve para explicar.
 """
 
 from dataclasses import dataclass, field
@@ -47,6 +52,21 @@ class EncabezadoOC:
     total_mxn: Decimal | None  # DocTotal (moneda local)
     comentarios: str | None
     encargado_compras: str | None
+
+
+@dataclass(frozen=True)
+class BorradorOC:
+    """Borrador de OC (ODRF) + última autorización (OWDD). Nunca se vincula."""
+
+    doc_entry: int  # ODRF.DocEntry
+    doc_num: int
+    serie: str | None
+    sucursal_sap: str | None
+    proveedor_nombre: str | None
+    abierto: bool  # ODRF.DocStatus "O" (cerrado "C" = ya se añadió o se descartó)
+    # OWDD.Status: "Y" aprobada · "N" rechazada · "W" pendiente · None sin OWDD
+    autorizacion: str | None
+    fecha_creacion: date | None
 
 
 @dataclass(frozen=True)
@@ -126,6 +146,8 @@ class FuenteOC(Protocol):
     def ping(self) -> bool: ...
 
     def buscar_oc(self, doc_num: int) -> EncabezadoOC | None: ...
+
+    def buscar_borrador(self, doc_num: int) -> BorradorOC | None: ...
 
     def lineas_oc(self, doc_entry: int) -> list[LineaOC]: ...
 

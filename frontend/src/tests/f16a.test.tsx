@@ -5,7 +5,7 @@
 import { MantineProvider } from "@mantine/core";
 import { ModalsProvider } from "@mantine/modals";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -25,12 +25,15 @@ vi.mock("../auth/AuthContext", () => ({
 }));
 
 import { SeccionFincada } from "../components/Pedido";
-import { SeccionPedidoSap } from "../components/PedidoSap";
+import { ModalVincularOC, SeccionPedidoSap } from "../components/PedidoSap";
+import { ApiError } from "../lib/api";
 import {
+  CODIGOS_OC_BORRADOR,
   ETIQUETA_ESTATUS,
   administraOC,
   colorEstatus,
   dondeTexto,
+  esAvisoBorradorOC,
   paramsPedidos,
   validarBusquedaOC,
 } from "../lib/pedidos";
@@ -106,6 +109,13 @@ describe("helpers de pedidos (F16a)", () => {
     expect(validarBusquedaOC("abc", "CH")).toHaveProperty("error");
     expect(validarBusquedaOC("0", "CH")).toHaveProperty("error");
     expect(validarBusquedaOC("12", "  ")).toHaveProperty("error");
+  });
+
+  it("esAvisoBorradorOC reconoce solo los 4 códigos de OC en borrador (F16a.1)", () => {
+    expect(CODIGOS_OC_BORRADOR).toHaveLength(4);
+    for (const c of CODIGOS_OC_BORRADOR) expect(esAvisoBorradorOC(c)).toBe(true);
+    expect(esAvisoBorradorOC("oc_no_encontrada")).toBe(false);
+    expect(esAvisoBorradorOC("sap_no_disponible")).toBe(false);
   });
 
   it("todo estatus tiene etiqueta y color; solo compras administra OC", () => {
@@ -185,5 +195,61 @@ describe("fincar exige OC (F16a §4)", () => {
     expect(screen.getByText("FINCADA")).toBeInTheDocument();
     expect(screen.getByText(/Sin OC vinculada/)).toBeInTheDocument();
     expect(screen.getByTestId("boton-agregar-oc")).toBeInTheDocument();
+  });
+});
+
+describe("OC en borrador (F16a.1)", () => {
+  const MENSAJE =
+    "La OC 37000054 ya está autorizada en SAP pero aún no se ha añadido: ábrela desde el borrador aprobado, dale 'Añadir' y vuelve a buscarla aquí.";
+
+  function conRespuesta422(code: string, detail: string) {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ detail, code }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  async function buscar(docNum: string) {
+    fireEvent.change(screen.getByLabelText("Número de OC"), { target: { value: docNum } });
+    await act(async () => {
+      screen.getByRole("button", { name: "Buscar" }).click();
+    });
+  }
+
+  it("oc_aprobada_sin_anadir va en aviso ámbar con la instrucción y 'Volver a buscar'; sin Vincular", async () => {
+    const fetchMock = conRespuesta422("oc_aprobada_sin_anadir", MENSAJE);
+    pintar(<ModalVincularOC solicitud={solicitud()} conFincar={false} onListo={() => {}} />);
+    await buscar("37000054");
+    const aviso = await screen.findByTestId("aviso-oc-borrador");
+    expect(aviso).toHaveTextContent(MENSAJE);
+    expect(aviso).toHaveTextContent("La OC está en borrador en SAP");
+    expect(screen.queryByRole("button", { name: "Vincular" })).not.toBeInTheDocument();
+    // "Volver a buscar" repite la búsqueda (segunda llamada a la API).
+    await act(async () => {
+      screen.getByRole("button", { name: "Volver a buscar" }).click();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("oc_no_encontrada sigue siendo error rojo, sin 'Volver a buscar'", async () => {
+    conRespuesta422("oc_no_encontrada", "No se encontró la OC 99999999 en la sucursal SAP CH");
+    pintar(<ModalVincularOC solicitud={solicitud()} conFincar={false} onListo={() => {}} />);
+    await buscar("99999999");
+    expect(await screen.findByText(/No se encontró la OC 99999999/)).toBeInTheDocument();
+    expect(screen.queryByTestId("aviso-oc-borrador")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Volver a buscar" })).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("ApiError conserva el code para distinguir el aviso", () => {
+    const e = new ApiError(422, MENSAJE, "oc_aprobada_sin_anadir");
+    expect(esAvisoBorradorOC(e.code)).toBe(true);
   });
 });

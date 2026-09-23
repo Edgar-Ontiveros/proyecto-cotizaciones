@@ -48,6 +48,20 @@ export function dondeTexto(oc: { donde_oc: string | null; donde_entrada?: string
   return partes.join(" · ") || "—";
 }
 
+/** F16a.1: la OC existe en SAP solo como BORRADOR (ODRF); el backend responde
+ * 422 con uno de estos códigos y un mensaje accionable. No es error del
+ * usuario: se muestra en ámbar con "Volver a buscar". Nunca se vincula. */
+export const CODIGOS_OC_BORRADOR = [
+  "oc_aprobada_sin_anadir",
+  "oc_pendiente_autorizacion",
+  "oc_rechazada",
+  "oc_borrador_convertido",
+] as const;
+
+export function esAvisoBorradorOC(code: string): boolean {
+  return (CODIGOS_OC_BORRADOR as readonly string[]).includes(code);
+}
+
 export interface FiltrosPedidos {
   estatus?: EstatusOC | null;
   soloVencidas: boolean;

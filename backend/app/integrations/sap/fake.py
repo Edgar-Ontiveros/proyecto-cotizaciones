@@ -3,6 +3,10 @@
 Viene precargada con la OC REAL de prueba 31000103 tal como la devolvió HANA
 el 2026-09-22 (§0), para que dev y tests hablen del mismo caso. `caida=True`
 simula HANA fuera de línea (SapNoDisponible en todo, ping False).
+
+F16a.1: trae tres BORRADORES de OC (serie "CU.", como la 37000054 real) que
+NO existen en OPOR: 37000060 aprobado sin añadir, 37000061 pendiente de
+autorización y 37000062 rechazado. Ninguno se puede vincular.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.integrations.sap.base import (
+    BorradorOC,
     CadenaOC,
     EncabezadoOC,
     EntradaOC,
@@ -95,13 +100,43 @@ CADENA_31000103 = CadenaOC(
 )
 
 
+# ------------------------------------------- borradores demo (F16a.1)
+
+BORRADOR_APROBADO_SIN_ANADIR = 37000060
+BORRADOR_PENDIENTE = 37000061
+BORRADOR_RECHAZADO = 37000062
+
+
+def _borrador(doc_num: int, abierto: bool, autorizacion: str | None) -> BorradorOC:
+    return BorradorOC(
+        doc_entry=50000 + (doc_num % 1000),
+        doc_num=doc_num,
+        serie="CU.",
+        sucursal_sap="CU",
+        proveedor_nombre="I.N.T. INOXIDABLES, S.A. DE C.V.",
+        abierto=abierto,
+        autorizacion=autorizacion,
+        fecha_creacion=date(2026, 9, 22),
+    )
+
+
+BORRADORES_DEMO = [
+    _borrador(BORRADOR_APROBADO_SIN_ANADIR, abierto=True, autorizacion="Y"),
+    _borrador(BORRADOR_PENDIENTE, abierto=True, autorizacion="W"),
+    _borrador(BORRADOR_RECHAZADO, abierto=True, autorizacion="N"),
+]
+
+
 class FakeFuenteOC(FuenteOC):
     def __init__(self, precargar_real: bool = True) -> None:
         self._ocs: dict[int, tuple[EncabezadoOC, list[LineaOC], CadenaOC]] = {}
+        self._borradores: dict[int, BorradorOC] = {}
         self.caida = False
         self.consultas = 0
         if precargar_real:
             self.registrar(OC_31000103, LINEAS_31000103, CADENA_31000103)
+            for borrador in BORRADORES_DEMO:
+                self.registrar_borrador(borrador)
 
     # ---------------------------------------------------------- utilidades
 
@@ -166,6 +201,16 @@ class FakeFuenteOC(FuenteOC):
         )
         return self.registrar(enc, [linea], cadena)
 
+    def registrar_borrador(self, borrador: BorradorOC) -> BorradorOC:
+        self._borradores[borrador.doc_num] = borrador
+        return borrador
+
+    def borrador_simple(
+        self, doc_num: int, *, abierto: bool = True, autorizacion: str | None = "Y"
+    ) -> BorradorOC:
+        """Borrador de OC para escenarios en tests (nunca entra a `_ocs`)."""
+        return self.registrar_borrador(_borrador(doc_num, abierto, autorizacion))
+
     def actualizar(self, doc_num: int, **cambios: object) -> None:
         """Simula que SAP cambió el encabezado (p. ej. cancelada=True)."""
         enc, lineas, cadena = self._ocs[doc_num]
@@ -191,6 +236,10 @@ class FakeFuenteOC(FuenteOC):
         self._check()
         entrada = self._ocs.get(int(doc_num))
         return entrada[0] if entrada else None
+
+    def buscar_borrador(self, doc_num: int) -> BorradorOC | None:
+        self._check()
+        return self._borradores.get(int(doc_num))
 
     def lineas_oc(self, doc_entry: int) -> list[LineaOC]:
         self._check()

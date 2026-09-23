@@ -15,6 +15,8 @@ LineTotal/Currency · OWHS.WhsCode/WhsName · OPDN.DocEntry/DocNum/DocDate/
 CANCELED · PDN1.DocEntry/BaseType/BaseEntry/BaseLine/ItemCode/Quantity/
 WhsCode · OPCH.DocEntry/DocNum/DocDate/CANCELED/DocTotal/DocTotalFC/DocCur ·
 PCH1.DocEntry/BaseType/BaseEntry · OADM.MainCurncy.
+F16a.1 (2026-09-23, borrador 50841 de la OC 37000054): ODRF.DocEntry/DocNum/
+ObjType/Series/CardName/DocStatus/CreateDate · OWDD.WddCode/Status/DraftEntry.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from typing import Any
 
 from app.core.logging import logger
 from app.integrations.sap.base import (
+    BorradorOC,
     CadenaOC,
     EncabezadoOC,
     EntradaOC,
@@ -51,6 +54,17 @@ FROM OPOR T0
 LEFT JOIN NNM1 T1 ON T1."Series" = T0."Series"
 LEFT JOIN OSLP T2 ON T2."SlpCode" = T0."SlpCode"
 WHERE T0."DocNum" = ?
+"""
+
+# Borrador (ODRF) de OC con su ÚLTIMA autorización (OWDD). ODRF.ObjType es texto.
+_SQL_BORRADOR = """
+SELECT T0."DocEntry", T0."DocNum", T1."SeriesName", T0."CardName", T0."DocStatus",
+       T0."CreateDate", T2."Status"
+FROM ODRF T0
+LEFT JOIN NNM1 T1 ON T1."Series" = T0."Series"
+LEFT JOIN OWDD T2 ON T2."DraftEntry" = T0."DocEntry"
+WHERE T0."ObjType" = ? AND T0."DocNum" = ?
+ORDER BY T0."DocEntry" DESC, T2."WddCode" DESC
 """
 
 _SQL_LINEAS = """
@@ -223,6 +237,23 @@ class HanaFuenteOC(FuenteOC):
             total_mxn=_dec(doc_total),
             comentarios=(comments or "").replace("\r", " · ").strip() or None,
             encargado_compras=slp_name,
+        )
+
+    def buscar_borrador(self, doc_num: int) -> BorradorOC | None:
+        filas = self._query(_SQL_BORRADOR, (str(_OBJ_ORDEN_COMPRA), int(doc_num)))
+        if not filas:
+            return None
+        (doc_entry, num, serie, card_name, doc_status, create_date, status) = filas[0]
+        autorizacion = (status or "").strip().upper() or None
+        return BorradorOC(
+            doc_entry=int(doc_entry),
+            doc_num=int(num),
+            serie=serie,
+            sucursal_sap=normalizar_sucursal_sap(serie),
+            proveedor_nombre=card_name,
+            abierto=(doc_status or "O").strip().upper() == "O",
+            autorizacion=autorizacion,
+            fecha_creacion=_fecha(create_date),
         )
 
     def lineas_oc(self, doc_entry: int) -> list[LineaOC]:

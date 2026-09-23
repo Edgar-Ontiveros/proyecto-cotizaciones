@@ -13,11 +13,16 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.integrations.sap.base import CadenaOC, EntradaOC, FacturaOC, LineaEntrada
 from app.integrations.sap.estatus import EstatusOC, derivar_estatus, es_vencida
-from app.integrations.sap.fake import FakeFuenteOC
+from app.integrations.sap.fake import (
+    BORRADOR_APROBADO_SIN_ANADIR,
+    BORRADOR_PENDIENTE,
+    BORRADOR_RECHAZADO,
+    FakeFuenteOC,
+)
 from app.models.historial import HistorialEstado
 from app.models.pedido import SolicitudOC
 from app.models.sucursal import CompradorSucursal
@@ -278,6 +283,42 @@ def test_oc_no_encontrada_dice_que_sucursal_busco(client, entorno, auth_headers,
     # Vincular con la sucursal equivocada tampoco pasa.
     r = _vincular(client, hc, sid, sucursal_sap="le.")
     assert r.status_code == 422 and r.json()["code"] == "oc_no_encontrada"
+
+
+def test_oc_en_borrador_responde_422_accionable_y_nunca_vincula(
+    client, db, sap, entorno, auth_headers, con_comprobante
+):
+    """F16a.1: OPOR sin la fila pero ODRF con borrador → código y mensaje por
+    situación (autorización OWDD + estado del borrador). Ninguno crea vínculo."""
+    sid = _confirmada(client, entorno, auth_headers, con_comprobante)
+    hc = auth_headers(entorno.comprador)
+    # 4º caso: borrador cerrado ("C") cuyo DocNum no existe en OPOR → convertido con OTRO número.
+    sap.borrador_simple(37000063, abierto=False, autorizacion="Y")
+    casos = [
+        (BORRADOR_APROBADO_SIN_ANADIR, "oc_aprobada_sin_anadir", "dale 'Añadir'"),
+        (BORRADOR_PENDIENTE, "oc_pendiente_autorizacion", "pendiente de autorización"),
+        (BORRADOR_RECHAZADO, "oc_rechazada", "rechazada en la autorización"),
+        (37000063, "oc_borrador_convertido", "OTRO número"),
+    ]
+    for doc_num, code, texto in casos:
+        r = _buscar(client, hc, sid, doc_num=doc_num, sucursal_sap="CU")
+        assert r.status_code == 422 and r.json()["code"] == code, (doc_num, r.text)
+        assert str(doc_num) in r.json()["detail"] and texto in r.json()["detail"]
+        r = _vincular(client, hc, sid, doc_num=doc_num, sucursal_sap="CU")
+        assert r.status_code == 422 and r.json()["code"] == code, (doc_num, r.text)
+    assert db.scalar(select(func.count(SolicitudOC.id))) == 0
+    # Borrador abierto sin OWDD (aún no entra al procedimiento) también es "pendiente".
+    sap.borrador_simple(37000064, abierto=True, autorizacion=None)
+    r = _buscar(client, hc, sid, doc_num=37000064, sucursal_sap="CU")
+    assert r.status_code == 422 and r.json()["code"] == "oc_pendiente_autorizacion"
+    # Sin borrador: el oc_no_encontrada de siempre; la búsqueda normal sigue intacta.
+    r = _buscar(client, hc, sid, doc_num=37000099, sucursal_sap="CU")
+    assert r.status_code == 422 and r.json()["code"] == "oc_no_encontrada"
+    assert _buscar(client, hc, sid).status_code == 200
+    # Si HANA cae al consultar el borrador, 503 (no se finge un "no encontrada").
+    sap.caida = True
+    r = _buscar(client, hc, sid, doc_num=BORRADOR_PENDIENTE, sucursal_sap="CU")
+    assert r.status_code == 503 and r.json()["code"] == "sap_no_disponible"
 
 
 def test_sap_caido_503_y_jamas_se_finca_a_ciegas(

@@ -36,6 +36,7 @@ import {
   administraOC,
   colorEstatus,
   dondeTexto,
+  esAvisoBorradorOC,
   validarBusquedaOC,
 } from "../lib/pedidos";
 import type { EstatusOC, Moneda, OCBusquedaOut, OCOut, SolicitudDetailOut } from "../lib/types";
@@ -118,14 +119,25 @@ export function ModalVincularOC({
   const [docNum, setDocNum] = useState("");
   const [sucursalSap, setSucursalSap] = useState(solicitud.sucursal_serie_sap ?? "");
   const [error, setError] = useState<string | null>(null);
+  // F16a.1: OC en borrador en SAP → aviso ámbar con instrucción (no es error del usuario).
+  const [aviso, setAviso] = useState<string | null>(null);
   const [tarjeta, setTarjeta] = useState<OCBusquedaOut | null>(null);
   const [vinculadas, setVinculadas] = useState<number[]>(solicitud.ocs.map((o) => o.doc_num));
 
   const mensajeError = (e: unknown) =>
     e instanceof ApiError ? e.detail : "No se pudo consultar SAP";
 
+  const mostrarFalla = (e: unknown) => {
+    if (e instanceof ApiError && esAvisoBorradorOC(e.code)) {
+      setAviso(e.detail);
+      return;
+    }
+    setError(mensajeError(e));
+  };
+
   const ejecutarBusqueda = () => {
     setError(null);
+    setAviso(null);
     setTarjeta(null);
     const v = validarBusquedaOC(docNum, sucursalSap);
     if ("error" in v) {
@@ -134,13 +146,14 @@ export function ModalVincularOC({
     }
     buscar.mutate(v, {
       onSuccess: (t) => setTarjeta(t),
-      onError: (e) => setError(mensajeError(e)),
+      onError: mostrarFalla,
     });
   };
 
   const ejecutarVincular = () => {
     if (!tarjeta) return;
     setError(null);
+    setAviso(null);
     vincular.mutate(
       { doc_num: tarjeta.doc_num, sucursal_sap: tarjeta.sucursal_sap ?? sucursalSap },
       {
@@ -150,7 +163,7 @@ export function ModalVincularOC({
           setDocNum("");
           notifications.show({ message: `OC ${oc.doc_num} vinculada`, color: "green" });
         },
-        onError: (e) => setError(mensajeError(e)),
+        onError: mostrarFalla,
       },
     );
   };
@@ -210,6 +223,22 @@ export function ModalVincularOC({
           OC vinculadas a esta solicitud: <b>{vinculadas.join(", ")}</b>
           {tarjeta === null && " · puedes buscar otra OC (una por proveedor)"}
         </Text>
+      )}
+      {aviso && (
+        <Alert color="yellow" title="La OC está en borrador en SAP" data-testid="aviso-oc-borrador">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">{aviso}</Text>
+            <Button
+              size="xs"
+              variant="light"
+              color="yellow"
+              loading={buscar.isPending}
+              onClick={ejecutarBusqueda}
+            >
+              Volver a buscar
+            </Button>
+          </Stack>
+        </Alert>
       )}
       {error && <Alert color="red">{error}</Alert>}
       <Group justify="flex-end">
