@@ -88,6 +88,12 @@ class CambioPartida(Base):
     FINAL distinto al pedido para cantidad, unidad y/o descripción de una
     MODIFICACION. Ese ajuste queda en `*_ajustada` (NULL = respetó lo pedido);
     las columnas *_anterior / *_nueva no se tocan jamás.
+
+    F15.1 — lo mismo para las ALTA: compras puede ajustar cantidad, unidad y
+    descripción respecto a lo propuesto por ventas; la partida se crea con el
+    valor final y `*_ajustada` registra la diferencia (mismas columnas, sin
+    migración). `cantidad_nueva/unidad_nueva/descripcion_nueva` siguen siendo
+    el snapshot inmutable de lo que PIDIÓ el vendedor.
     """
 
     __tablename__ = "cambio_partidas"
@@ -115,7 +121,7 @@ class CambioPartida(Base):
     cantidad_nueva: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
     unidad_anterior: Mapped[str | None]
     unidad_nueva: Mapped[str | None]
-    # F15 p.3: valor final de compras cuando difiere de lo pedido (solo MODIFICACION).
+    # F15 p.3 / F15.1: valor final de compras cuando difiere de lo pedido (MODIFICACION y ALTA).
     cantidad_ajustada: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
     unidad_ajustada: Mapped[str | None]
     descripcion_ajustada: Mapped[str | None] = mapped_column(Text)

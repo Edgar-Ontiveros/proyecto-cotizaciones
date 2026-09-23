@@ -2,7 +2,12 @@
  * - Lado ventas: arma el body de la solicitud (MODIFICACION/ALTA/BAJA).
  * - Lado compras: arma un renglón nuevo (ALTA) a partir del RenglonForm. */
 
-import type { AjustePartidaBody, CambioPartidaBody, NuevoRenglonBody } from "../api/hooks";
+import type {
+  AjusteAltaBody,
+  AjustePartidaBody,
+  CambioPartidaBody,
+  NuevoRenglonBody,
+} from "../api/hooks";
 import type { RenglonForm } from "./renglon";
 import type { CambioPartidaOut, Unidad } from "./types";
 
@@ -198,6 +203,66 @@ export function armarAjustesPartida(filas: FilaPartidaFinal[]): {
     }
   }
   return { partidas, error: null };
+}
+
+// ------------------------------- F15.1: valor final de las partidas NUEVAS (compras)
+
+/** Valor FINAL que compras fija para una partida NUEVA (ALTA). Arranca en lo
+ * que pidió ventas; el comprador puede apartarse en cantidad, unidad y
+ * descripción. La partida se crea con este valor en todas las opciones. */
+export interface FilaAltaFinal {
+  cambio_partida_id: number;
+  /** Lo pedido por ventas (referencia del diff). */
+  cantidadPedida: string;
+  unidadPedida: Unidad;
+  descripcionPedida: string;
+  /** Lo que fija compras (editable). */
+  cantidad: string;
+  unidad: Unidad;
+  descripcion: string;
+}
+
+/** Fila inicial a partir del renglón ALTA del snapshot: lo pedido por ventas. */
+export function filaAltaFinal(p: CambioPartidaOut): FilaAltaFinal | null {
+  if (p.tipo !== "ALTA") return null;
+  const cantidad = p.cantidad_nueva ?? "";
+  const unidad = (p.unidad_nueva ?? "PZ") as Unidad;
+  return {
+    cambio_partida_id: p.id,
+    cantidadPedida: cantidad,
+    unidadPedida: unidad,
+    descripcionPedida: p.descripcion,
+    cantidad,
+    unidad,
+    descripcion: p.descripcion,
+  };
+}
+
+/** Body `altas` de la aprobación: SOLO los campos en que compras se aparta de
+ * lo pedido (espejo de `armarAjustesPartida`). */
+export function armarAjustesAlta(filas: FilaAltaFinal[]): {
+  altas: AjusteAltaBody[];
+  error: string | null;
+} {
+  const altas: AjusteAltaBody[] = [];
+  for (const f of filas) {
+    const cantidad = f.cantidad.trim();
+    const descripcion = f.descripcion.trim();
+    if (!(Number(cantidad) > 0)) {
+      return { altas: [], error: `Partida nueva "${f.descripcionPedida}": la cantidad debe ser mayor a 0` };
+    }
+    if (!descripcion) {
+      return { altas: [], error: `Partida nueva "${f.descripcionPedida}": la descripción no puede quedar vacía` };
+    }
+    const ajuste: AjusteAltaBody = { cambio_partida_id: f.cambio_partida_id };
+    if (Number(cantidad) !== Number(f.cantidadPedida)) ajuste.cantidad = cantidad;
+    if (f.unidad !== f.unidadPedida) ajuste.unidad = f.unidad;
+    if (descripcion !== f.descripcionPedida.trim()) ajuste.descripcion = descripcion;
+    if (ajuste.cantidad !== undefined || ajuste.unidad !== undefined || ajuste.descripcion !== undefined) {
+      altas.push(ajuste);
+    }
+  }
+  return { altas, error: null };
 }
 
 /** Regla de la unidad: si la unidad FINAL difiere de la del renglón cotizado,

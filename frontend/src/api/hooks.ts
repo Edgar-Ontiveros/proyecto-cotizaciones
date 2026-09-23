@@ -296,6 +296,15 @@ export interface AjustePartidaBody {
   descripcion?: string;
 }
 
+// F15.1: valor final de compras para una partida NUEVA (ALTA): solo viaja lo
+// que difiere de lo pedido por ventas.
+export interface AjusteAltaBody {
+  cambio_partida_id: number;
+  cantidad?: string;
+  unidad?: string;
+  descripcion?: string;
+}
+
 // F13: captura de compras para una partida NUEVA (ALTA) en UNA opción.
 export interface NuevoRenglonBody {
   cambio_partida_id: number;
@@ -339,6 +348,7 @@ export function useAprobarCambio(solicitudId: number) {
       ajustes,
       partidas,
       nuevos,
+      altas,
       tipoCambio,
     }: {
       cambioId: number;
@@ -348,6 +358,8 @@ export function useAprobarCambio(solicitudId: number) {
       partidas?: AjustePartidaBody[];
       // F13: captura de renglones de partidas nuevas (ALTA) por opción.
       nuevos?: NuevoRenglonBody[];
+      // F15.1: ajuste final de cantidad/unidad/descripción de las partidas nuevas.
+      altas?: AjusteAltaBody[];
       // F10.3: TC capturado al AUTORIZAR (422 tipo_cambio_requerido).
       tipoCambio?: string;
     }) =>
@@ -358,6 +370,7 @@ export function useAprobarCambio(solicitudId: number) {
           ajustes,
           partidas: partidas ?? [],
           nuevos: nuevos ?? [],
+          altas: altas ?? [],
           tipo_cambio: tipoCambio,
         },
       }),

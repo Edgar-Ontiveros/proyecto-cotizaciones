@@ -2,13 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   altaConDatos,
+  armarAjustesAlta,
   construirCambio,
+  filaAltaFinal,
   filaModificada,
   nuevoRenglonBody,
   renglonFormVacio,
+  textoAjusteCompras,
   type FilaAltaEditor,
+  type FilaAltaFinal,
   type FilaPartidaEditor,
 } from "../lib/cambios";
+import type { CambioPartidaOut } from "../lib/types";
 
 function existente(sobre: Partial<FilaPartidaEditor> = {}): FilaPartidaEditor {
   return {
@@ -124,5 +129,80 @@ describe("nuevoRenglonBody", () => {
     expect(body.moneda).toBeNull();
     expect(body.precio_unitario).toBeNull();
     expect(body.no_encontrada).toBe(true);
+  });
+});
+
+// ------------------------------------------------ F15.1: valor final de las altas
+
+function altaSnapshot(sobre: Partial<CambioPartidaOut> = {}): CambioPartidaOut {
+  return {
+    id: 7,
+    tipo: "ALTA",
+    partida_id: null,
+    num_partida: null,
+    descripcion: "TORNILLO 1/2",
+    descripcion_nueva: null,
+    cantidad_anterior: null,
+    cantidad_nueva: "5.000",
+    unidad_anterior: null,
+    unidad_nueva: "PZ",
+    cantidad_ajustada: null,
+    unidad_ajustada: null,
+    descripcion_ajustada: null,
+    ...sobre,
+  } as CambioPartidaOut;
+}
+
+describe("filaAltaFinal", () => {
+  it("arranca en lo que pidió ventas y solo aplica a ALTA", () => {
+    const f = filaAltaFinal(altaSnapshot());
+    expect(f).toEqual({
+      cambio_partida_id: 7,
+      cantidadPedida: "5.000",
+      unidadPedida: "PZ",
+      descripcionPedida: "TORNILLO 1/2",
+      cantidad: "5.000",
+      unidad: "PZ",
+      descripcion: "TORNILLO 1/2",
+    });
+    expect(filaAltaFinal(altaSnapshot({ tipo: "MODIFICACION", partida_id: 1 }))).toBeNull();
+  });
+});
+
+describe("armarAjustesAlta", () => {
+  const base = (): FilaAltaFinal => filaAltaFinal(altaSnapshot())!;
+
+  it("sin apartarse de lo pedido no manda nada (misma cantidad aunque cambie el formato)", () => {
+    expect(armarAjustesAlta([{ ...base(), cantidad: "5", descripcion: " TORNILLO 1/2 " }])).toEqual({
+      altas: [],
+      error: null,
+    });
+  });
+
+  it("manda solo los campos que difieren, por id del renglón de cambio", () => {
+    const { altas, error } = armarAjustesAlta([
+      { ...base(), unidad: "KG" },
+      { ...base(), cambio_partida_id: 8, cantidad: "8", descripcion: "TORNILLO 1/2 INOX 304" },
+    ]);
+    expect(error).toBeNull();
+    expect(altas).toEqual([
+      { cambio_partida_id: 7, unidad: "KG" },
+      { cambio_partida_id: 8, cantidad: "8", descripcion: "TORNILLO 1/2 INOX 304" },
+    ]);
+  });
+
+  it("exige cantidad > 0 y descripción no vacía", () => {
+    expect(armarAjustesAlta([{ ...base(), cantidad: "0" }]).error).toMatch(/mayor a 0/);
+    expect(armarAjustesAlta([{ ...base(), descripcion: "  " }]).error).toMatch(/descripción/);
+  });
+});
+
+describe("textoAjusteCompras en un ALTA", () => {
+  it("describe el ajuste de compras respecto a lo pedido", () => {
+    expect(textoAjusteCompras(altaSnapshot())).toBeNull();
+    expect(textoAjusteCompras(altaSnapshot({ unidad_ajustada: "KG" }))).toBe("compras ajustó a 5.000 KG");
+    expect(
+      textoAjusteCompras(altaSnapshot({ cantidad_ajustada: "8.000", descripcion_ajustada: "TORNILLO 1/2 INOX 304" })),
+    ).toBe("compras ajustó a 8.000 PZ · descripción final: “TORNILLO 1/2 INOX 304”");
   });
 });

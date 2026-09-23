@@ -26,6 +26,11 @@ existentes. Reglas duras conservadas de F8h:
   recalculan con lo capturado. Si compras se aparta de lo pedido, el snapshot
   lo registra en `*_ajustada` y la notificación al solicitante lo dice
   explícito ("aprobado con ajustes de cantidad/descripción").
+- F15.1: en las partidas NUEVAS (ALTA) compras también puede ajustar
+  cantidad, unidad y descripción respecto a lo propuesto (`altas`, por id del
+  renglón de cambio). La partida se crea con el valor final (misma unidad en
+  todas las opciones) y los importes se calculan con él; el ajuste queda en
+  `*_ajustada` del snapshot y la notificación lo dice explícito.
 - Auto-retiro: si la solicitud pasa a NO_CONFIRMADA o CANCELADA con un cambio
   PENDIENTE, queda RETIRADO y el evento lo menciona.
 """
@@ -42,6 +47,7 @@ from app.models.cotizacion import CotizacionOpcion, Moneda, OpcionPartida
 from app.models.solicitud import Estado, Solicitud, SolicitudPartida
 from app.models.usuario import Rol, Usuario
 from app.modules.cambios.schemas import (
+    AjusteAltaIn,
     AjusteIn,
     AjustePartidaIn,
     AprobarIn,
@@ -118,7 +124,8 @@ def _resumen_renglon(cp: CambioPartida) -> str:
     """Texto de UN renglón para el evento de historial (sin precios)."""
     if cp.tipo_renglon == _ALTA:
         desc = cp.descripcion_nueva or ""
-        return f"alta: {_fmt(cp.cantidad_nueva)} {cp.unidad_nueva} {desc}".strip()
+        texto = f"alta: {_fmt(cp.cantidad_nueva)} {cp.unidad_nueva} {desc}".strip()
+        return texto + _sufijo_ajuste(cp)
     if cp.tipo_renglon == _BAJA:
         etiqueta = f"partida {cp.num_partida}" if cp.num_partida is not None else "una partida"
         return f"baja: {etiqueta} ({cp.descripcion_anterior or ''})".strip()
@@ -128,7 +135,13 @@ def _resumen_renglon(cp: CambioPartida) -> str:
     )
     if cp.descripcion_nueva:
         texto += " (nueva descripción)"
-    # F15 p.3: lo que compras fijó al aprobar, cuando se apartó de lo pedido.
+    return texto + _sufijo_ajuste(cp)
+
+
+def _sufijo_ajuste(cp: CambioPartida) -> str:
+    """F15 p.3 / F15.1: lo que compras fijó al aprobar, cuando se apartó de lo
+    pedido (MODIFICACION y ALTA comparten las columnas *_ajustada)."""
+    texto = ""
     if cp.cantidad_ajustada is not None or cp.unidad_ajustada is not None:
         cantidad = cp.cantidad_ajustada if cp.cantidad_ajustada is not None else cp.cantidad_nueva
         unidad = cp.unidad_ajustada or cp.unidad_nueva
@@ -411,6 +424,20 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
             raise AppError(422, "Ajuste duplicado para la misma partida", "ajuste_invalido")
         ajustes_partida[ap.partida_id] = ap
 
+    # F15.1: ajuste FINAL a nivel partida de las ALTA (por id del renglón de cambio).
+    ajustes_alta: dict[int, AjusteAltaIn] = {}
+    for aa in data.altas:
+        if aa.cambio_partida_id not in alta_ids:
+            raise AppError(
+                422,
+                f"Ajuste de partida nueva inválido: el renglón {aa.cambio_partida_id} no es "
+                "un alta del cambio",
+                "ajuste_invalido",
+            )
+        if aa.cambio_partida_id in ajustes_alta:
+            raise AppError(422, "Ajuste duplicado para la misma partida nueva", "ajuste_invalido")
+        ajustes_alta[aa.cambio_partida_id] = aa
+
     nuevos: dict[tuple[int, str], NuevoRenglonIn] = {}
     for n in data.nuevos:
         if n.opcion_letra not in letras or n.cambio_partida_id not in alta_ids:
@@ -456,17 +483,35 @@ def aprobar(db: Session, cambio_id: int, user: Usuario, data: AprobarIn) -> Soli
         finales[cp.partida_id] = (cantidad_final, unidad_final)
 
     # 2) ALTA → crea la partida (num consecutivo) y su renglón en TODAS las opciones.
+    # F15.1: valor FINAL = lo propuesto por ventas, salvo que compras lo ajuste;
+    # el ajuste queda en el snapshot SOLO cuando difiere de lo pedido. La
+    # unidad final es la de la partida y, por tanto, la de todos sus renglones.
     max_num = max((p.num_partida for p in partidas.values()), default=0)
     for cp in altas:
         max_num += 1
+        cantidad_alta = cp.cantidad_nueva
+        unidad_alta = cp.unidad_nueva
+        descripcion_alta = cp.descripcion_nueva or ""
+        final_alta = ajustes_alta.get(cp.id)
+        if final_alta is not None:
+            if final_alta.cantidad is not None and final_alta.cantidad != cantidad_alta:
+                cp.cantidad_ajustada = cantidad_alta = final_alta.cantidad
+                campos_ajustados.append("cantidad")
+            if final_alta.unidad is not None and final_alta.unidad != unidad_alta:
+                cp.unidad_ajustada = unidad_alta = final_alta.unidad
+                campos_ajustados.append("unidad")
+            desc = (final_alta.descripcion or "").strip()
+            if desc and desc != descripcion_alta:
+                cp.descripcion_ajustada = descripcion_alta = desc
+                campos_ajustados.append("descripción")
         nueva = SolicitudPartida(
             solicitud_id=solicitud.id,
             num_partida=max_num,
             codigo_sap=None,
-            cantidad=cp.cantidad_nueva,
-            unidad=cp.unidad_nueva,
+            cantidad=cantidad_alta,
+            unidad=unidad_alta,
             tipo_acero=None,
-            descripcion=cp.descripcion_nueva or "",
+            descripcion=descripcion_alta,
             medidas=None,
         )
         db.add(nueva)

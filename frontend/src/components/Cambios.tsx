@@ -46,9 +46,11 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
 import {
   altaConDatos,
+  armarAjustesAlta,
   armarAjustesPartida,
   construirCambio,
   filaModificada,
+  filaAltaFinal,
   filaPartidaFinal,
   nuevoRenglonBody,
   renglonFormVacio,
@@ -56,6 +58,7 @@ import {
   unidadInvalidaPrecio,
   type FilaAltaEditor,
   type FilaPartidaEditor,
+  type FilaAltaFinal,
   type FilaPartidaFinal,
 } from "../lib/cambios";
 import { fechaHora } from "../lib/format";
@@ -74,6 +77,12 @@ function DiffLinea({ p }: { p: CambioPartidaOut }) {
           Nueva
         </Badge>
         {p.descripcion}: <b>{p.cantidad_nueva} {p.unidad_nueva}</b>
+        {textoAjusteCompras(p) ? (
+          <Text span size="xs" c="grape">
+            {" "}
+            · {textoAjusteCompras(p)}
+          </Text>
+        ) : null}
       </Text>
     );
   }
@@ -535,6 +544,8 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
   const [error, setError] = useState<string | null>(null);
   // F15 p.3: valor FINAL de cada partida modificada (cantidad/unidad/descr.).
   const [finales, setFinales] = useState<FilaPartidaFinal[] | null>(null);
+  // F15.1: valor FINAL de cada partida NUEVA (cantidad/unidad/descr.).
+  const [altasFinales, setAltasFinales] = useState<FilaAltaFinal[] | null>(null);
   // Precio/tiempo capturados por (letra de opción + partida).
   const [capturas, setCapturas] = useState<Record<
     string,
@@ -558,6 +569,11 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
     [modificaciones],
   );
   const editorFinales = finales ?? finalesIniciales;
+  const altasIniciales: FilaAltaFinal[] = useMemo(
+    () => altas.map(filaAltaFinal).filter((f): f is FilaAltaFinal => f !== null),
+    [altas],
+  );
+  const editorAltas = altasFinales ?? altasIniciales;
 
   // Filas de ajuste: cada opción × cada partida MODIFICADA con renglón vivo.
   // "Después" es el valor FINAL de compras; si su unidad difiere de la del
@@ -638,6 +654,16 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
   };
   const setCaptura = (clave: string, r: RenglonForm) =>
     setNuevos({ ...capturasNuevos, [clave]: r });
+  const setAltaFinal = (
+    cambioPartidaId: number,
+    campo: "descripcion" | "cantidad" | "unidad",
+    valor: string,
+  ) =>
+    setAltasFinales(
+      editorAltas.map((f) =>
+        f.cambio_partida_id === cambioPartidaId ? { ...f, [campo]: valor } : f,
+      ),
+    );
 
   const importeAjuste = (f: FilaAjuste) => {
     const precio = Number(f.precio);
@@ -651,6 +677,12 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
     const { partidas: partidasBody, error: errorFinales } = armarAjustesPartida(editorFinales);
     if (errorFinales) {
       setError(errorFinales);
+      return;
+    }
+    // F15.1: valor final de las partidas nuevas (solo viaja lo que difiere).
+    const { altas: altasBody, error: errorAltas } = armarAjustesAlta(editorAltas);
+    if (errorAltas) {
+      setError(errorAltas);
       return;
     }
     for (const f of editor) {
@@ -689,6 +721,7 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
           ajustes,
           partidas: partidasFinales,
           nuevos: nuevosBody,
+          altas: altasBody,
           tipoCambio,
         },
         {
@@ -891,6 +924,78 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
           </div>
         )}
 
+        {editorAltas.length > 0 && (
+          <div>
+            <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
+              Valor final de las partidas nuevas
+            </Text>
+            <Text size="xs" c="dimmed" mb={4}>
+              Arranca en lo que pidió ventas; si ajustas cantidad, unidad o descripción, la
+              partida se crea con ese valor en todas las opciones y el vendedor lo verá
+              explícito en su notificación.
+            </Text>
+            <Table withTableBorder withColumnBorders fz="xs" data-testid="tabla-altas-finales">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={140}>Pidió ventas</Table.Th>
+                  <Table.Th>Descripción final</Table.Th>
+                  <Table.Th w={110}>Cantidad final</Table.Th>
+                  <Table.Th w={100}>Unidad final</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {editorAltas.map((f) => {
+                  const seAparta =
+                    Number(f.cantidad) !== Number(f.cantidadPedida) ||
+                    f.unidad !== f.unidadPedida ||
+                    f.descripcion.trim() !== f.descripcionPedida.trim();
+                  return (
+                    <Table.Tr
+                      key={f.cambio_partida_id}
+                      bg={seAparta ? "var(--mantine-color-grape-0)" : undefined}
+                    >
+                      <Table.Td>
+                        {f.cantidadPedida} {f.unidadPedida}
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          size="xs"
+                          aria-label="Descripción final"
+                          value={f.descripcion}
+                          onChange={(e) =>
+                            setAltaFinal(f.cambio_partida_id, "descripcion", e.currentTarget.value)
+                          }
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          size="xs"
+                          aria-label="Cantidad final"
+                          value={f.cantidad}
+                          error={!(Number(f.cantidad) > 0)}
+                          onChange={(e) =>
+                            setAltaFinal(f.cambio_partida_id, "cantidad", e.currentTarget.value)
+                          }
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Select
+                          size="xs"
+                          aria-label="Unidad final"
+                          data={UNIDADES}
+                          allowDeselect={false}
+                          value={f.unidad}
+                          onChange={(v) => setAltaFinal(f.cambio_partida_id, "unidad", v ?? f.unidad)}
+                        />
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </div>
+        )}
+
         {altas.length > 0 && (
           <div>
             <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
@@ -902,17 +1007,22 @@ export function BannerCambioComprador({ solicitud }: { solicitud: SolicitudDetai
                   <Text size="sm" fw={600}>
                     Opción {o.letra}
                   </Text>
-                  {altas.map((alta) => (
+                  {altas.map((alta) => {
+                    // Se cotiza el valor FINAL (el que compras fijó arriba).
+                    const fin = editorAltas.find((f) => f.cambio_partida_id === alta.id);
+                    return (
                     <Group key={`${o.letra}-${alta.id}`} align="flex-start" wrap="nowrap" gap="sm" mt={4}>
                       <Text size="xs" w={160} style={{ flexShrink: 0 }}>
-                        {alta.descripcion} · {alta.cantidad_nueva} {alta.unidad_nueva}
+                        {fin?.descripcion.trim() || alta.descripcion} · {fin?.cantidad ?? alta.cantidad_nueva}{" "}
+                        {fin?.unidad ?? alta.unidad_nueva}
                       </Text>
                       <RenglonNuevoEditor
                         form={capturasNuevos[`${alta.id}-${o.letra}`] ?? renglonFormVacio()}
                         onChange={(r) => setCaptura(`${alta.id}-${o.letra}`, r)}
                       />
                     </Group>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
             </Stack>
