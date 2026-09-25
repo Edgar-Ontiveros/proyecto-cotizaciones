@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Intervalo del job de bandas del scheduler (900 s = 15 min); env var
     # SCHEDULER_BANDAS_SEGUNDOS para bajarlo en desarrollo.
     scheduler_bandas_segundos: int = 900
+    # F16b: intervalo del sondeo de OC de SAP (900 s = 15 min, junto al del
+    # semáforo); SCHEDULER_OC_SEGUNDOS para bajarlo en desarrollo.
+    scheduler_oc_segundos: int = 900
     # F8g: directorio del subsistema de archivos (comprobantes). En dev es
     # relativo al backend y está en .gitignore; F9 lo monta como volumen
     # persistente incluido en los backups.

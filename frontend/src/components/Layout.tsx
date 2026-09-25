@@ -19,6 +19,7 @@ import { Outlet, useNavigate } from "react-router";
 import { useLeerTodas, useMarcarLeida, useNotificaciones } from "../api/hooks";
 import { rutaPorRol, useAuth } from "../auth/AuthContext";
 import { fechaHora } from "../lib/format";
+import { rutaNotificacion } from "../lib/notificaciones";
 import type { NotificacionOut } from "../lib/types";
 
 function Campana() {
@@ -31,15 +32,10 @@ function Campana() {
 
   const abrir = (n: NotificacionOut) => {
     if (!n.leida) marcarLeida.mutate(n.id);
-    if (n.solicitud_id !== null && usuario) {
-      const base =
-        usuario.rol === "comprador"
-          ? "/comprador"
-          : usuario.rol === "vendedor"
-            ? "/vendedor"
-            : "/crm"; // roles CRM (F8d): su detalle vive bajo /crm
-      navigate(`${base}/solicitudes/${n.solicitud_id}`);
-    }
+    // Detalle por rol (roles CRM bajo /crm, F8d); las de OC (F16b) llevan el
+    // ancla de la sección "Pedido en SAP".
+    const ruta = usuario ? rutaNotificacion(usuario.rol, n) : null;
+    if (ruta) navigate(ruta);
   };
 
   return (

@@ -17,11 +17,16 @@ listado. SAP es SOLO lectura; aquí nunca se escribe hacia HANA.
   snapshot. Función de dominio SIN acoplarse a HTTP: la reutiliza el sondeo
   de F16b. Si HANA falla, conserva el snapshot anterior y anota
   `ultimo_error` (no revienta al caller salvo que se le pida).
+- `sincronizar_y_notificar` (F16b): envuelve a `sincronizar_oc` comparando el
+  estatus/vencida guardados ANTES con los de DESPUÉS; solo si cambiaron
+  genera las notificaciones (dedup por OC + estatus / OC + vencida). La usan
+  el sondeo del scheduler y el botón "Actualizar desde SAP" — el evento es el
+  mismo lo detecte quien lo detecte, y el dedup evita duplicados.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -46,6 +51,10 @@ from app.models.pedido import SolicitudOC
 from app.models.solicitud import Estado, Solicitud
 from app.models.sucursal import Sucursal
 from app.models.usuario import Rol, Usuario
+from app.modules.notificaciones.service import (
+    notificar_cambio_estatus_oc,
+    notificar_oc_vencida,
+)
 from app.modules.pedidos.schemas import (
     EntradaOut,
     FacturaComprasOut,
@@ -461,11 +470,56 @@ def sincronizar_oc(
     return True
 
 
+@dataclass(frozen=True)
+class ResultadoSync:
+    """Qué pasó al sincronizar UNA OC (F16b): para conteos del sondeo."""
+
+    sincronizada: bool
+    cambio_estatus: bool
+    paso_a_vencida: bool
+    notificaciones: int
+
+
+def sincronizar_y_notificar(
+    db: Session,
+    fuente: FuenteOC,
+    oc: SolicitudOC,
+    solicitud: Solicitud,
+    timezone: str,
+    ahora: datetime | None = None,
+    *,
+    propagar: bool = False,
+) -> ResultadoSync:
+    """`sincronizar_oc` + detección de cambios (F16b §1–§3). Compara el
+    estatus y el flag `vencida` guardados ANTES del sync con los de DESPUÉS:
+    - estatus distinto → notificación del nuevo estatus (comprador asignado +
+      vendedor dueño), dedup (OC + estatus);
+    - `vencida` pasó de False a True → aviso `oc_vencida` UNA vez por OC
+      (comprador asignado + gerentes de compras + gerente de la sucursal).
+    Si HANA no respondió, nada cambió y nada se notifica. Sin commit."""
+    ahora = ahora or datetime.now(UTC)
+    estatus_previo, vencida_previa = oc.estatus_derivado, oc.vencida
+    if not sincronizar_oc(db, fuente, oc, timezone, ahora, propagar=propagar):
+        return ResultadoSync(False, False, False, 0)
+    cambio = oc.estatus_derivado != estatus_previo
+    paso_a_vencida = oc.vencida and not vencida_previa
+    nuevas = 0
+    if cambio:
+        nuevas += notificar_cambio_estatus_oc(db, solicitud, oc.id, oc.doc_num, oc.estatus_derivado)
+    if paso_a_vencida:
+        nuevas += notificar_oc_vencida(
+            db, solicitud, oc.id, oc.doc_num, oc.estatus_derivado, oc.fecha_entrega
+        )
+    return ResultadoSync(True, cambio, paso_a_vencida, nuevas)
+
+
 def sincronizar_solicitud(
     db: Session, fuente: FuenteOC, solicitud_id: int, user: Usuario
 ) -> list[SolicitudOC]:
     """Botón "Actualizar desde SAP" (compras/admin): sincroniza TODAS las OC
-    activas de la solicitud; si HANA no responde → 503 y nada cambia."""
+    activas de la solicitud; si HANA no responde → 503 y nada cambia. F16b:
+    si detecta un cambio de estatus o una OC que pasó a vencida, notifica
+    igual que el sondeo (mismo dedup: el job no repetirá el aviso)."""
     if not ve_fincada(user.rol):
         raise AppError(403, "Las OC de SAP las administra el área compras", "forbidden")
     solicitud = obtener_scoped(db, solicitud_id, user)
@@ -474,7 +528,7 @@ def sincronizar_solicitud(
     ahora = datetime.now(UTC)
     try:
         for oc in ocs:
-            sincronizar_oc(db, fuente, oc, timezone, ahora, propagar=True)
+            sincronizar_y_notificar(db, fuente, oc, solicitud, timezone, ahora, propagar=True)
     except AppError:
         db.rollback()
         raise

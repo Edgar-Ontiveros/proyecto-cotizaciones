@@ -17,6 +17,7 @@ def test_health_ok(client):
     assert body["status"] == "ok"
     assert body["database"] == "ok"
     assert body["scheduler"] == "n/a"
+    assert body["sondeo_oc"] == "n/a"  # F16b: heartbeat propio del sondeo de OC
     assert body["sap"] == "ok"  # F16a: FakeFuenteOC responde al ping
     assert body["sap_fuente"] == "fake"  # F16a.2: la fuente REAL que sirve, por su clase
 
@@ -48,7 +49,13 @@ def test_health_503_bd_caida(client):
     finally:
         app.dependency_overrides[get_db] = original
     assert r.status_code == 503
-    assert r.json() == {"status": "error", "database": "down", "scheduler": "n/a", "sap": "n/a"}
+    assert r.json() == {
+        "status": "error",
+        "database": "down",
+        "scheduler": "n/a",
+        "sondeo_oc": "n/a",
+        "sap": "n/a",
+    }
 
 
 # ===================================================== F16a.2 guardarraíl

@@ -19,7 +19,7 @@ import {
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   useBuscarOC,
@@ -31,6 +31,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
 import { dinero, fecha, fechaHora } from "../lib/format";
+import { ANCLA_PEDIDO_SAP } from "../lib/notificaciones";
 import {
   ETIQUETA_ESTATUS,
   administraOC,
@@ -438,11 +439,19 @@ export function CardOC({
 export function SeccionPedidoSap({ solicitud }: { solicitud: SolicitudDetailOut }) {
   const { usuario } = useAuth();
   const sincronizar = useSincronizarOCs(solicitud.id);
+  const conOcs = solicitud.ocs.length > 0;
+  // F16b: llegando desde una notificación de OC (#pedido-sap) la sección se
+  // trae a la vista en cuanto hay OC pintadas.
+  useEffect(() => {
+    if (conOcs && window.location.hash === `#${ANCLA_PEDIDO_SAP}`) {
+      document.getElementById(ANCLA_PEDIDO_SAP)?.scrollIntoView({ block: "start" });
+    }
+  }, [conOcs]);
   if (!usuario) return null;
   const puedeAdministrar = administraOC(usuario.rol) && solicitud.estado === "CONFIRMADA";
-  if (solicitud.ocs.length === 0 && !puedeAdministrar) return null;
+  if (!conOcs && !puedeAdministrar) return null;
   return (
-    <Stack gap="xs" data-testid="seccion-pedido-sap">
+    <Stack gap="xs" data-testid="seccion-pedido-sap" id={ANCLA_PEDIDO_SAP}>
       <Group justify="space-between">
         <Title order={5}>Pedido en SAP</Title>
         {puedeAdministrar && (

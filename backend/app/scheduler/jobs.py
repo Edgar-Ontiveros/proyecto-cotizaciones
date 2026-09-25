@@ -8,6 +8,16 @@ tests, con el "ahora" inyectable. El wiring de APScheduler vive en __main__.
   `dedup`; un reenvío (apertura nueva) vuelve a alertar.
 - Limpieza (semanal): notificaciones LEÍDAS con más de 90 días y refresh
   tokens expirados o revocados con más de 30 días.
+- Sondeo de OC de SAP (F16b, cada 15 min): re-lee en HANA (SOLO SELECT, vía
+  FuenteOC) las OC vinculadas ACTIVAS cuyo estatus no es terminal (FACTURADA
+  y CANCELADA dejan de vigilarse), con la MISMA `sincronizar_y_notificar` del
+  botón manual: si el estatus derivado cambió o la OC PASÓ a vencida,
+  notifica (dedup por OC + estatus / OC + vencida). La app NUNCA depende de
+  SAP: si HANA no responde al ping, el ciclo se salta entero y se reintenta
+  al siguiente; si falla en UNA OC, esa queda con `ultimo_error` sin cambiar
+  estatus ni notificar y el ciclo sigue con las demás. Commit POR OC: un
+  tropiezo en una no tira lo ya avanzado. Heartbeat propio (id 2) para
+  /health.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -19,10 +29,18 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.core.logging import logger
+from app.integrations.sap.base import FuenteOC
+from app.integrations.sap.estatus import EstatusOC
 from app.models.notificacion import Notificacion
+from app.models.pedido import SolicitudOC
 from app.models.refresh_token import RefreshToken
-from app.models.scheduler_heartbeat import SchedulerHeartbeat
+from app.models.scheduler_heartbeat import (
+    HEARTBEAT_BANDAS,
+    HEARTBEAT_SONDEO_OC,
+    SchedulerHeartbeat,
+)
 from app.models.solicitud import Solicitud
+from app.models.sucursal import Sucursal
 from app.modules.metricas.ciclos import ESTADOS_CICLO_ABIERTO, cargar_ciclos
 from app.modules.notificaciones.service import (
     TIPO_BANDA_AMARILLA,
@@ -30,15 +48,18 @@ from app.modules.notificaciones.service import (
     admins_activos_ids,
     insertar_alerta_banda,
 )
+from app.modules.pedidos.service import sincronizar_y_notificar
 
 DIAS_RETENCION_NOTIFICACIONES = 90
 DIAS_RETENCION_REFRESH = 30
+# F16b: estatus TERMINALES de una OC — ya no se re-consultan en SAP.
+ESTATUS_OC_TERMINALES = frozenset({EstatusOC.FACTURADA.value, EstatusOC.CANCELADA.value})
 
 
-def _tocar_heartbeat(db: Session, ahora: datetime) -> None:
+def _tocar_heartbeat(db: Session, ahora: datetime, heartbeat_id: int = HEARTBEAT_BANDAS) -> None:
     db.execute(
         pg_insert(SchedulerHeartbeat)
-        .values(id=1, ultima_corrida=ahora)
+        .values(id=heartbeat_id, ultima_corrida=ahora)
         .on_conflict_do_update(index_elements=["id"], set_={"ultima_corrida": ahora})
     )
 
@@ -104,3 +125,71 @@ def job_limpieza(db: Session, ahora: datetime | None = None) -> dict[str, int]:
     db.commit()
     logger.info("job_limpieza", notificaciones=notificaciones, refresh_tokens=tokens)
     return {"notificaciones": notificaciones, "refresh_tokens": tokens}
+
+
+def ocs_a_sondear(db: Session) -> list[tuple[SolicitudOC, Solicitud, str]]:
+    """OC ACTIVAS con estatus NO terminal, con su solicitud y la zona horaria
+    de la sucursal (para `vencida`). Orden estable por id."""
+    filas = db.execute(
+        select(SolicitudOC, Solicitud, Sucursal.timezone)
+        .join(Solicitud, Solicitud.id == SolicitudOC.solicitud_id)
+        .join(Sucursal, Sucursal.id == Solicitud.sucursal_id)
+        .where(
+            SolicitudOC.activa.is_(True),
+            SolicitudOC.estatus_derivado.not_in(ESTATUS_OC_TERMINALES),
+        )
+        .order_by(SolicitudOC.id)
+    ).all()
+    return [(oc, solicitud, str(tz)) for oc, solicitud, tz in filas]
+
+
+def job_sondeo_oc(db: Session, fuente: FuenteOC, ahora: datetime | None = None) -> dict[str, int]:
+    """Una corrida del sondeo de OC (F16b). Devuelve conteos: OC vigiladas,
+    sincronizadas, con error, cambios de estatus, vencidas nuevas y
+    notificaciones NUEVAS. `sap_caido=1` si el ciclo se saltó por ping."""
+    ahora = ahora or datetime.now(UTC)
+    conteos = {
+        "vigiladas": 0,
+        "sincronizadas": 0,
+        "errores": 0,
+        "cambios": 0,
+        "vencidas": 0,
+        "notificaciones": 0,
+        "sap_caido": 0,
+    }
+    pendientes = ocs_a_sondear(db)
+    conteos["vigiladas"] = len(pendientes)
+    # Ping barato ANTES de recorrer: con HANA caído no tiene sentido pagar un
+    # timeout por OC — el ciclo se salta entero y se reintenta en 15 min.
+    sap_vivo = True
+    if pendientes:
+        try:
+            sap_vivo = fuente.ping()
+        except Exception:  # el ping jamás debe tirar el job
+            sap_vivo = False
+    if not sap_vivo:
+        conteos["sap_caido"] = 1
+        logger.warning("job_sondeo_oc_sap_caido", vigiladas=len(pendientes))
+        pendientes = []
+    for oc, solicitud, timezone in pendientes:
+        try:
+            resultado = sincronizar_y_notificar(db, fuente, oc, solicitud, timezone, ahora)
+            db.commit()
+        except Exception:
+            # Falla inesperada en UNA OC (no SapNoDisponible, que ya la absorbe
+            # sincronizar_oc): se registra y el ciclo sigue con las demás.
+            db.rollback()
+            logger.exception("job_sondeo_oc_error", oc_id=oc.id, doc_num=oc.doc_num)
+            conteos["errores"] += 1
+            continue
+        if not resultado.sincronizada:
+            conteos["errores"] += 1
+            continue
+        conteos["sincronizadas"] += 1
+        conteos["cambios"] += int(resultado.cambio_estatus)
+        conteos["vencidas"] += int(resultado.paso_a_vencida)
+        conteos["notificaciones"] += resultado.notificaciones
+    _tocar_heartbeat(db, ahora, HEARTBEAT_SONDEO_OC)
+    db.commit()
+    logger.info("job_sondeo_oc", **conteos)
+    return conteos

@@ -10,6 +10,8 @@ insertan con ON CONFLICT DO NOTHING para que el job sea idempotente.
 """
 
 from collections.abc import Sequence
+from datetime import date
+from enum import StrEnum
 from typing import Any, cast
 
 from sqlalchemy import func, select, update
@@ -53,6 +55,54 @@ TIPO_CANCELADA = "cancelada"
 # ventas llega al comprador ASIGNADO; lo que comenta compras llega al vendedor
 # DUEÑO. Quien comenta jamás se notifica a sí mismo.
 TIPO_COMENTARIO_NUEVO = "comentario_nuevo"
+# F16b: sondeo de las OC de SAP — cambio de estatus DERIVADO (hasta la
+# factura; los pagos NO) y aviso de OC vencida. Mensajes SIN proveedor ni
+# montos: los recibe el vendedor. Van con `dedup` (ON CONFLICT DO NOTHING):
+# nunca dos avisos del mismo (OC + estatus) ni dos "vencida" de la misma OC.
+TIPO_OC_RECIBIDA = "oc_recibida"
+TIPO_OC_PARCIALMENTE_RECIBIDA = "oc_parcialmente_recibida"
+TIPO_OC_FACTURADA = "oc_facturada"
+TIPO_OC_CANCELADA = "oc_cancelada"
+TIPO_OC_CERRADA_SIN_RECIBIR = "oc_cerrada_sin_recibir"
+TIPO_OC_VENCIDA = "oc_vencida"
+
+
+class DestinatarioOC(StrEnum):
+    """Destinatarios SIMBÓLICOS de la matriz de OC; se resuelven a usuarios
+    contra la solicitud dueña de la OC (`resolver_destinatarios_oc`)."""
+
+    COMPRADOR_ASIGNADO = "comprador_asignado"
+    VENDEDOR_DUENO = "vendedor_dueno"
+    GERENTES_COMPRAS = "gerentes_compras"
+    GERENTE_SUCURSAL = "gerente_sucursal"
+
+
+_CAMBIO_ESTATUS_OC = frozenset({DestinatarioOC.COMPRADOR_ASIGNADO, DestinatarioOC.VENDEDOR_DUENO})
+# Estatus derivado (EstatusOC.value) → tipo de notificación. ABIERTA no es un
+# desenlace (es el punto de partida) y no tiene tipo.
+TIPO_POR_ESTATUS_OC: dict[str, str] = {
+    "RECIBIDA": TIPO_OC_RECIBIDA,
+    "PARCIALMENTE_RECIBIDA": TIPO_OC_PARCIALMENTE_RECIBIDA,
+    "FACTURADA": TIPO_OC_FACTURADA,
+    "CANCELADA": TIPO_OC_CANCELADA,
+    "CERRADA_SIN_RECIBIR": TIPO_OC_CERRADA_SIN_RECIBIR,
+}
+# MATRIZ de notificaciones de OC (F16b §2–§3): evento → destinatarios. Es
+# DATO: el sondeo la consulta y el test `test_matriz_notificaciones` la fija.
+MATRIZ_NOTIFICACIONES_OC: dict[str, frozenset[DestinatarioOC]] = {
+    TIPO_OC_RECIBIDA: _CAMBIO_ESTATUS_OC,
+    TIPO_OC_PARCIALMENTE_RECIBIDA: _CAMBIO_ESTATUS_OC,
+    TIPO_OC_FACTURADA: _CAMBIO_ESTATUS_OC,
+    TIPO_OC_CANCELADA: _CAMBIO_ESTATUS_OC,
+    TIPO_OC_CERRADA_SIN_RECIBIR: _CAMBIO_ESTATUS_OC,
+    TIPO_OC_VENCIDA: frozenset(
+        {
+            DestinatarioOC.COMPRADOR_ASIGNADO,
+            DestinatarioOC.GERENTES_COMPRAS,
+            DestinatarioOC.GERENTE_SUCURSAL,
+        }
+    ),
+}
 
 _ROLES_COMPRAS = frozenset({Rol.COMPRADOR, Rol.GERENTE_COMPRAS})
 _ROLES_VENTAS = frozenset({Rol.VENDEDOR, Rol.GERENTE_SUCURSAL, Rol.DIRECTOR_VENTAS})
@@ -317,6 +367,29 @@ def notificar_reuso_refresh(db: Session, afectado: Usuario) -> None:
 # ------------------------------------------------- alertas de banda (scheduler)
 
 
+def insertar_con_dedup(
+    db: Session, usuario_id: int, solicitud_id: int | None, tipo: str, mensaje: str, dedup: str
+) -> int:
+    """Inserta una notificación IDEMPOTENTE (ON CONFLICT DO NOTHING sobre
+    `dedup`); regresa 1 si insertó, 0 si ya existía. Sin commit: lo da el job
+    o el service que la genera."""
+    insertado = db.execute(
+        pg_insert(Notificacion)
+        .values(
+            usuario_id=usuario_id,
+            solicitud_id=solicitud_id,
+            tipo=tipo,
+            mensaje=mensaje,
+            dedup=dedup,
+        )
+        .on_conflict_do_nothing(index_elements=["dedup"])
+        # RETURNING: con conflicto no regresa filas — conteo determinista
+        # (rowcount no es confiable aquí con psycopg3).
+        .returning(Notificacion.id)
+    ).scalar_one_or_none()
+    return 1 if insertado is not None else 0
+
+
 def insertar_alerta_banda(
     db: Session,
     usuario_id: int,
@@ -338,21 +411,100 @@ def insertar_alerta_banda(
         if tipo == TIPO_BANDA_AMARILLA
         else f"La solicitud {folio} va en su día hábil {t} sin respuesta (banda LENTA)"
     )
-    insertado = db.execute(
-        pg_insert(Notificacion)
-        .values(
-            usuario_id=usuario_id,
-            solicitud_id=solicitud_id,
-            tipo=tipo,
-            mensaje=mensaje,
-            dedup=f"{tipo}:{solicitud_id}:{usuario_id}:{apertura_iso}",
+    return insertar_con_dedup(
+        db,
+        usuario_id,
+        solicitud_id,
+        tipo,
+        mensaje,
+        f"{tipo}:{solicitud_id}:{usuario_id}:{apertura_iso}",
+    )
+
+
+# ------------------------------------------------ OC de SAP (F16b, sondeo)
+
+
+def resolver_destinatarios_oc(
+    db: Session, solicitud: Solicitud, destinatarios: frozenset[DestinatarioOC]
+) -> set[int]:
+    """Usuarios concretos para los destinatarios simbólicos de la matriz,
+    contra la solicitud dueña de la OC. Gerentes: solo ACTIVOS; el gerente de
+    sucursal es el de la sucursal de la solicitud (TIK/Manufactura no tienen)."""
+    ids: set[int] = set()
+    if DestinatarioOC.COMPRADOR_ASIGNADO in destinatarios and solicitud.comprador_id is not None:
+        ids.add(solicitud.comprador_id)
+    if DestinatarioOC.VENDEDOR_DUENO in destinatarios:
+        ids.add(solicitud.vendedor_id)
+    if DestinatarioOC.GERENTES_COMPRAS in destinatarios:
+        ids.update(gerentes_compras_activos_ids(db))
+    if DestinatarioOC.GERENTE_SUCURSAL in destinatarios:
+        ids.update(
+            db.scalars(
+                select(Usuario.id).where(
+                    Usuario.rol == Rol.GERENTE_SUCURSAL,
+                    Usuario.activo,
+                    Usuario.sucursal_id == solicitud.sucursal_id,
+                )
+            )
         )
-        .on_conflict_do_nothing(index_elements=["dedup"])
-        # RETURNING: con conflicto no regresa filas — conteo determinista
-        # (rowcount no es confiable aquí con psycopg3).
-        .returning(Notificacion.id)
-    ).scalar_one_or_none()
-    return 1 if insertado is not None else 0
+    return ids
+
+
+def _estatus_en_palabras(estatus: str) -> str:
+    return estatus.replace("_", " ")
+
+
+def notificar_cambio_estatus_oc(
+    db: Session, solicitud: Solicitud, oc_id: int, doc_num: int, estatus: str
+) -> int:
+    """Cambio de estatus DERIVADO de una OC (F16b §2): comprador asignado +
+    vendedor dueño. Idempotente por (OC + estatus + usuario). Regresa cuántas
+    notificaciones NUEVAS insertó. ABIERTA (sin tipo) no notifica."""
+    tipo = TIPO_POR_ESTATUS_OC.get(estatus)
+    if tipo is None:
+        return 0
+    mensaje = (
+        f"La OC {doc_num} del pedido {_folio_de(solicitud)} fue {_estatus_en_palabras(estatus)}"
+    )
+    nuevas = 0
+    for usuario_id in sorted(
+        resolver_destinatarios_oc(db, solicitud, MATRIZ_NOTIFICACIONES_OC[tipo])
+    ):
+        nuevas += insertar_con_dedup(
+            db, usuario_id, solicitud.id, tipo, mensaje, f"{tipo}:{oc_id}:{usuario_id}"
+        )
+    return nuevas
+
+
+def notificar_oc_vencida(
+    db: Session,
+    solicitud: Solicitud,
+    oc_id: int,
+    doc_num: int,
+    estatus: str,
+    fecha_entrega: date | None,
+) -> int:
+    """La OC PASÓ a vencida (F16b §3): comprador asignado + gerentes de
+    compras + gerente de la sucursal, UNA sola vez por OC (dedup
+    `oc_vencida:{oc}:{usuario}`), aunque siga vencida cada 15 min."""
+    entrega = f" (entrega prometida el {fecha_entrega:%d/%m/%Y})" if fecha_entrega else ""
+    mensaje = (
+        f"La OC {doc_num} del pedido {_folio_de(solicitud)} está VENCIDA{entrega} "
+        f"y sigue {_estatus_en_palabras(estatus)}"
+    )
+    nuevas = 0
+    for usuario_id in sorted(
+        resolver_destinatarios_oc(db, solicitud, MATRIZ_NOTIFICACIONES_OC[TIPO_OC_VENCIDA])
+    ):
+        nuevas += insertar_con_dedup(
+            db,
+            usuario_id,
+            solicitud.id,
+            TIPO_OC_VENCIDA,
+            mensaje,
+            f"{TIPO_OC_VENCIDA}:{oc_id}:{usuario_id}",
+        )
+    return nuevas
 
 
 # ----------------------------------------------------------------- lectura

@@ -17,7 +17,11 @@ from app.core.errors import AppError
 from app.core.logging import configure_logging, logger, request_logging_middleware
 from app.integrations.sap.base import FuenteOC
 from app.integrations.sap.factory import get_fuente_oc, nombre_fuente, validar_fuente_oc
-from app.models.scheduler_heartbeat import SchedulerHeartbeat
+from app.models.scheduler_heartbeat import (
+    HEARTBEAT_BANDAS,
+    HEARTBEAT_SONDEO_OC,
+    SchedulerHeartbeat,
+)
 from app.modules.archivos.router import router as archivos_router
 from app.modules.auth.router import router as auth_router
 from app.modules.cambios.router import router as cambios_router
@@ -96,6 +100,17 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
     )
 
 
+def _estado_heartbeat(db: Session, heartbeat_id: int) -> str:
+    ultima = db.scalar(
+        select(SchedulerHeartbeat.ultima_corrida).where(SchedulerHeartbeat.id == heartbeat_id)
+    )
+    if ultima is None:
+        return "n/a"
+    if datetime.now(UTC) - ultima > timedelta(minutes=30):
+        return "degraded"
+    return "ok"
+
+
 @app.get(f"{API_PREFIX}/health")
 def health(
     db: Session = Depends(get_db), fuente: FuenteOC = Depends(get_fuente_oc)
@@ -105,7 +120,13 @@ def health(
     except Exception:
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "database": "down", "scheduler": "n/a", "sap": "n/a"},
+            content={
+                "status": "error",
+                "database": "down",
+                "scheduler": "n/a",
+                "sondeo_oc": "n/a",
+                "sap": "n/a",
+            },
         )
     # F16a: ping barato a SAP (un intento, timeout corto). "degraded" NO baja
     # el status general: la app nunca depende de HANA para seguir viva.
@@ -113,20 +134,14 @@ def health(
         sap = "ok" if fuente.ping() else "degraded"
     except Exception:
         sap = "degraded"
-    # Heartbeat del scheduler (F7): "n/a" solo si nunca ha corrido; con más
-    # de 30 minutos sin latir, "degraded".
-    ultima = db.scalar(select(SchedulerHeartbeat.ultima_corrida))
-    if ultima is None:
-        scheduler = "n/a"
-    elif datetime.now(UTC) - ultima > timedelta(minutes=30):
-        scheduler = "degraded"
-    else:
-        scheduler = "ok"
     return JSONResponse(
         content={
             "status": "ok",
             "database": "ok",
-            "scheduler": scheduler,
+            # Heartbeats del scheduler (F7 bandas; F16b sondeo de OC): "n/a"
+            # solo si ese job nunca ha corrido; >30 min sin latir, "degraded".
+            "scheduler": _estado_heartbeat(db, HEARTBEAT_BANDAS),
+            "sondeo_oc": _estado_heartbeat(db, HEARTBEAT_SONDEO_OC),
             "sap": sap,
             "sap_fuente": nombre_fuente(fuente),  # F16a.2: "hana" | "fake"
         }
